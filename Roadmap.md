@@ -10,7 +10,7 @@
 | Status | # | Milestone | Goal |
 |:---:|:---:|---|---|
 | ✅ | **01** | 📂 **Project Setup** | `pyproject.toml`, dependencies, configuration |
-| ⭕ | **02** | 🐍 **CLI** | `jimmy "fix this bug"` |
+| ✅ | **02** | 🐍 **CLI** | `jimmy "fix this bug"` |
 | ⭕ | **03** | 🤖 **LLM Provider** | OpenAI, DeepSeek, Gemini, Groq |
 | ⭕ | **04** | 🔧 **Tool System** | Tool interface + registry |
 | ⭕ | **05** | 🔍 **Search + Read** | Explore and inspect the codebase |
