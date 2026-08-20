@@ -14,7 +14,7 @@
 | ✅ | **03** | 🤖 **LLM Provider** | OpenAI, DeepSeek, Gemini, Groq |
 | ✅ | **04** | 🔧 **Tool System** | Tool interface + registry |
 | ✅ | **05** | 🔍 **Search + Read** | Explore and inspect the codebase |
-| ⭕ | **06** | ✏️ **Edit** | Safely modify files |
+| ✅ | **06** | ✏️ **Edit** | Safely modify files |
 | ⭕ | **07** | 💻 **Shell / Test** | Run commands and tests |
 | ⭕ | **08** | 🔄 **Agent Loop** ⭐ | LLM → Tool → Result → LLM |
 | ⭕ | **09** | 🧠 **State** | Remember the current task |
