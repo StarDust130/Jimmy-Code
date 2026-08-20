@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Any
 
 from jimmy.tools.base import Tool
@@ -65,3 +64,25 @@ class EditFileTool(Tool):
         file_path.write_text(updated, encoding="utf-8")
 
         return f"Edited {path} successfully.\nCharacters changed: {len(original)} -> {len(updated)}"
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the file relative to the working directory.",
+                },
+                "old_text": {
+                    "type": "string",
+                    "description": "Exact existing text to replace.",
+                },
+                "new_text": {
+                    "type": "string",
+                    "description": "Replacement text.",
+                },
+            },
+            "required": ["path", "old_text", "new_text"],
+            "additionalProperties": False,
+        }

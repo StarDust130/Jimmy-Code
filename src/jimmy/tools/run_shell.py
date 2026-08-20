@@ -55,3 +55,17 @@ class RunShellTool(Tool):
             f"STDOUT:\n{stdout or '(empty)'}\n"
             f"STDERR:\n{stderr or '(empty)'}"
         )
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Shell command to run inside the working directory.",
+                }
+            },
+            "required": ["command"],
+            "additionalProperties": False,
+        }

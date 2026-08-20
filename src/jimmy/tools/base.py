@@ -8,16 +8,19 @@ class Tool(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Unique tool name."""
         raise NotImplementedError
 
     @property
     @abstractmethod
     def description(self) -> str:
-        """Tell the LLM what this tool does."""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def input_schema(self) -> dict[str, Any]:
+        """JSON schema describing the tool arguments."""
         raise NotImplementedError
 
     @abstractmethod
     def execute(self, arguments: dict[str, Any]) -> Any:
-        """Execute the tool with validated arguments."""
         raise NotImplementedError

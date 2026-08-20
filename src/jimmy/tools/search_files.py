@@ -50,3 +50,17 @@ class SearchFilesTool(Tool):
             raise RuntimeError(result.stderr.strip() or "Search failed.")
 
         return result.stdout
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Text or code pattern to search for.",
+                }
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        }

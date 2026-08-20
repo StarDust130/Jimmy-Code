@@ -36,3 +36,17 @@ class ReadFileTool(Tool):
             return file_path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
             raise ValueError(f"File is not valid UTF-8 text: {path}") from exc
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the file relative to the working directory.",
+                }
+            },
+            "required": ["path"],
+            "additionalProperties": False,
+        }

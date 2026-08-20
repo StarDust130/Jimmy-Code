@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 from jimmy.llm.models import LLMResponse
 
@@ -7,6 +8,9 @@ class LLMProvider(ABC):
     """Interface every LLM provider must implement."""
 
     @abstractmethod
-    def chat(self, message: str) -> LLMResponse:
-        """Send a message to the model."""
+    def chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> LLMResponse:
         raise NotImplementedError

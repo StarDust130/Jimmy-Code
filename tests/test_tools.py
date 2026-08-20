@@ -15,6 +15,14 @@ class FakeTool(Tool):
     def description(self) -> str:
         return "A fake tool for testing."
 
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        }
+
     def execute(self, arguments: dict[str, Any]) -> str:
         return "hello from fake tool"
 
