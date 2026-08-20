@@ -1,0 +1,33 @@
+[project]
+name = "jimmy"
+version = "0.1.0"
+description = "Jimmy Code - a terminal-native coding agent"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "python-dotenv>=1.0",
+    "rich>=13.0",
+    "typer>=0.16.0",
+]
+
+[project.scripts]
+jimmy = "jimmy.cli.main:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.12.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

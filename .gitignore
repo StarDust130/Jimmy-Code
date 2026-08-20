@@ -1,0 +1,211 @@
+# ============================================================
+# 🐍 Python
+# ============================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+wheels/
+
+# Type checkers
+.mypy_cache/
+.pyright/
+.pytype/
+
+# Linters / formatters
+.ruff_cache/
+
+# ============================================================
+# 🌱 Virtual Environments
+# ============================================================
+
+.venv/
+venv/
+env/
+ENV/
+
+# ============================================================
+# 🔐 Environment & Secrets
+# ============================================================
+
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.crt
+secrets/
+credentials/
+
+# ============================================================
+# 🧪 Testing / Coverage
+# ============================================================
+
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+test-results/
+coverage.xml
+*.cover
+
+# ============================================================
+# 🤖 Jimmy Agent State
+# ============================================================
+
+# Local Jimmy state, sessions, caches, indexes, etc.
+.jimmy/
+jimmy-data/
+jimmy-cache/
+
+# Agent logs / traces
+*.log
+logs/
+
+# Local tool execution artifacts
+.tool-cache/
+.tool-results/
+
+# ============================================================
+# 📦 Dependency / Package Manager Caches
+# ============================================================
+
+.pip-cache/
+.cache/
+.pyre/
+
+# Poetry
+poetry.lock
+
+# NOTE:
+# If Jimmy is a published application/library, commit
+# poetry.lock for reproducible dependency resolution.
+# Remove the line above if using Poetry in production.
+
+# ============================================================
+# 💻 CLI / Runtime
+# ============================================================
+
+*.pid
+*.pid.lock
+*.seed
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# ============================================================
+# 🧠 AI / LLM Local Artifacts
+# ============================================================
+
+# Local prompts, context snapshots, generated traces
+.llm/
+.ai/
+.agent/
+.agent-cache/
+
+# Local conversation/session exports
+.sessions/
+.conversations/
+
+# Model/cache artifacts
+*.safetensors
+*.gguf
+*.onnx
+
+# ============================================================
+# 🛠️ Build / Development Tools
+# ============================================================
+
+.pyre/
+.pytype/
+.pyright/
+
+# ============================================================
+# 🧑‍💻 IDEs & Editors
+# ============================================================
+
+.vscode/
+.idea/
+*.iml
+
+# VS Code local history
+.history/
+
+# Vim
+.vim/
+*.swp
+*.swo
+
+# JetBrains
+*.iws
+*.ipr
+
+# ============================================================
+# 🐳 Containers
+# ============================================================
+
+.docker/
+docker-compose.override.yml
+
+# ============================================================
+# 🗃️ Local Databases / Generated Data
+# ============================================================
+
+*.db
+*.sqlite
+*.sqlite3
+data/
+tmp/
+
+# ============================================================
+# 📊 Reports / Generated Documentation
+# ============================================================
+
+reports/
+htmlcov/
+docs/_build/
+
+# ============================================================
+# 💻 OS
+# ============================================================
+
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+
+# ============================================================
+# 🔒 Credentials / Cloud CLI
+# ============================================================
+
+.aws/
+.gcloud/
+.azure/
+*.tfstate
+*.tfstate.*
+
+# ============================================================
+# 🚫 Miscellaneous Secrets
+# ============================================================
+
+*.secret
+*.secrets
+*.token
+*.token.json
