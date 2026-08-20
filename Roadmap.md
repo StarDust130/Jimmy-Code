@@ -7,22 +7,22 @@
 
 ## 🚀 V1 Roadmap
 
-| #          | Milestone         | What Jimmy learns to do                                      |
-| ---------- | ----------------- | ------------------------------------------------------------ |
-| 📂 **1**   | **Project Setup** | Folders, `pyproject.toml`, dependencies, configuration       |
-| 🐍 **2**   | **CLI**           | Run tasks like `jimmy "fix this bug"`                        |
-| 🤖 **3**   | **LLM Provider**  | Connect OpenAI, DeepSeek, Gemini, Groq through one interface |
-| 🔧 **4**   | **Tool System**   | Common tool structure + centralized tool registry            |
-| 🔍 **5**   | **Search + Read** | Discover and inspect the codebase                            |
-| ✏️ **6**   | **Edit**          | Safely modify files                                          |
-| 💻 **7**   | **Shell / Test**  | Run commands and tests with timeouts                         |
-| 🔄 **8**   | **Agent Loop** ⭐  | LLM → tool → result → LLM → … → done                         |
-| 🧠 **9**   | **State**         | Remember what happened during the current task               |
-| 🛡️ **10** | **Safety**        | Permissions, limits, truncation, errors, timeouts            |
-| 🧪 **11**  | **Real Testing**  | Give Jimmy real bugs and make it solve them                  |
-| ✨ **12**   | **CLI Polish**    | Streaming, clean output, error handling, Ctrl-C              |
+| Status | # | Milestone | Goal |
+|:---:|:---:|---|---|
+| ✅ | **01** | 📂 **Project Setup** | `pyproject.toml`, dependencies, configuration |
+| ⭕ | **02** | 🐍 **CLI** | `jimmy "fix this bug"` |
+| ⭕ | **03** | 🤖 **LLM Provider** | OpenAI, DeepSeek, Gemini, Groq |
+| ⭕ | **04** | 🔧 **Tool System** | Tool interface + registry |
+| ⭕ | **05** | 🔍 **Search + Read** | Explore and inspect the codebase |
+| ⭕ | **06** | ✏️ **Edit** | Safely modify files |
+| ⭕ | **07** | 💻 **Shell / Test** | Run commands and tests |
+| ⭕ | **08** | 🔄 **Agent Loop** ⭐ | LLM → Tool → Result → LLM |
+| ⭕ | **09** | 🧠 **State** | Remember the current task |
+| ⭕ | **10** | 🛡️ **Safety** | Permissions, limits, timeouts |
+| ⭕ | **11** | 🧪 **Real Testing** | Solve real-world bugs |
+| ⭕ | **12** | ✨ **CLI Polish** | Streaming, errors, Ctrl-C |
 
----
+**Legend:** `✅ Done` · `⭕ Up next`
 
 ## 🗺️ The Journey
 
