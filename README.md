@@ -1,7 +1,7 @@
 # 🕺 Jimmy Code🪩
 
 <p align="center">
-  <img src="https://media.tenor.com/_XASKclg8y4AAAAM/buskmeme-algo.gif" alt="Jimmy" width="260">
+  <img src="https://c.tenor.com/FwSWV8XYmCoAAAAC/tenor.gif" alt="Jimmy" width="260">
 </p>
 
 <p align="center">
