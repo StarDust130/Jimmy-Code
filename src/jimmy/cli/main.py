@@ -2,7 +2,8 @@ from pathlib import Path
 
 import typer
 
-from jimmy.agent.loop import AgentLoop
+from jimmy.agent.agent_loop import AgentLoop
+from jimmy.cli.ui import run_with_loading, show_result
 from jimmy.config.settings import Settings
 from jimmy.llm.groq import GroqProvider
 from jimmy.tools.defaults import create_default_registry
@@ -11,7 +12,7 @@ app = typer.Typer()
 
 
 @app.command()
-def run(task: str):
+def run(task: list[str]):
     """Run Jimmy on a coding task."""
     settings = Settings()  # pyright: ignore[reportCallIssue]
 
@@ -29,9 +30,11 @@ def run(task: str):
         max_turns=20,
     )
 
-    result = agent.run(task)
+    prompt = " ".join(task)
 
-    typer.echo(f"\n🤖 Jimmy:\n{result}")
+    result = run_with_loading(agent, prompt)
+
+    show_result(result)
 
 
 if __name__ == "__main__":
