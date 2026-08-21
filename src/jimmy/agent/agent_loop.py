@@ -42,6 +42,7 @@ class AgentLoop:
 
         tool_schemas = self.tools.schemas()
 
+        #🕺AGENT LOOP (Start Here) ➿
         for turn in range(1, self.max_turns + 1):
             print(f"\n🧠 Turn {turn}")
 
@@ -53,11 +54,12 @@ class AgentLoop:
             if response.assistant_message:
                 messages.append(response.assistant_message)
 
+            # 💬 Send the assistant's message to the user.
             if not response.tool_calls:
                 return response.content or ""
 
             for tool_call in response.tool_calls:
-                print(f"🔧 {tool_call.name}")
+                print(f"🔧 Tool used: {tool_call.name}")
 
                 try:
                     tool = self.tools.get(tool_call.name)
