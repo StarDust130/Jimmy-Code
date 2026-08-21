@@ -1,9 +1,13 @@
+import time
+from collections.abc import Callable
+
+from jimmy.agent.events import AgentEvent
 from jimmy.llm.base import LLMProvider
 from jimmy.state.session import SessionState
 from jimmy.tools.registry import ToolRegistry
 from jimmy.utils.limits import truncate_output
 
-SYSTEM_PROMPT = """You are Jimmy🕺, a terminal-native coding agent.
+SYSTEM_PROMPT = """You are Jimmy, a terminal-native coding agent.
 
 You work inside the user's current project.
 
@@ -17,6 +21,9 @@ Keep working until the task is complete.
 """
 
 
+EventHandler = Callable[[AgentEvent], None]
+
+
 class AgentLoop:
     def __init__(
         self,
@@ -28,7 +35,19 @@ class AgentLoop:
         self.tools = tools
         self.max_turns = max_turns
 
-    def run(self, task: str) -> str:
+    def run(
+        self,
+        task: str,
+        on_event: EventHandler | None = None,
+    ) -> str:
+        """Run Jimmy until the task is complete."""
+
+        started_at = time.monotonic()
+
+        def emit(event: AgentEvent) -> None:
+            if on_event is not None:
+                on_event(event)
+
         state = SessionState(
             task=task,
             messages=[
@@ -48,34 +67,107 @@ class AgentLoop:
         while state.turn_count < self.max_turns:
             turn = state.next_turn()
 
-            print(f"\n🧠 Turn {turn}")
+            turn_started_at = time.monotonic()
+
+            emit(
+                AgentEvent(
+                    kind="turn_start",
+                    turn=turn,
+                )
+            )
 
             response = self.llm.chat(
                 messages=state.messages,
                 tools=tool_schemas,
             )
 
+            turn_elapsed = time.monotonic() - turn_started_at
+
+            emit(
+                AgentEvent(
+                    kind="turn_end",
+                    turn=turn,
+                    elapsed=turn_elapsed,
+                    message=(
+                        "final response"
+                        if not response.tool_calls
+                        else f"{len(response.tool_calls)} tool call(s)"
+                    ),
+                )
+            )
+
             if response.assistant_message:
                 state.add_message(response.assistant_message)
 
             if not response.tool_calls:
-                return response.content or ""
+                total_elapsed = time.monotonic() - started_at
+
+                result = response.content or ""
+
+                emit(
+                    AgentEvent(
+                        kind="complete",
+                        turn=turn,
+                        elapsed=total_elapsed,
+                        message=result,
+                    )
+                )
+
+                return result
 
             for tool_call in response.tool_calls:
-                print(f"🔧 Tool used: {tool_call.name}")
+                tool_started_at = time.monotonic()
+
+                emit(
+                    AgentEvent(
+                        kind="tool_start",
+                        turn=turn,
+                        tool_name=tool_call.name,
+                        arguments=tool_call.arguments,
+                    )
+                )
 
                 try:
                     tool = self.tools.get(tool_call.name)
 
-                    result = tool.execute(tool_call.arguments)
+                    raw_result = tool.execute(tool_call.arguments)
 
-                    result = truncate_output(str(result))
+                    result = truncate_output(str(raw_result))
 
-                except (ValueError, TypeError) as exc:
+                    tool_elapsed = time.monotonic() - tool_started_at
+
+                    emit(
+                        AgentEvent(
+                            kind="tool_end",
+                            turn=turn,
+                            tool_name=tool_call.name,
+                            elapsed=tool_elapsed,
+                            message="ok",
+                        )
+                    )
+
+                except (
+                    ValueError,
+                    TypeError,
+                    OSError,
+                    RuntimeError,
+                ) as exc:
                     result = (
                         f"Tool '{tool_call.name}' failed.\n"
                         f"Error type: {type(exc).__name__}\n"
                         f"Error: {exc}"
+                    )
+
+                    tool_elapsed = time.monotonic() - tool_started_at
+
+                    emit(
+                        AgentEvent(
+                            kind="tool_end",
+                            turn=turn,
+                            tool_name=tool_call.name,
+                            elapsed=tool_elapsed,
+                            message="error",
+                        )
                     )
 
                 state.add_message(
@@ -83,8 +175,21 @@ class AgentLoop:
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "name": tool_call.name,
-                        "content": str(result),
+                        "content": result,
                     }
                 )
 
-        raise RuntimeError(f"Jimmy stopped 🛑 after reaching the maximum of {self.max_turns} turns.")
+        total_elapsed = time.monotonic() - started_at
+
+        message = f"Jimmy stopped after reaching the maximum of {self.max_turns} turns."
+
+        emit(
+            AgentEvent(
+                kind="error",
+                turn=state.turn_count,
+                elapsed=total_elapsed,
+                message=message,
+            )
+        )
+
+        raise RuntimeError(message)
