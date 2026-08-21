@@ -3,6 +3,7 @@ from typing import Any
 
 from jimmy.tools.base import Tool
 from jimmy.tools.filesystem import Filesystem
+from jimmy.utils.safety import check_shell_command
 
 
 class RunShellTool(Tool):
@@ -32,6 +33,8 @@ class RunShellTool(Tool):
 
         if not isinstance(command, str) or not command.strip():
             raise ValueError("'command' must be a non-empty string.")
+
+        check_shell_command(command)
 
         try:
             result = subprocess.run(

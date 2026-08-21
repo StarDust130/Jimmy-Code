@@ -1,6 +1,7 @@
 import threading
 import time
 
+import typer
 from rich.console import Console
 from rich.live import Live
 from rich.text import Text
@@ -12,10 +13,15 @@ def run_with_loading(agent, prompt: str) -> str:
     """Run Jimmy with a live terminal loading indicator."""
 
     result = ""
+    error: Exception | None = None
 
     def run_agent():
-        nonlocal result
-        result = agent.run(prompt)
+        nonlocal result, error
+
+        try:
+            result = agent.run(prompt)
+        except RuntimeError as exc:
+            error = exc
 
     thread = threading.Thread(target=run_agent)
     thread.start()
@@ -37,6 +43,10 @@ def run_with_loading(agent, prompt: str) -> str:
             time.sleep(0.1)
 
     thread.join()
+
+    if error is not None:
+        typer.echo(f"\n🛑 {error}", err=True)
+        raise typer.Exit(code=1)
 
     return result
 

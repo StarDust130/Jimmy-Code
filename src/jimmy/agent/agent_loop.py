@@ -1,6 +1,7 @@
 from jimmy.llm.base import LLMProvider
 from jimmy.state.session import SessionState
 from jimmy.tools.registry import ToolRegistry
+from jimmy.utils.limits import truncate_output
 
 SYSTEM_PROMPT = """You are Jimmy🕺, a terminal-native coding agent.
 
@@ -68,8 +69,14 @@ class AgentLoop:
 
                     result = tool.execute(tool_call.arguments)
 
-                except Exception as exc:
-                    result = f"Tool error: {type(exc).__name__}: {exc}"
+                    result = truncate_output(str(result))
+
+                except (ValueError, TypeError) as exc:
+                    result = (
+                        f"Tool '{tool_call.name}' failed.\n"
+                        f"Error type: {type(exc).__name__}\n"
+                        f"Error: {exc}"
+                    )
 
                 state.add_message(
                     {
@@ -80,4 +87,4 @@ class AgentLoop:
                     }
                 )
 
-        raise RuntimeError(f"Jimmy stopped after reaching the {self.max_turns}-turn limit.")
+        raise RuntimeError(f"Jimmy stopped 🛑 after reaching the maximum of {self.max_turns} turns.")
