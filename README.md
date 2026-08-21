@@ -9,6 +9,8 @@
   Your terminal-native AI coding agent.
 </p>
 
+
+
 <p align="center">
   <code>task → think → code → test → ship</code>
 </p>
@@ -21,16 +23,9 @@
 
 ### 🧃 Jimmy in Action
 
-```text
-$ jimmy "fix this bug"
-
-🧬 Jimmy
-├─ 🔎 Inspecting codebase...
-├─ 🧠 Thinking...
-├─ ✏️ Patching files...
-├─ 🧪 Running tests...
-└─ ✅ Fixed. Ship it.
-```
+<p align="center">
+  <img src="./public/jimmy-img.png" alt="Jimmy Code" width="700">
+</p>
 
 ### 🥚 Jimmy Has Opinions
 
