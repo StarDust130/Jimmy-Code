@@ -18,8 +18,8 @@
 | ✅ | **07** | 💻 **Shell / Test** | Run commands and tests |
 | ✅ | **08** | 🔄 **Agent Loop** ⭐ | LLM → Tool → Result → LLM |
 | ✅ | **09** | 🧠 **State** | Remember the current task |
-| ⭕ | **10** | 🛡️ **Safety** | Permissions, limits, timeouts |
-| ⭕ | **11** | 🧪 **Real Testing** | Solve real-world bugs |
+| ✅ | **10** | 🛡️ **Safety** | Permissions, limits, timeouts |
+| ✅ | **11** | 🧪 **Real Testing** | Solve real-world bugs |
 | ⭕ | **12** | ✨ **CLI Polish** | Streaming, errors, Ctrl-C |
 
 **Legend:** `✅ Done` · `⭕ Up next`
