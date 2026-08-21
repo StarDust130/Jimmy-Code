@@ -1,9 +1,8 @@
-from typing import Any
-
 from jimmy.llm.base import LLMProvider
+from jimmy.state.session import SessionState
 from jimmy.tools.registry import ToolRegistry
 
-SYSTEM_PROMPT = """You are Jimmy, a terminal-native coding agent.
+SYSTEM_PROMPT = """You are Jimmy🕺, a terminal-native coding agent.
 
 You work inside the user's current project.
 
@@ -29,32 +28,35 @@ class AgentLoop:
         self.max_turns = max_turns
 
     def run(self, task: str) -> str:
-        messages: list[dict[str, Any]] = [
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT,
-            },
-            {
-                "role": "user",
-                "content": task,
-            },
-        ]
+        state = SessionState(
+            task=task,
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": task,
+                },
+            ],
+        )
 
         tool_schemas = self.tools.schemas()
 
-        #🕺AGENT LOOP (Start Here) ➿
-        for turn in range(1, self.max_turns + 1):
+        while state.turn_count < self.max_turns:
+            turn = state.next_turn()
+
             print(f"\n🧠 Turn {turn}")
 
             response = self.llm.chat(
-                messages=messages,
+                messages=state.messages,
                 tools=tool_schemas,
             )
 
             if response.assistant_message:
-                messages.append(response.assistant_message)
+                state.add_message(response.assistant_message)
 
-            # 💬 Send the assistant's message to the user.
             if not response.tool_calls:
                 return response.content or ""
 
@@ -63,12 +65,13 @@ class AgentLoop:
 
                 try:
                     tool = self.tools.get(tool_call.name)
+
                     result = tool.execute(tool_call.arguments)
 
                 except Exception as exc:
                     result = f"Tool error: {type(exc).__name__}: {exc}"
 
-                messages.append(
+                state.add_message(
                     {
                         "role": "tool",
                         "tool_call_id": tool_call.id,
