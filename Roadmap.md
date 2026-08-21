@@ -20,7 +20,7 @@
 | ✅ | **09** | 🧠 **State** | Remember the current task |
 | ✅ | **10** | 🛡️ **Safety** | Permissions, limits, timeouts |
 | ✅ | **11** | 🧪 **Real Testing** | Solve real-world bugs |
-| ⭕ | **12** | ✨ **CLI Polish** | Streaming, errors, Ctrl-C |
+| ✅ | **12** | ✨ **CLI Polish** | Streaming, errors, Ctrl-C |
 
 **Legend:** `✅ Done` · `⭕ Up next`
 
