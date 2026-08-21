@@ -1,70 +1,117 @@
 Screen {
-    background: #0b0d0f;
-    color: #d6d9dd;
+    background: #070a0f;
+    color: #d8dee9;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   TOP BAR
+   ──────────────────────────────────────────────────────────── */
 
 #topbar {
     dock: top;
     height: 3;
 
-    background: #0b0d0f;
+    background: #070a0f;
 
-    border-bottom: solid #30363d;
+    border-bottom: solid #1e293b;
 
     padding: 0 2;
 }
 
 #brand {
     width: 1fr;
+
+    color: #67e8f9;
+
     content-align: left middle;
 }
 
 #project {
     width: auto;
-    color: #7d8792;
+
+    color: #93c5fd;
+
     content-align: right middle;
+
     padding: 0 2;
 }
 
 #clock {
-    width: 8;
-    color: #adb5bd;
+    width: 9;
+
+    color: #22d3ee;
+
     content-align: right middle;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   MAIN AREA
+   ──────────────────────────────────────────────────────────── */
 
 #main {
     width: 100%;
     height: 1fr;
+
     padding: 1 2;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   JIMMY CODE LOGO
+   ──────────────────────────────────────────────────────────── */
+
 #logo {
     height: 8;
-    color: #e3e6e8;
+
     padding: 0 1;
+
+    color: #67e8f9;
+
+    text-style: bold;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   STATUS
+   ──────────────────────────────────────────────────────────── */
+
 #status {
-    height: 2;
+    height: 3;
+
     padding: 0 1;
+
+    color: #c4b5fd;
+
+    border-bottom: solid #1e293b;
+
     content-align: left middle;
-    border-bottom: solid #272d32;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   ACTIVITY LOG
+   ──────────────────────────────────────────────────────────── */
 
 #activity {
     width: 100%;
     height: 1fr;
 
-    background: #0b0d0f;
+    background: #0b1017;
 
-    border: solid #30363d;
+    color: #d8dee9;
+
+    border: solid #164e63;
 
     padding: 1;
 
     scrollbar-size: 1 1;
-    scrollbar-background: #0b0d0f;
-    scrollbar-color: #3b434b;
+
+    scrollbar-background: #0b1017;
+    scrollbar-color: #164e63;
+    scrollbar-color-hover: #0891b2;
+    scrollbar-color-active: #22d3ee;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   INPUT
+   ──────────────────────────────────────────────────────────── */
 
 #prompt {
     width: 100%;
@@ -72,34 +119,91 @@ Screen {
 
     margin-top: 1;
 
-    border: solid #30363d;
+    background: #0a111a;
 
-    background: #101316;
+    color: #e0f2fe;
 
-    color: #e0e3e6;
+    border: solid #1e3a5f;
 
     padding: 0 1;
 }
 
 #prompt:focus {
-    border: solid #707982;
+    background: #0b1520;
+
+    color: #f0f9ff;
+
+    border: solid #22d3ee;
 }
 
 #prompt.-disabled {
-    opacity: 0.5;
+    opacity: 0.45;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   FOOTER
+   ──────────────────────────────────────────────────────────── */
 
 Footer {
     height: 1;
 
-    background: #111418;
-    color: #707982;
+    background: #090d13;
+
+    color: #64748b;
 }
 
 Footer > .footer--key {
-    color: #d0d5da;
+    color: #fbbf24;
 }
 
 Footer > .footer--description {
-    color: #707982;
+    color: #94a3b8;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   GENERAL TEXTUAL STATES
+   ──────────────────────────────────────────────────────────── */
+
+
+
+RichLog {
+    scrollbar-size: 1 1;
+}
+
+/* Selection */
+.selection {
+    background: #164e63;
+    color: #ecfeff;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   OPTIONAL UTILITY CLASSES
+   ──────────────────────────────────────────────────────────── */
+
+.accent {
+    color: #22d3ee;
+}
+
+.blue {
+    color: #60a5fa;
+}
+
+.purple {
+    color: #a78bfa;
+}
+
+.green {
+    color: #4ade80;
+}
+
+.yellow {
+    color: #facc15;
+}
+
+.red {
+    color: #fb7185;
+}
+
+.muted {
+    color: #64748b;
 }
