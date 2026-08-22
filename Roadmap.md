@@ -76,6 +76,14 @@
 
 </details>
 
+🧭 V2 at a Glance
+
+- 🧠 01–07 — Agent Intelligence
+- 🛡️ 08–13 — Reliability & Control
+- 🤖 14–16 — Model Intelligence
+- 🧩 17–22 — Extensibility & Multi-Agent
+- 📊 23–30 — Evaluation & Productization
+
 **V2 status: `0 / 30` complete 🚧**
 
 ---
