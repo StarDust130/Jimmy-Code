@@ -1,227 +1,274 @@
-# 🧠 Jimmy — Code Agent V1 Roadmap
+# 🧠 Jimmy — Coding Agent
 
-> **Jimmy is a lightweight coding agent that turns a task into a tested solution.**
-> Inspect the codebase → think → use tools → test → done. ✅
+> **Jimmy turns a plain-English task into a tested code change.**
+>
+> `inspect → think → act → test → done` ✅
 
 ---
 
-## 🚀 V1 Roadmap
+## 🗺️ Roadmap
 
-| Status | # | Milestone | Goal |
-|:---:|:---:|---|---|
-| ✅ | **01** | 📂 **Project Setup** | `pyproject.toml`, dependencies, configuration |
-| ✅ | **02** | 🐍 **CLI** | `jimmy "fix this bug"` |
-| ✅ | **03** | 🤖 **LLM Provider** | OpenAI, DeepSeek, Gemini, Groq |
-| ✅ | **04** | 🔧 **Tool System** | Tool interface + registry |
-| ✅ | **05** | 🔍 **Search + Read** | Explore and inspect the codebase |
-| ✅ | **06** | ✏️ **Edit** | Safely modify files |
-| ✅ | **07** | 💻 **Shell / Test** | Run commands and tests |
-| ✅ | **08** | 🔄 **Agent Loop** ⭐ | LLM → Tool → Result → LLM |
-| ✅ | **09** | 🧠 **State** | Remember the current task |
-| ✅ | **10** | 🛡️ **Safety** | Permissions, limits, timeouts |
-| ✅ | **11** | 🧪 **Real Testing** | Solve real-world bugs |
-| ✅ | **12** | ✨ **CLI Polish** | Streaming, errors, Ctrl-C |
+### 🏁 V1 — Foundation ✅🎉
 
-**Legend:** `✅ Done` · `⭕ Up next`
+<details>
+<summary><strong>🎉 View V1 milestones</strong></summary>
 
-## 🗺️ The Journey
+|Status     |    #   | Milestone            | Goal                                           |
+| :-: | :----: | -------------------- | ---------------------------------------------- |
+|  ✅  | **01** | 📂 **Project Setup** | `pyproject.toml`, dependencies & configuration |
+|  ✅  | **02** | 🐍 **CLI**           | `jimmy "fix this bug"`                         |
+|  ✅  | **03** | 🤖 **LLM Providers** | OpenAI, DeepSeek, Gemini & Groq                |
+|  ✅  | **04** | 🔧 **Tool System**   | Tool interface + registry                      |
+|  ✅  | **05** | 🔍 **Search + Read** | Explore and inspect the codebase               |
+|  ✅  | **06** | ✏️ **Edit**          | Safely modify files                            |
+|  ✅  | **07** | 💻 **Shell / Test**  | Run commands and tests                         |
+|  ✅  | **08** | 🔄 **Agent Loop** ⭐  | LLM → Tool → Result → LLM                      |
+|  ✅  | **09** | 🧠 **State**         | Remember the current task                      |
+|  ✅  | **10** | 🛡️ **Safety**       | Permissions, limits & timeouts                 |
+|  ✅  | **11** | 🧪 **Real Testing**  | Solve real-world bugs                          |
+|  ✅  | **12** | ✨ **CLI Polish**     | Streaming, errors & Ctrl-C                     |
+
+</details>
+
+**V1 status: `12 / 12` complete ✅**
+
+---
+
+### 🚀 V2 — Intelligence & Scale
+
+
+
+<details open>
+<summary><strong>🚧 View V2 milestones</strong></summary>
+
+|Status     |    #   | Milestone                       | What it unlocks                              |
+| :-: | :----: | ------------------------------- | -------------------------------------------- |
+|  ⭕  | **01** | 🧠 **Agent Architecture**       | Planning, execution, observation & recovery  |
+|  ⭕  | **02** | 📋 **Planning System**          | Create and track real task plans             |
+|  ⭕  | **03** | 🧭 **Codebase Exploration**     | Understand project structure before editing  |
+|  ⭕  | **04** | 🛠️ **Tool System V2**          | Schemas, validation, results & metadata      |
+|  ⭕  | **05** | ✂️ **Context Management**       | Compression, summarization & context budgets |
+|  ⭕  | **06** | 🔄 **Recovery + Retry**         | Recover from failed tools, tests & edits     |
+|  ⭕  | **07** | 🧪 **Test → Fix → Retest**      | Autonomous debugging loops                   |
+|  ⭕  | **08** | 🌳 **Git Intelligence**         | Status, diff, branches, commits & rollback   |
+|  ⭕  | **09** | 🔐 **Permission System**        | Approve dangerous actions                    |
+|  ⭕  | **10** | 💾 **Session Persistence**      | Resume interrupted sessions                  |
+|  ⭕  | **11** | ⚡ **Parallel Execution**        | Run independent tools concurrently           |
+|  ⭕  | **12** | 📊 **Observability**            | Logs, traces, tokens, latency & cost         |
+|  ⭕  | **13** | 💰 **Cost + Budgets**           | Control task & model spending                |
+|  ⭕  | **14** | 🤖 **Multi-Provider LLM**       | Cloud + local model support                  |
+|  ⭕  | **15** | 🧩 **Model Routing**            | Pick the right model per task                |
+|  ⭕  | **16** | 🧠 **Coding Intelligence**      | Symbols, language-aware search & discovery   |
+|  ⭕  | **17** | 🔌 **MCP Support**              | Connect external tools & services            |
+|  ⭕  | **18** | 🪝 **Hooks System**             | Tool, session & lifecycle hooks              |
+|  ⭕  | **19** | 🧱 **Workspace Isolation**      | Worktrees + optional sandbox                 |
+|  ⭕  | **20** | 🔍 **Diff Review**              | Review changes before finishing              |
+|  ⭕  | **21** | 🧑‍⚖️ **Reviewer Agent**        | Independent implementation review            |
+|  ⭕  | **22** | 🔁 **Revision Loop**            | Review → fix → review                        |
+|  ⭕  | **23** | 🧪 **Evaluation Harness**       | Benchmark repeatable coding tasks            |
+|  ⭕  | **24** | 📈 **Agent Metrics**            | Pass rate, cost/task & failure reasons       |
+|  ⭕  | **25** | 🖥️ **TUI V2**                  | Plans, tools, diffs & progress               |
+|  ⭕  | **26** | ⚙️ **Configuration**            | Project, model & tool settings               |
+|  ⭕  | **27** | 🧰 **Plugin Architecture**      | Add tools without changing core              |
+|  ⭕  | **28** | 📦 **Packaging + Distribution** | Install Jimmy with one command               |
+|  ⭕  | **29** | 🛡️ **Production Hardening**    | Reliability, security & concurrency          |
+|  ⭕  | **30** | 🏁 **V2 Release**               | Stable production-style coding agent         |
+
+</details>
+
+**V2 status: `0 / 30` complete 🚧**
+
+---
+
+## 🧭 V2 Principles
+
+V2 is not just about adding more features.
+It is about making Jimmy **more capable without becoming unpredictable.**
+
+| Principle                     | What it means                                       |
+| ----------------------------- | --------------------------------------------------- |
+| 🧠 **Reason Before Acting**   | Build a plan before making complex changes          |
+| 🔄 **Recover, Don't Restart** | Failures should trigger recovery and retry          |
+| 🧪 **Verify Everything**      | Changes should be tested and reviewed               |
+| 🛡️ **Safety First**          | Dangerous actions require explicit control          |
+| 👀 **Stay Observable**        | Users should understand what Jimmy is doing         |
+| 💰 **Respect Budgets**        | Control tokens, models, time and cost               |
+| 🧩 **Composable by Design**   | Tools, models and plugins should remain replaceable |
+| 📦 **Isolate Work**           | Keep agent changes safe and reversible              |
+| ⚡ **Scale Intelligently**     | Parallelize work when it is safe and useful         |
+| 🎯 **Optimize for Outcomes**  | Measure success by verified task completion         |
+
+> **V1:** Build the foundation. ✅
+> **V2:** Make the foundation intelligent. 🚀
+
+---
+
+## 🏗️ Architecture
+
+V1 established the basic loop. V2 expands it into a more capable runtime:
 
 ```text
-📂 Project Setup
-       │
-       ▼
-🐍 CLI
-       │
-       ▼
-🤖 LLM Provider
-       │
-       ▼
-🔧 Tool System
-       │
-       ▼
-🔍 Search + Read Tools
-       │
-       ▼
-✏️ Edit Tool
-       │
-       ▼
-💻 Shell / Test Tool
-       │
-       ▼
-🔄 Agent Loop
-       │
-       ▼
-🧠 State + Conversation
-       │
-       ▼
-🛡️ Safety + Limits
-       │
-       ▼
-🧪 Real Testing
-       │
-       ▼
-✨ CLI Polish
-       │
-       ▼
-🎉 Jimmy V1 Finished
+                         👤 User
+                           │
+                           ▼
+                      🖥️ TUI / CLI
+                           │
+                           ▼
+                    🧠 Agent Runtime
+                           │
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+           📋 Plan      🧠 State     💰 Budget
+              └────────────┼────────────┘
+                           ▼
+                    🤖 Model Router
+                           │
+               ┌───────────┼───────────┐
+               ▼           ▼           ▼
+            OpenAI      Gemini      DeepSeek
+               │
+               ▼
+             🔄 PLAN → ACT → OBSERVE
+                    ↑          │
+                    └─ RECOVER ┘
+                           │
+                           ▼
+                    🔧 Tool Runtime
+                           │
+                ┌──────────┼──────────┐
+                ▼          ▼          ▼
+             🔍 Search   ✏️ Edit   💻 Shell
+                └──────────┼──────────┘
+                           ▼
+                       🛡️ Policy
+                           │
+                           ▼
+                     🌳 Workspace
+                      ┌────┴────┐
+                      ▼         ▼
+                   Git Repo   Sandbox
+                      │
+                      ▼
+                  🔍 Reviewer
+                      │
+                      ▼
+                   ✅ Result
 ```
 
 ---
 
-## ⚙️ Core Agent Loop
-
-The heart of Jimmy is the agent loop:
+## 🔄 Core Agent Loop
 
 ```text
-┌──────────┐
-│   User   │
-│  Task    │
-└────┬─────┘
-     │
-     ▼
-┌──────────┐
-│   LLM    │
-│  Think   │
-└────┬─────┘
-     │
-     ▼
-┌──────────┐
-│   Tool   │
-│  Execute │
-└────┬─────┘
-     │
-     ▼
-┌──────────┐
-│  Result  │
-└────┬─────┘
-     │
-     └───────────► back to LLM
-                     │
-                     ▼
-                   Done ✅
+Task
+ ↓
+Plan
+ ↓
+Act
+ ↓
+Observe
+ ↓
+Recover if needed
+ ↓
+Verify
+ ↓
+Done ✅
 ```
 
-### 🔁 The loop
+The V1 loop was:
 
-```text
-LLM
- ↓
-Choose tool
- ↓
-Execute tool
- ↓
-Observe result
- ↓
-Think again
- ↓
-Choose next tool
- ↓
-...
- ↓
-Finish
-```
+> `LLM → Tool → Result → LLM`
+
+V2 evolves it into:
+
+> `PLAN → ACT → OBSERVE → RECOVER → VERIFY`
 
 ---
 
-## 🎯 The Goal
+## 🎯 What Jimmy Is Becoming
 
-> ### `task → inspect → think → tools → test → done`
-
-Jimmy shouldn't just **generate code**.
-
-It should:
-
-**understand → investigate → act → verify**
-
----
-
-## 🧩 What V1 Unlocks
-
-By the end of V1, Jimmy should be able to take something like:
+Give Jimmy a task:
 
 ```bash
 jimmy "fix the failing authentication test"
 ```
 
-and autonomously:
+The long-term goal is:
 
 ```text
-🔍 Inspect repository
-      ↓
-🧠 Understand the failure
-      ↓
-📖 Read relevant files
-      ↓
-✏️ Modify the code
-      ↓
+🔍 Understand the repository
+        ↓
+📋 Build a plan
+        ↓
+🧠 Select the right model
+        ↓
+🔧 Execute tools
+        ↓
 🧪 Run tests
-      ↓
-🔄 Iterate if needed
-      ↓
-✅ Confirm the fix
+        ↓
+🔄 Recover from failures
+        ↓
+🔍 Review the changes
+        ↓
+✅ Deliver a verified result
 ```
 
 ---
 
-## 🛡️ V1 Principles
+## 🧩 What V1 Proved
 
-Jimmy should be:
-
-* **Simple** — small, understandable architecture
-* **Composable** — tools and providers are easy to add
-* **Safe** — controlled permissions and execution limits
-* **Observable** — clear output and useful errors
-* **Testable** — real repositories, real bugs, real verification
-
----
-
-## 🏁 Definition of Done
-
-Jimmy V1 is finished when it can reliably:
+V1 established that Jimmy can:
 
 ```text
-✅ Accept a coding task from the CLI
-✅ Understand an unfamiliar codebase
-✅ Search and read files
-✅ Edit files safely
-✅ Run shell commands and tests
-✅ Iterate using an agent loop
-✅ Keep task state
-✅ Handle failures and timeouts
+✅ Accept real coding tasks
+✅ Explore unfamiliar repositories
+✅ Read and modify files
+✅ Execute shell commands
+✅ Run tests
+✅ Maintain task state
+✅ Iterate through an agent loop
 ✅ Respect safety limits
 ✅ Solve real coding bugs
-✅ Present the process cleanly in the CLI
 ```
+
+**V1 is done.**
+Now the focus shifts from **making Jimmy work** to **making Jimmy work reliably at scale**.
 
 ---
 
-## ⭐ Jimmy V1
+## ⭐ The Jimmy Vision
 
 ```text
-        ┌──────────────────────┐
-        │        JIMMY         │
-        │     CODE AGENT       │
-        └──────────┬───────────┘
+        ┌─────────────────────┐
+        │        JIMMY        │
+        │    CODE AGENT 🧠    │
+        └──────────┬──────────┘
                    │
                    ▼
-             Give it a task
+              Give it a task
                    │
                    ▼
-              🔍 Inspect
+                🔍 Inspect
                    │
                    ▼
-               🧠 Think
+                📋 Plan
+                   │
+                   ▼
+                🧠 Reason
                    │
                    ▼
               🔧 Use tools
                    │
                    ▼
-               🧪 Test
+                 🧪 Test
                    │
                    ▼
-                ✅ Done
+                🔍 Review
+                   │
+                   ▼
+                 ✅ Done
 ```
 
 > **From a plain-English task to a verified code change.**
 >
-> **That is Jimmy V1.** 🚀
+> **V1 built Jimmy. V2 teaches Jimmy how to work.** 🚀
