@@ -85,6 +85,11 @@
 - 📊 23–30 — Evaluation & Productization
 
 **V2 status: `0 / 30` complete 🚧**
+---
+
+🎍 Extra 
+- Add agent Skills (e.g., `jimmy skills list`) to show what Jimmy can do
+
 
 ---
 
