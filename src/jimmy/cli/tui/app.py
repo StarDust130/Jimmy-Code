@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from rich.text import Text
 from textual import work
@@ -29,7 +29,7 @@ class JimmyTUI(App[None]):
     CSS_PATH = "styles.tcss"
     TITLE = "Jimmy"
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("ctrl+c", "cancel_task", "Cancel"),
         ("q", "quit_app", "Quit"),
     ]
@@ -235,7 +235,14 @@ class JimmyTUI(App[None]):
                 self._agent_event,
             )
 
-        except Exception as exc:
+        except (
+            RuntimeError,
+            ValueError,
+            TypeError,
+            OSError,
+            TimeoutError,
+            PermissionError,
+        ) as exc:
             self.call_from_thread(
                 self._agent_failed,
                 exc,
