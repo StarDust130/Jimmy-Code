@@ -51,7 +51,7 @@ class AgentLoop:
             if on_event is not None:
                 on_event(event)
 
-        plan = self.planner.create_initial_plan(task)
+        plan_state = self.planner.create_initial_plan(task)
 
         state = SessionState(
             task=task,
@@ -62,7 +62,7 @@ class AgentLoop:
                 },
                 {
                     "role": "user",
-                    "content": plan.instruction,
+                    "content": (f"Task:\n{task}\n\nCurrent plan:\n{plan_state.summary()}"),
                 },
             ],
         )
