@@ -2,38 +2,41 @@ import time
 from collections.abc import Callable
 
 from jimmy.agent.events import AgentEvent
+from jimmy.agent.executor import ToolExecutor
+from jimmy.agent.observer import Observer
+from jimmy.agent.planner import Planner
+from jimmy.agent.recovery import RecoveryManager
 from jimmy.llm.base import LLMProvider
 from jimmy.state.session import SessionState
 from jimmy.tools.registry import ToolRegistry
 from jimmy.utils.limits import truncate_output
 
-SYSTEM_PROMPT = """You are Jimmy, a terminal-native coding agent.
-
-You work inside the user's current project.
-
-Use the available tools to inspect files, search code, edit files,
-and run commands when needed.
-
-Do not claim you changed something unless you actually used a tool
-to make the change.
-
-Keep working until the task is complete.
-"""
-
+from .prompt import SYSTEM_PROMPT
 
 EventHandler = Callable[[AgentEvent], None]
 
 
 class AgentLoop:
+    """Coordinates planning, LLM reasoning, tool execution, observation, and recovery."""
+
     def __init__(
         self,
         llm: LLMProvider,
         tools: ToolRegistry,
         max_turns: int = 20,
+        planner: Planner | None = None,
+        executor: ToolExecutor | None = None,
+        observer: Observer | None = None,
+        recovery: RecoveryManager | None = None,
     ) -> None:
         self.llm = llm
         self.tools = tools
         self.max_turns = max_turns
+
+        self.planner = planner or Planner()
+        self.executor = executor or ToolExecutor(tools)
+        self.observer = observer or Observer()
+        self.recovery = recovery or RecoveryManager()
 
     def run(
         self,
@@ -48,6 +51,8 @@ class AgentLoop:
             if on_event is not None:
                 on_event(event)
 
+        plan = self.planner.create_initial_plan(task)
+
         state = SessionState(
             task=task,
             messages=[
@@ -57,7 +62,7 @@ class AgentLoop:
                 },
                 {
                     "role": "user",
-                    "content": task,
+                    "content": plan.instruction,
                 },
             ],
         )
@@ -66,7 +71,6 @@ class AgentLoop:
 
         while state.turn_count < self.max_turns:
             turn = state.next_turn()
-
             turn_started_at = time.monotonic()
 
             emit(
@@ -76,10 +80,31 @@ class AgentLoop:
                 )
             )
 
-            response = self.llm.chat(
-                messages=state.messages,
-                tools=tool_schemas,
-            )
+            try:
+                response = self.llm.chat(
+                    messages=state.messages,
+                    tools=tool_schemas,
+                )
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                OSError,
+            ) as exc:
+                total_elapsed = time.monotonic() - started_at
+
+                message = f"LLM request failed.\nError type: {type(exc).__name__}\nError: {exc}"
+
+                emit(
+                    AgentEvent(
+                        kind="error",
+                        turn=turn,
+                        elapsed=total_elapsed,
+                        message=message,
+                    )
+                )
+
+                raise RuntimeError(message) from exc
 
             turn_elapsed = time.monotonic() - turn_started_at
 
@@ -101,7 +126,6 @@ class AgentLoop:
 
             if not response.tool_calls:
                 total_elapsed = time.monotonic() - started_at
-
                 result = response.content or ""
 
                 emit(
@@ -128,13 +152,19 @@ class AgentLoop:
                 )
 
                 try:
-                    tool = self.tools.get(tool_call.name)
-
-                    raw_result = tool.execute(tool_call.arguments)
+                    raw_result = self.executor.execute(
+                        tool_name=tool_call.name,
+                        arguments=tool_call.arguments,
+                    )
 
                     result = truncate_output(str(raw_result))
 
                     tool_elapsed = time.monotonic() - tool_started_at
+
+                    observation = self.observer.observe_success(
+                        tool_name=tool_call.name,
+                        result=result,
+                    )
 
                     emit(
                         AgentEvent(
@@ -151,14 +181,16 @@ class AgentLoop:
                     TypeError,
                     OSError,
                     RuntimeError,
+                    TimeoutError,
+                    PermissionError,
+                    FileNotFoundError,
                 ) as exc:
-                    result = (
-                        f"Tool '{tool_call.name}' failed.\n"
-                        f"Error type: {type(exc).__name__}\n"
-                        f"Error: {exc}"
-                    )
-
                     tool_elapsed = time.monotonic() - tool_started_at
+
+                    observation = self.observer.observe_failure(
+                        tool_name=tool_call.name,
+                        error=exc,
+                    )
 
                     emit(
                         AgentEvent(
@@ -170,12 +202,29 @@ class AgentLoop:
                         )
                     )
 
+                    recovery_decision = self.recovery.recover(exc)
+
+                    if not recovery_decision.should_continue:
+                        total_elapsed = time.monotonic() - started_at
+                        message = recovery_decision.message
+
+                        emit(
+                            AgentEvent(
+                                kind="error",
+                                turn=turn,
+                                elapsed=total_elapsed,
+                                message=message,
+                            )
+                        )
+
+                        raise RuntimeError(message) from exc
+
                 state.add_message(
                     {
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "name": tool_call.name,
-                        "content": result,
+                        "content": observation.result,
                     }
                 )
 
