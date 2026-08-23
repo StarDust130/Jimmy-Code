@@ -41,6 +41,7 @@ class SearchFilesTool(Tool):
             encoding="utf-8",
             errors="replace",
             timeout=30,
+            check=False,
         )
 
         if result.returncode == 1:
