@@ -66,6 +66,7 @@ def main(
     agent = AgentLoop(
         llm=llm,
         tools=tools,
+        workspace=project_root,
         max_turns=20,
     )
 
