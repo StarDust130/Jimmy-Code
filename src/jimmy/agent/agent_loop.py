@@ -6,6 +6,7 @@ from jimmy.agent.executor import ToolExecutor
 from jimmy.agent.observer import Observer
 from jimmy.agent.planner import Planner
 from jimmy.agent.recovery import RecoveryManager
+from jimmy.exploration.explorer import CodebaseExplorer
 from jimmy.llm.base import LLMProvider
 from jimmy.state.session import SessionState
 from jimmy.tools.registry import ToolRegistry
@@ -17,26 +18,30 @@ EventHandler = Callable[[AgentEvent], None]
 
 
 class AgentLoop:
-    """Coordinates planning, LLM reasoning, tool execution, observation, and recovery."""
+    """Coordinates planning, exploration, reasoning, tools, observation, and recovery."""
 
     def __init__(
         self,
         llm: LLMProvider,
         tools: ToolRegistry,
+        workspace,
         max_turns: int = 20,
         planner: Planner | None = None,
         executor: ToolExecutor | None = None,
         observer: Observer | None = None,
         recovery: RecoveryManager | None = None,
+        explorer: CodebaseExplorer | None = None,
     ) -> None:
         self.llm = llm
         self.tools = tools
+        self.workspace = workspace
         self.max_turns = max_turns
 
         self.planner = planner or Planner(llm)
         self.executor = executor or ToolExecutor(tools)
         self.observer = observer or Observer()
         self.recovery = recovery or RecoveryManager()
+        self.explorer = explorer or CodebaseExplorer(workspace)
 
     def run(
         self,
@@ -51,11 +56,14 @@ class AgentLoop:
             if on_event is not None:
                 on_event(event)
 
-        # 📝 Create the initial plan
+        # 📋 Create the initial plan.
         plan_state = self.planner.create_initial_plan(task)
 
-        # 💬 Build the conversation
-        messages = [
+        # 🧭 Explore the workspace before reasoning.
+        exploration_summary = self.explorer.summary()
+
+        # 💬 Build initial conversation context.
+        messages: list[dict[str, str]] = [
             {
                 "role": "system",
                 "content": SYSTEM_PROMPT,
@@ -64,9 +72,13 @@ class AgentLoop:
                 "role": "user",
                 "content": task,
             },
+            {
+                "role": "system",
+                "content": (f"Initial workspace exploration:\n{exploration_summary}"),
+            },
         ]
 
-        # 📋 Add the plan if one exists
+        # 📋 Add the plan when one exists.
         if plan_state is not None:
             messages.append(
                 {
@@ -75,7 +87,7 @@ class AgentLoop:
                 }
             )
 
-        # 🧠 Create session state
+        # 🧠 Create session state.
         state = SessionState(
             task=task,
             messages=messages,
@@ -83,7 +95,7 @@ class AgentLoop:
 
         tool_schemas = self.tools.schemas()
 
-        # 🔄 Main agent loop
+        # 🔄 Main ReAct loop.
         while state.turn_count < self.max_turns:
             turn = state.next_turn()
             turn_started_at = time.monotonic()
@@ -95,7 +107,7 @@ class AgentLoop:
                 )
             )
 
-            # 🤖 Ask the LLM what to do
+            # 🤖 Ask the LLM what to do next.
             try:
                 response = self.llm.chat(
                     messages=state.messages,
@@ -122,7 +134,7 @@ class AgentLoop:
 
                 raise RuntimeError(message) from exc
 
-            # ⏱️ Turn finished
+            # ⏱️ Turn finished.
             turn_elapsed = time.monotonic() - turn_started_at
 
             emit(
@@ -138,11 +150,11 @@ class AgentLoop:
                 )
             )
 
-            # 💬 Save AI message
+            # 💬 Save assistant response.
             if response.assistant_message:
                 state.add_message(response.assistant_message)
 
-            # ✅ No more tools = task complete
+            # ✅ No tool calls means the model considers the task complete.
             if not response.tool_calls:
                 total_elapsed = time.monotonic() - started_at
                 result = response.content or ""
@@ -158,7 +170,7 @@ class AgentLoop:
 
                 return result
 
-            # 🔧 Execute requested tools
+            # 🔧 Execute requested tools.
             for tool_call in response.tool_calls:
                 tool_started_at = time.monotonic()
 
@@ -172,18 +184,16 @@ class AgentLoop:
                 )
 
                 try:
-                    # ⚙️ Run the tool
                     raw_result = self.executor.execute(
                         tool_name=tool_call.name,
                         arguments=tool_call.arguments,
                     )
 
-                    # ✂️ Keep output manageable
+                    # ✂️ Limit tool output before it enters model context.
                     result = truncate_output(str(raw_result))
 
                     tool_elapsed = time.monotonic() - tool_started_at
 
-                    # 👀 Record successful result
                     observation = self.observer.observe_success(
                         tool_name=tool_call.name,
                         result=result,
@@ -210,7 +220,6 @@ class AgentLoop:
                 ) as exc:
                     tool_elapsed = time.monotonic() - tool_started_at
 
-                    # ❌ Record failure
                     observation = self.observer.observe_failure(
                         tool_name=tool_call.name,
                         error=exc,
@@ -226,7 +235,7 @@ class AgentLoop:
                         )
                     )
 
-                    # 🛠️ Try recovery
+                    # 🛠️ Try recovery.
                     recovery_decision = self.recovery.recover(exc)
 
                     if not recovery_decision.should_continue:
@@ -244,7 +253,7 @@ class AgentLoop:
 
                         raise RuntimeError(message) from exc
 
-                # 📩 Give tool result back to the LLM
+                # 📩 Feed observation back into the LLM context.
                 state.add_message(
                     {
                         "role": "tool",
@@ -254,7 +263,7 @@ class AgentLoop:
                     }
                 )
 
-        # 🛑 Maximum turns reached
+        # 🛑 Maximum turns reached.
         total_elapsed = time.monotonic() - started_at
 
         message = f"Jimmy stopped after reaching the maximum of {self.max_turns} turns."
