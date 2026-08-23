@@ -10,6 +10,11 @@ class PlanItemStatus(StrEnum):
     BLOCKED = "blocked"
 
 
+class TaskComplexity(StrEnum):
+    SIMPLE = "simple"
+    COMPLEX = "complex"
+
+
 class PlanItem(BaseModel):
     id: str
     title: str

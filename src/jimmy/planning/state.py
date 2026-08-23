@@ -11,14 +11,22 @@ class PlanState:
         item = self._find(item_id)
         item.status = PlanItemStatus.IN_PROGRESS
 
-    def complete(self, item_id: str, notes: str | None = None) -> None:
+    def complete(
+        self,
+        item_id: str,
+        notes: str | None = None,
+    ) -> None:
         item = self._find(item_id)
         item.status = PlanItemStatus.DONE
 
         if notes is not None:
             item.notes = notes
 
-    def block(self, item_id: str, notes: str | None = None) -> None:
+    def block(
+        self,
+        item_id: str,
+        notes: str | None = None,
+    ) -> None:
         item = self._find(item_id)
         item.status = PlanItemStatus.BLOCKED
 

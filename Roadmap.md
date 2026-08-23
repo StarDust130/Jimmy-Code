@@ -43,8 +43,8 @@
 
 |Status     |    #   | Milestone                       | What it unlocks                              |
 | :-: | :----: | ------------------------------- | -------------------------------------------- |
-|  ⭕  | **01** | 🧠 **Agent Architecture**       | Planning, execution, observation & recovery  |
-|  ⭕  | **02** | 📋 **Planning System**          | Create and track real task plans             |
+|  ✅  | **01** | 🧠 **Agent Architecture**       | Planning, execution, observation & recovery  |
+|  ✅  | **02** | 📋 **Planning System**          | Create and track real task plans             |
 |  ⭕  | **03** | 🧭 **Codebase Exploration**     | Understand project structure before editing  |
 |  ⭕  | **04** | 🛠️ **Tool System V2**          | Schemas, validation, results & metadata      |
 |  ⭕  | **05** | ✂️ **Context Management**       | Compression, summarization & context budgets |
