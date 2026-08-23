@@ -52,7 +52,7 @@ class GroqProvider(LLMProvider):
                 ) from exc
 
             if not isinstance(arguments, dict):
-                raise ValueError(f"Tool arguments must be an object for {call.function.name}")
+                raise TypeError(f"Tool arguments must be an object for {call.function.name}")
 
             tool_calls.append(
                 ToolCall(
