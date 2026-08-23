@@ -30,7 +30,7 @@ class EditFileTool(Tool):
             raise ValueError("'old_text' must be a non-empty string.")
 
         if not isinstance(new_text, str):
-            raise ValueError("'new_text' must be a string.")
+            raise TypeError("'new_text' must be a string.")
 
         file_path = self.filesystem.resolve_path(path)
 
