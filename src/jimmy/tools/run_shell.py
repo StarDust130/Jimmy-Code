@@ -46,6 +46,7 @@ class RunShellTool(Tool):
                 encoding="utf-8",
                 errors="replace",
                 timeout=self.timeout,
+                check=False,
             )
         except subprocess.TimeoutExpired as exc:
             raise TimeoutError(f"Command timed out after {self.timeout} seconds.") from exc
