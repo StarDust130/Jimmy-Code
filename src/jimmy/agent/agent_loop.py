@@ -6,6 +6,8 @@ from jimmy.agent.executor import ToolExecutor
 from jimmy.agent.observer import Observer
 from jimmy.agent.planner import Planner
 from jimmy.agent.recovery import RecoveryManager
+from jimmy.context.context import ContextManager
+from jimmy.context.context_summarizer import ContextSummarizer
 from jimmy.exploration.explorer import CodebaseExplorer
 from jimmy.llm.base import LLMProvider
 from jimmy.state.session import SessionState
@@ -42,6 +44,9 @@ class AgentLoop:
         self.observer = observer or Observer()
         self.recovery = recovery or RecoveryManager()
         self.explorer = explorer or CodebaseExplorer(workspace)
+        self.context_manager = ContextManager(
+            summarizer=ContextSummarizer(llm),
+        )
 
     def run(
         self,
@@ -110,8 +115,12 @@ class AgentLoop:
 
             # 7️⃣ 🤖 Ask the LLM what to do.
             try:
+                context = self.context_manager.prepare(
+                    state.messages,
+                )
+
                 response = self.llm.chat(
-                    messages=state.messages,
+                    messages=context,
                     tools=tool_schemas,
                 )
             except (
@@ -171,7 +180,6 @@ class AgentLoop:
 
                 return result
 
-            
             # ======================================
             # ! 1️⃣1️⃣ 🔧 Run each requested tool.
             # ======================================
