@@ -1,9 +1,13 @@
-from typing import Any
-
 import pytest
+from pydantic import BaseModel
 
 from jimmy.tools.base import Tool
+from jimmy.tools.models import ToolMetadata, ToolResult
 from jimmy.tools.registry import ToolRegistry
+
+
+class FakeInput(BaseModel):
+    value: str
 
 
 class FakeTool(Tool):
@@ -16,15 +20,19 @@ class FakeTool(Tool):
         return "A fake tool for testing."
 
     @property
-    def input_schema(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-        }
+    def metadata(self) -> ToolMetadata:
+        return ToolMetadata()
 
-    def execute(self, arguments: dict[str, Any]) -> str:
-        return "hello from fake tool"
+    @property
+    def input_model(self) -> type[BaseModel]:
+        return FakeInput
+
+    def execute(self, arguments: BaseModel) -> ToolResult:
+        args = FakeInput.model_validate(arguments)
+
+        return ToolResult.ok(
+            output=f"hello {args.value}",
+        )
 
 
 def test_register_and_get_tool() -> None:
@@ -39,7 +47,10 @@ def test_register_and_get_tool() -> None:
 def test_get_unknown_tool() -> None:
     registry = ToolRegistry()
 
-    with pytest.raises(KeyError, match="Unknown tool"):
+    with pytest.raises(
+        KeyError,
+        match="Unknown tool",
+    ):
         registry.get("does_not_exist")
 
 
@@ -49,5 +60,8 @@ def test_duplicate_tool_registration() -> None:
 
     registry.register(tool)
 
-    with pytest.raises(ValueError, match="already registered"):
+    with pytest.raises(
+        ValueError,
+        match="already registered",
+    ):
         registry.register(tool)
