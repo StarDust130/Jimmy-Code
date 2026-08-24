@@ -61,7 +61,10 @@ def main(
         model=settings.groq_model,
     )
 
-    tools = create_default_registry(project_root)
+    tools = create_default_registry(
+        project_root,
+        llm=llm,
+    )
 
     agent = AgentLoop(
         llm=llm,
