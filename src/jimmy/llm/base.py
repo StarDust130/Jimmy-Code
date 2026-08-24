@@ -1,17 +1,33 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any
 
-from jimmy.llm.models import LLMResponse
+
+@dataclass(frozen=True)
+class ToolCall:
+    """Normalized tool call returned by any LLM provider."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class LLMResponse:
+    """Normalized response returned by any LLM provider."""
+
+    content: str
+    tool_calls: list[ToolCall]
+    assistant_message: dict[str, Any] | None = None
 
 
 class LLMProvider(ABC):
-    """Interface every LLM provider must implement."""
+    """Common interface for every Jimmy model provider."""
 
     @abstractmethod
     def chat(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
-        tool_choice: Any | None = None,
     ) -> LLMResponse:
         raise NotImplementedError
