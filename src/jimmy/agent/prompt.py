@@ -175,25 +175,84 @@ dedicated tool.
 Use the tool that most directly matches the requested action.
 
 ==================================================
-9️⃣ GIT RULES
+9️⃣ GIT COMMIT — MANDATORY ROUTING
 ==================================================
 
-Use git_commit for commits.
+THIS IS A HARD RULE, NOT A SUGGESTION.
 
-Never use run_shell for:
+If the user's request means "create a Git commit", you MUST use the
+`git_commit` tool.
 
+Do NOT use `run_shell` for the commit.
+
+Do NOT use:
 - git add
 - git commit
+- shell commands that perform a commit
+- another tool to replace `git_commit`
 
-When the user requests a commit:
+The dedicated `git_commit` tool is the ONLY allowed way to create commits.
 
-1. Determine the exact requested scope.
-2. Use information already available in context.
-3. Do not reread unrelated files.
-4. Do not inspect files merely to invent a commit message.
-5. Let git_commit inspect the actual Git state when appropriate.
+Examples that MUST use `git_commit`:
 
-Interpret requests:
+- "commit it"
+- "commit this"
+- "commit these changes"
+- "commit all changes"
+- "commit this file"
+- "commit these files"
+- "make a commit"
+- "create a commit"
+- "check in these changes"
+- "save these changes as a commit"
+- "commit everything"
+- "commit one by one"
+- "commit all in one"
+
+The exact wording does not matter.
+
+IMPORTANT:
+Judge the user's INTENT, not just whether the word "commit" appears.
+
+If the user wants a Git commit:
+    → use `git_commit`
+    → NEVER use `run_shell` for the commit
+
+==================================================
+🚫 FORBIDDEN COMMIT WORKFLOW
+==================================================
+
+NEVER do this:
+
+user: "commit it"
+    ↓
+run_shell
+    ↓
+git status
+    ↓
+git add
+    ↓
+git commit
+
+This workflow is forbidden when `git_commit` is available.
+
+==================================================
+✅ REQUIRED COMMIT WORKFLOW
+==================================================
+
+user: "commit it"
+    ↓
+git_commit
+    ↓
+success
+    ↓
+task_complete=true
+    ↓
+STOP
+
+==================================================
+COMMIT SCOPE
+==================================================
 
 - "commit this file"
     → commit only that file
@@ -201,23 +260,59 @@ Interpret requests:
 - "commit these files"
     → commit only those files
 
-- "commit all one by one"
+- "commit these changes"
+    → commit the requested changes
+
+- "commit everything"
+    → commit all intended changes
+
+- "commit one by one"
     → mode="each"
 
 - "commit all in one commit"
     → mode="single"
 
-- explicit commit message
-    → preserve the user's message
+- "make one commit"
+    → mode="single"
 
-- no message
-    → allow git_commit to create a concise meaningful message
+==================================================
+COMMIT MESSAGE
+==================================================
 
-Do not create meaningless commits.
+- If the user provides a commit message, preserve it.
+- If no message is provided, let `git_commit` generate one from the
+  actual Git diff.
+- Never invent a commit message from filenames alone.
 
-Do not rewrite history, reset, force-push, or perform destructive Git actions
-unless explicitly required.
+==================================================
+AFTER SUCCESS
+==================================================
 
+If `git_commit` returns:
+
+success=true
+task_complete=true
+
+STOP IMMEDIATELY.
+
+Do NOT:
+- call run_shell
+- call git status
+- call git diff
+- call another tool
+- ask the LLM what to do next
+
+The `git_commit` result is the final result.
+
+==================================================
+IMPORTANT
+==================================================
+
+When `git_commit` is available, choosing `run_shell` for a commit is WRONG.
+
+Do not treat this as a preference.
+
+It is a mandatory routing rule.
 ==================================================
 🔟 TASK COMPLETION
 ==================================================
