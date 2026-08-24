@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass
+from typing import Any
 
 from jimmy.llm.base import LLMProvider
 
@@ -10,32 +11,84 @@ class CommitChange:
     diff: str
 
 
-COMMIT_MESSAGE_PROMPT = """You generate Git commit messages for Jimmy.
+PER_FILE_PROMPT = """You write short, meaningful Git commit messages.
 
-Given changed files and their diffs, return ONE short commit message
-for EACH file.
+You receive real Git diffs for multiple files.
+
+Return ONLY valid JSON.
+
+Format:
+{
+  "path/to/file.py": "🧠 improve agent routing"
+}
 
 Rules:
-- Return JSON only.
 - Use exactly the provided file paths as keys.
-- Keep each message very short: 3-7 words.
-- Start with one useful emoji.
-- Describe the actual change, not the filename alone.
-- Do not invent changes.
-- Prefer verbs such as add, fix, improve, refactor, update, remove, test.
-- Do not use generic messages like "update file" or "change code".
+- Every provided file MUST have one message.
+- Do not add extra keys.
+- 3-8 words.
+- Exactly one emoji at the beginning.
+- Describe the actual change.
+- Do not merely repeat the filename.
+- Do not invent behavior.
+- Use different messages for meaningfully different changes.
 
-Example:
+Emoji guide:
+✨ new feature
+🐛 bug fix
+♻️ refactor
+🧪 tests
+⚡ performance
+🔐 security
+🎨 UI/style
+📝 documentation
+🧹 cleanup
+🔧 configuration/integration
+🏗️ architecture
+📦 dependency
+🔥 removal
+🛠️ tooling
+🚀 deployment
+🧠 AI/agent/model behavior
+🔌 API integration
+🗂️ organization
+
+Bad:
+"🔧 update file.py"
+"✨ change code"
+"🛠️ update changes"
+"🐛 fix bug"
+
+Good:
+"🏗️ split agent runtime"
+"🧪 add planner tests"
+"🐛 fix Windows path handling"
+"🧠 improve tool routing"
+"✂️ reduce context size"
+"""
+
+
+GROUP_PROMPT = """Write ONE short Git commit message for the following
+collection of actual Git diffs.
+
+Return ONLY valid JSON:
 
 {
-  "src/auth.py": "🐛 fix token validation",
-  "tests/test_auth.py": "🧪 add auth coverage"
+  "message": "🧠 improve agent architecture"
 }
+
+Rules:
+- 3-8 words.
+- Exactly one emoji at the beginning.
+- Describe the main combined change.
+- Use the actual diffs.
+- Do not invent behavior.
+- Do not use vague messages like "update files".
 """
 
 
 class CommitMessageGenerator:
-    """Generates meaningful commit messages from Git diffs."""
+    """Generates useful commit messages from Git diffs."""
 
     def __init__(
         self,
@@ -49,22 +102,52 @@ class CommitMessageGenerator:
         self.max_chars_per_batch = max_chars_per_batch
         self.max_diff_chars_per_file = max_diff_chars_per_file
 
-    def generate(
+    def generate_per_file(
         self,
         changes: list[CommitChange],
     ) -> dict[str, str]:
-        messages: dict[str, str] = {}
+        result: dict[str, str] = {}
 
         for batch in self._batches(changes):
-            messages.update(self._generate_batch(batch))
+            batch_result = self._generate_batch(batch)
+            result.update(batch_result)
 
-        return messages
+        return result
+
+    def generate_group(
+        self,
+        changes: list[CommitChange],
+    ) -> str:
+        chunks: list[str] = []
+
+        for change in changes:
+            diff = change.diff[: self.max_diff_chars_per_file]
+
+            chunks.append(f"FILE: {change.path}\nDIFF:\n{diff}")
+
+        response = self.llm.chat(
+            messages=[
+                {
+                    "role": "system",
+                    "content": GROUP_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": "\n\n".join(chunks),
+                },
+            ],
+        )
+
+        return self._parse_group_response(
+            response.content or "",
+        )
 
     def _batches(
         self,
         changes: list[CommitChange],
     ) -> list[list[CommitChange]]:
         batches: list[list[CommitChange]] = []
+
         current: list[CommitChange] = []
         current_chars = 0
 
@@ -87,6 +170,7 @@ class CommitMessageGenerator:
                     diff=diff,
                 )
             )
+
             current_chars += size
 
         if current:
@@ -98,31 +182,30 @@ class CommitMessageGenerator:
         self,
         batch: list[CommitChange],
     ) -> dict[str, str]:
-        changes_text = "\n\n".join(f"FILE: {change.path}\nDIFF:\n{change.diff}" for change in batch)
+        changes_text = "\n\n".join(
+            (f"FILE: {change.path}\nDIFF:\n{change.diff}") for change in batch
+        )
 
         response = self.llm.chat(
             messages=[
                 {
                     "role": "system",
-                    "content": COMMIT_MESSAGE_PROMPT,
+                    "content": PER_FILE_PROMPT,
                 },
                 {
                     "role": "user",
                     "content": changes_text,
                 },
-            ]
+            ],
         )
 
-        return self._parse_response(
+        return self._parse_per_file_response(
             response.content or "",
-            {change.path for change in batch},
+            expected_paths={change.path for change in batch},
         )
 
     @staticmethod
-    def _parse_response(
-        content: str,
-        expected_paths: set[str],
-    ) -> dict[str, str]:
+    def _clean_json(content: str) -> str:
         cleaned = content.strip()
 
         if cleaned.startswith("```"):
@@ -136,17 +219,63 @@ class CommitMessageGenerator:
 
             cleaned = "\n".join(lines).strip()
 
-        data = json.loads(cleaned)
+        return cleaned
+
+    @classmethod
+    def _parse_per_file_response(
+        cls,
+        content: str,
+        expected_paths: set[str],
+    ) -> dict[str, str]:
+        data: Any = json.loads(
+            cls._clean_json(content),
+        )
 
         if not isinstance(data, dict):
             raise TypeError("Commit message response must be a JSON object.")
 
+        if set(data) != expected_paths:
+            raise ValueError(
+                "Commit message response did not contain exactly the expected file paths."
+            )
+
         result: dict[str, str] = {}
 
         for path in expected_paths:
-            message = data.get(path)
+            message = data[path]
 
-            if isinstance(message, str) and message.strip():
-                result[path] = message.strip()
+            if not isinstance(message, str):
+                raise TypeError(f"Commit message for {path} must be a string.")
+
+            message = message.strip()
+
+            if not message:
+                raise ValueError(f"Empty commit message for {path}.")
+
+            result[path] = message
 
         return result
+
+    @classmethod
+    def _parse_group_response(
+        cls,
+        content: str,
+    ) -> str:
+        data: Any = json.loads(
+            cls._clean_json(content),
+        )
+
+        if not isinstance(data, dict):
+            raise TypeError("Group commit message must be a JSON object.")
+
+        message = data.get("message")
+
+        if not isinstance(message, str):
+            raise ValueError("Group commit message is missing.")
+
+        message = message.strip()
+
+        if not message:
+            raise ValueError("Group commit message is empty.")
+
+        return message
