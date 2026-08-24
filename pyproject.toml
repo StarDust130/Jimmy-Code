@@ -14,6 +14,7 @@ dependencies = [
     "pytest>=9.1.1",
     "textual>=8.2.8",
     "pyperclip>=1.11.0",
+    "google-genai>=2.19.0",
 ]
 
 [project.scripts]
