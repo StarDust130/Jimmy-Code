@@ -84,7 +84,7 @@
 - 🧩 17–22 — Extensibility & Multi-Agent
 - 📊 23–30 — Evaluation & Productization
 
-**V2 status: `0 / 30` complete 🚧**
+**V2 status: `4 / 30` complete 🚧**
 ---
 
 🎍 Extra 
