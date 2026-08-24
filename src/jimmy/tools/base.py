@@ -1,9 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Any
+
+from pydantic import BaseModel
+
+from jimmy.tools.models import ToolMetadata, ToolResult
 
 
 class Tool(ABC):
-    """Base interface for every Jimmy tool."""
+    """Base contract for every Jimmy tool."""
 
     @property
     @abstractmethod
@@ -17,10 +20,14 @@ class Tool(ABC):
 
     @property
     @abstractmethod
-    def input_schema(self) -> dict[str, Any]:
-        """JSON schema describing the tool arguments."""
+    def metadata(self) -> ToolMetadata:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def input_model(self) -> type[BaseModel]:
         raise NotImplementedError
 
     @abstractmethod
-    def execute(self, arguments: dict[str, Any]) -> Any:
+    def execute(self, arguments: BaseModel) -> ToolResult:
         raise NotImplementedError
