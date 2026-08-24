@@ -8,6 +8,8 @@ from rich.console import Console
 from jimmy.agent.agent_loop import AgentLoop
 from jimmy.cli.tui import run_tui
 from jimmy.config.settings import Settings
+from jimmy.llm.fallback import FallbackProvider
+from jimmy.llm.gemini import GeminiProvider
 from jimmy.llm.groq import GroqProvider
 from jimmy.tools.defaults import create_default_registry
 
@@ -56,13 +58,24 @@ def main(
 
     project_root = Path.cwd().resolve()
 
-    llm = GroqProvider(
+    groq = GroqProvider(
         api_key=settings.groq_api_key,
         model=settings.groq_model,
     )
 
+    gemini = GeminiProvider(
+        api_key=settings.gemini_api_key,
+        model=settings.gemini_model,
+    )
+
+    # Jimmy agent: Gemini first, Groq fallback.
+    llm = FallbackProvider(
+        primary=gemini,
+        fallback=groq,
+    )
+
     tools = create_default_registry(
-        project_root,
+        root=project_root,
         llm=llm,
     )
 
