@@ -2,6 +2,7 @@ from pathlib import Path
 
 from jimmy.tools.edit_file import EditFileTool
 from jimmy.tools.filesystem import Filesystem
+from jimmy.tools.git_commit import GitCommitTool
 from jimmy.tools.read_file import ReadFileTool
 from jimmy.tools.registry import ToolRegistry
 from jimmy.tools.run_shell import RunShellTool
@@ -17,5 +18,6 @@ def create_default_registry(root: Path) -> ToolRegistry:
     registry.register(SearchFilesTool(filesystem))
     registry.register(EditFileTool(filesystem))
     registry.register(RunShellTool(filesystem))
+    registry.register(GitCommitTool(filesystem))
 
     return registry
