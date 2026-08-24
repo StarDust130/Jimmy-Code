@@ -1,7 +1,9 @@
 from pathlib import Path
 
 from jimmy.llm.base import LLMProvider
-from jimmy.tools.commit_message_generator import CommitMessageGenerator
+from jimmy.tools.commit_message_generator import (
+    CommitMessageGenerator,
+)
 from jimmy.tools.edit_file import EditFileTool
 from jimmy.tools.filesystem import Filesystem
 from jimmy.tools.git_commit import GitCommitTool
@@ -20,15 +22,18 @@ def create_default_registry(
     registry = ToolRegistry()
 
     registry.register(ReadFileTool(filesystem))
+
     registry.register(SearchFilesTool(filesystem))
+
     registry.register(EditFileTool(filesystem))
+
     registry.register(RunShellTool(filesystem))
 
     message_generator = CommitMessageGenerator(llm) if llm is not None else None
 
     registry.register(
         GitCommitTool(
-            filesystem,
+            filesystem=filesystem,
             message_generator=message_generator,
         )
     )
