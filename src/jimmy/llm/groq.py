@@ -7,14 +7,28 @@ from groq.types.chat import (
     ChatCompletionToolParam,
 )
 
-from jimmy.llm.base import LLMProvider
-from jimmy.llm.models import LLMResponse, ToolCall
+from jimmy.llm.base import (
+    LLMProvider,
+    LLMResponse,
+    ToolCall,
+)
+from jimmy.llm.errors import normalize_groq_error
 
 
 class GroqProvider(LLMProvider):
-    def __init__(self, api_key: str, model: str):
-        self.client = Groq(api_key=api_key)
+    """Groq implementation for Jimmy."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+    ) -> None:
         self.model = model
+
+        self.client = Groq(
+            api_key=api_key,
+            timeout=60.0,
+        )
 
     def chat(
         self,
@@ -22,7 +36,8 @@ class GroqProvider(LLMProvider):
         tools: list[dict[str, Any]] | None = None,
         tool_choice: Any | None = None,
     ) -> LLMResponse:
-
+        # 🔄 Convert Jimmy's generic messages/tools
+        # into the types expected by the Groq SDK.
         groq_messages = cast(
             list[ChatCompletionMessageParam],
             messages,
@@ -33,41 +48,45 @@ class GroqProvider(LLMProvider):
             tools or [],
         )
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=groq_messages,
-            tools=groq_tools,
-            tool_choice=tool_choice or "auto",
-        )
+        # 🤖 Call Groq.
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=groq_messages,
+                tools=groq_tools or None,
+                tool_choice=tool_choice or "auto",
+            )
+        except Exception as exc:
+            # 🛡️ Normalize provider-specific errors.
+            raise normalize_groq_error(exc) from exc
 
+        # 📩 Read model response.
         message = response.choices[0].message
 
         tool_calls: list[ToolCall] = []
 
-        for call in message.tool_calls or []:
-            try:
-                arguments = json.loads(call.function.arguments)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"Invalid tool arguments from model for {call.function.name}"
-                ) from exc
-
-            if not isinstance(arguments, dict):
-                raise TypeError(f"Tool arguments must be an object for {call.function.name}")
-
-            tool_calls.append(
-                ToolCall(
-                    id=call.id,
-                    name=call.function.name,
-                    arguments=arguments,
+        # 🔧 Parse tool calls.
+        if message.tool_calls:
+            for call in message.tool_calls:
+                arguments = self._parse_arguments(
+                    call.function.arguments,
                 )
-            )
 
+                tool_calls.append(
+                    ToolCall(
+                        id=call.id,
+                        name=call.function.name,
+                        arguments=arguments,
+                    )
+                )
+
+        # 💬 Build assistant message.
         assistant_message: dict[str, Any] = {
             "role": "assistant",
-            "content": message.content,
+            "content": message.content or "",
         }
 
+        # 🔧 Preserve tool calls for the next LLM turn.
         if message.tool_calls:
             assistant_message["tool_calls"] = [
                 {
@@ -81,8 +100,25 @@ class GroqProvider(LLMProvider):
                 for call in message.tool_calls
             ]
 
+        # 📦 Return Jimmy's normalized response.
         return LLMResponse(
-            content=message.content,
+            content=message.content or "",
             tool_calls=tool_calls,
             assistant_message=assistant_message,
         )
+
+    @staticmethod
+    def _parse_arguments(
+        arguments: str,
+    ) -> dict[str, Any]:
+        # 🧩 Parse tool arguments from JSON.
+        try:
+            value = json.loads(arguments)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Model returned invalid JSON tool arguments.") from exc
+
+        # 🛡️ Tool arguments must be an object.
+        if not isinstance(value, dict):
+            raise TypeError("Tool arguments must be a JSON object.")
+
+        return value
