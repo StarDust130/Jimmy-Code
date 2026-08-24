@@ -56,13 +56,13 @@ class AgentLoop:
             if on_event is not None:
                 on_event(event)
 
-        # 📋 Create the initial plan.
+        # 1️⃣ 📋 Create a plan.
         plan_state = self.planner.create_initial_plan(task)
 
-        # 🧭 Explore the workspace before reasoning.
+        # 2️⃣ 🧭 Explore the workspace.
         exploration_summary = self.explorer.summary()
 
-        # 💬 Build initial conversation context.
+        # 3️⃣ 💬 Build the initial LLM context.
         messages: list[dict[str, str]] = [
             {
                 "role": "system",
@@ -78,7 +78,7 @@ class AgentLoop:
             },
         ]
 
-        # 📋 Add the plan when one exists.
+        # 4️⃣ 📋 Add the plan to the context.
         if plan_state is not None:
             messages.append(
                 {
@@ -87,15 +87,16 @@ class AgentLoop:
                 }
             )
 
-        # 🧠 Create session state.
+        # 5️⃣ 🧠 Create session state.
         state = SessionState(
             task=task,
             messages=messages,
         )
 
+        # 🔧 Get tool schemas once.
         tool_schemas = self.tools.schemas()
 
-        # 🔄 Main ReAct loop.
+        # ! 🔄 6️⃣ Start the main agent loop.
         while state.turn_count < self.max_turns:
             turn = state.next_turn()
             turn_started_at = time.monotonic()
@@ -107,7 +108,7 @@ class AgentLoop:
                 )
             )
 
-            # 🤖 Ask the LLM what to do next.
+            # 7️⃣ 🤖 Ask the LLM what to do.
             try:
                 response = self.llm.chat(
                     messages=state.messages,
@@ -134,7 +135,7 @@ class AgentLoop:
 
                 raise RuntimeError(message) from exc
 
-            # ⏱️ Turn finished.
+            # 8️⃣ ⏱️ Measure the LLM turn.
             turn_elapsed = time.monotonic() - turn_started_at
 
             emit(
@@ -150,11 +151,11 @@ class AgentLoop:
                 )
             )
 
-            # 💬 Save assistant response.
+            # 9️⃣ 💬 Save the assistant message.
             if response.assistant_message:
                 state.add_message(response.assistant_message)
 
-            # ✅ No tool calls means the model considers the task complete.
+            # ! 🔟 ✅ No tool call = task is finished.
             if not response.tool_calls:
                 total_elapsed = time.monotonic() - started_at
                 result = response.content or ""
@@ -170,7 +171,10 @@ class AgentLoop:
 
                 return result
 
-            # 🔧 Execute requested tools.
+            
+            # ======================================
+            # ! 1️⃣1️⃣ 🔧 Run each requested tool.
+            # ======================================
             for tool_call in response.tool_calls:
                 tool_started_at = time.monotonic()
 
@@ -183,61 +187,60 @@ class AgentLoop:
                     )
                 )
 
-                try:
-                    raw_result = self.executor.execute(
-                        tool_name=tool_call.name,
-                        arguments=tool_call.arguments,
+                # 🛡️ ToolExecutor handles:
+                # - tool lookup
+                # - argument validation
+                # - tool execution
+                # - error normalization
+                tool_result = self.executor.execute(
+                    tool_name=tool_call.name,
+                    arguments=tool_call.arguments,
+                )
+
+                # 1️⃣2️⃣ ✂️ Prepare safe output for the LLM.
+                result = truncate_output(
+                    tool_result.output
+                    if tool_result.success
+                    else (
+                        f"Tool '{tool_call.name}' failed.\n"
+                        f"Error type: {tool_result.error_type}\n"
+                        f"Error: {tool_result.error}"
                     )
+                )
 
-                    # ✂️ Limit tool output before it enters model context.
-                    result = truncate_output(str(raw_result))
+                # 1️⃣3️⃣ ⏱️ Measure tool execution time.
+                tool_elapsed = time.monotonic() - tool_started_at
 
-                    tool_elapsed = time.monotonic() - tool_started_at
-
+                # 1️⃣4️⃣ 👀 Observe the result.
+                if tool_result.success:
                     observation = self.observer.observe_success(
                         tool_name=tool_call.name,
                         result=result,
                     )
-
-                    emit(
-                        AgentEvent(
-                            kind="tool_end",
-                            turn=turn,
-                            tool_name=tool_call.name,
-                            elapsed=tool_elapsed,
-                            message="ok",
-                        )
-                    )
-
-                except (
-                    ValueError,
-                    TypeError,
-                    OSError,
-                    RuntimeError,
-                    TimeoutError,
-                    PermissionError,
-                    FileNotFoundError,
-                ) as exc:
-                    tool_elapsed = time.monotonic() - tool_started_at
-
+                else:
                     observation = self.observer.observe_failure(
                         tool_name=tool_call.name,
-                        error=exc,
+                        error=RuntimeError(tool_result.error or "Unknown tool error."),
                     )
 
-                    emit(
-                        AgentEvent(
-                            kind="tool_end",
-                            turn=turn,
-                            tool_name=tool_call.name,
-                            elapsed=tool_elapsed,
-                            message="error",
-                        )
+                # 1️⃣5️⃣ 📢 Tell the UI what happened.
+                emit(
+                    AgentEvent(
+                        kind="tool_end",
+                        turn=turn,
+                        tool_name=tool_call.name,
+                        elapsed=tool_elapsed,
+                        message=("ok" if tool_result.success else "error"),
                     )
+                )
 
-                    # 🛠️ Try recovery.
-                    recovery_decision = self.recovery.recover(exc)
+                # 1️⃣6️⃣ 🛠️ Try recovery if the tool failed.
+                if not tool_result.success:
+                    recovery_exception = RuntimeError(tool_result.error or "Unknown tool error.")
 
+                    recovery_decision = self.recovery.recover(recovery_exception)
+
+                    # ❌ Recovery says stop.
                     if not recovery_decision.should_continue:
                         total_elapsed = time.monotonic() - started_at
                         message = recovery_decision.message
@@ -251,9 +254,9 @@ class AgentLoop:
                             )
                         )
 
-                        raise RuntimeError(message) from exc
+                        raise RuntimeError(message) from recovery_exception
 
-                # 📩 Feed observation back into the LLM context.
+                # e 1️⃣7️⃣ 📩 Send the tool result back to the LLM.
                 state.add_message(
                     {
                         "role": "tool",
@@ -263,7 +266,7 @@ class AgentLoop:
                     }
                 )
 
-        # 🛑 Maximum turns reached.
+        # ! 1️⃣8️⃣ 🛑 Stop when max turns are reached.
         total_elapsed = time.monotonic() - started_at
 
         message = f"Jimmy stopped after reaching the maximum of {self.max_turns} turns."
