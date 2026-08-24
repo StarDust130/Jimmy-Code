@@ -47,8 +47,8 @@
 |  ✅  | **02** | 📋 **Planning System**          | Create and track real task plans             |
 |  ✅  | **03** | 🧭 **Codebase Exploration**     | Understand project structure before editing  |
 |  ✅  | **04** | 🛠️ **Tool System V2**          | Schemas, validation, results & metadata      |
-|  ⭕  | **05** | ✂️ **Context Management**       | Compression, summarization & context budgets |
-|  ⭕  | **06** | 🔄 **Recovery + Retry**         | Recover from failed tools, tests & edits     |
+|  ✅  | **05** | ✂️ **Context Management**       | Compression, summarization & context budgets |
+|  ✅  | **06** | 🔄 **Recovery + Retry**         | Recover from failed tools, tests & edits     |
 |  ⭕  | **07** | 🧪 **Test → Fix → Retest**      | Autonomous debugging loops                   |
 |  ⭕  | **08** | 🌳 **Git Intelligence**         | Status, diff, branches, commits & rollback   |
 |  ⭕  | **09** | 🔐 **Permission System**        | Approve dangerous actions                    |
