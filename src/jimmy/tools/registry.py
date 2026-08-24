@@ -4,7 +4,7 @@ from jimmy.tools.base import Tool
 
 
 class ToolRegistry:
-    """Stores and retrieves available Jimmy tools."""
+    """Stores and retrieves Jimmy tools."""
 
     def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
@@ -25,15 +25,27 @@ class ToolRegistry:
         return list(self._tools.values())
 
     def schemas(self) -> list[dict[str, Any]]:
-        """Return tools in the format expected by tool-calling LLM APIs."""
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.input_schema,
-                },
-            }
-            for tool in self._tools.values()
-        ]
+        """Return tool definitions for the LLM."""
+
+        schemas: list[dict[str, Any]] = []
+
+        for tool in self._tools.values():
+            parameters = tool.input_model.model_json_schema()
+
+            parameters.pop(
+                "title",
+                None,
+            )
+
+            schemas.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": parameters,
+                    },
+                }
+            )
+
+        return schemas
