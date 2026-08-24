@@ -20,6 +20,7 @@ class GroqProvider(LLMProvider):
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
+        tool_choice: Any | None = None,
     ) -> LLMResponse:
 
         groq_messages = cast(
@@ -36,7 +37,7 @@ class GroqProvider(LLMProvider):
             model=self.model,
             messages=groq_messages,
             tools=groq_tools,
-            tool_choice="auto",
+            tool_choice=tool_choice or "auto",
         )
 
         message = response.choices[0].message
