@@ -1,7 +1,16 @@
-from typing import Any
+from pydantic import BaseModel, ConfigDict
 
 from jimmy.tools.base import Tool
 from jimmy.tools.filesystem import Filesystem
+from jimmy.tools.models import ToolMetadata, ToolResult
+
+
+class EditFileInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    old_text: str
+    new_text: str
 
 
 class EditFileTool(Tool):
@@ -16,73 +25,72 @@ class EditFileTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Replace one exact text block in a text file. The old text must exist exactly once."
+        return (
+            "Replace one exact text block in a text file. The target text must exist exactly once."
+        )
 
-    def execute(self, arguments: dict[str, Any]) -> str:
-        path = arguments.get("path")
-        old_text = arguments.get("old_text")
-        new_text = arguments.get("new_text")
+    @property
+    def metadata(self) -> ToolMetadata:
+        return ToolMetadata(
+            read_only=False,
+            destructive=True,
+            requires_confirmation=False,
+        )
 
-        if not isinstance(path, str) or not path.strip():
-            raise ValueError("'path' must be a non-empty string.")
+    @property
+    def input_model(self) -> type[BaseModel]:
+        return EditFileInput
 
-        if not isinstance(old_text, str) or not old_text:
-            raise ValueError("'old_text' must be a non-empty string.")
+    def execute(
+        self,
+        arguments: BaseModel,
+    ) -> ToolResult:
+        args = EditFileInput.model_validate(arguments)
 
-        if not isinstance(new_text, str):
-            raise TypeError("'new_text' must be a string.")
-
-        file_path = self.filesystem.resolve_path(path)
+        file_path = self.filesystem.resolve_path(args.path)
 
         if not file_path.exists():
-            raise FileNotFoundError(f"File not found: {path}")
+            raise FileNotFoundError(f"File not found: {args.path}")
 
         if not file_path.is_file():
-            raise ValueError(f"Path is not a file: {path}")
+            raise ValueError(f"Path is not a file: {args.path}")
 
         try:
             original = file_path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
-            raise ValueError(f"File is not valid UTF-8 text: {path}") from exc
+            raise ValueError(f"File is not valid UTF-8 text: {args.path}") from exc
 
-        match_count = original.count(old_text)
+        match_count = original.count(args.old_text)
 
         if match_count == 0:
-            raise ValueError("The exact old_text was not found in the file.")
+            raise ValueError("The exact old_text was not found.")
 
         if match_count > 1:
             raise ValueError(
-                f"The exact old_text matched {match_count} times. "
-                "Refuse to guess which occurrence to edit."
+                f"The exact old_text matched "
+                f"{match_count} times. "
+                "Refusing to guess which occurrence to edit."
             )
 
-        updated = original.replace(old_text, new_text, 1)
+        updated = original.replace(
+            args.old_text,
+            args.new_text,
+            1,
+        )
 
         if updated == original:
             raise ValueError("Edit produced no changes.")
 
-        file_path.write_text(updated, encoding="utf-8")
+        file_path.write_text(
+            updated,
+            encoding="utf-8",
+        )
 
-        return f"Edited {path} successfully.\nCharacters changed: {len(original)} -> {len(updated)}"
-
-    @property
-    def input_schema(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the file relative to the working directory.",
-                },
-                "old_text": {
-                    "type": "string",
-                    "description": "Exact existing text to replace.",
-                },
-                "new_text": {
-                    "type": "string",
-                    "description": "Replacement text.",
-                },
+        return ToolResult.ok(
+            output=f"Edited {args.path} successfully.",
+            metadata={
+                "path": args.path,
+                "characters_before": len(original),
+                "characters_after": len(updated),
             },
-            "required": ["path", "old_text", "new_text"],
-            "additionalProperties": False,
-        }
+        )
