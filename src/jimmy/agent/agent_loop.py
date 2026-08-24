@@ -12,7 +12,6 @@ from jimmy.exploration.explorer import CodebaseExplorer
 from jimmy.llm.base import LLMProvider
 from jimmy.state.session import SessionState
 from jimmy.tools.registry import ToolRegistry
-from jimmy.tools.routing import is_commit_request
 from jimmy.utils.limits import truncate_output
 
 from .prompt import SYSTEM_PROMPT
@@ -21,7 +20,7 @@ EventHandler = Callable[[AgentEvent], None]
 
 
 class AgentLoop:
-    """Coordinates planning, exploration, reasoning, tools, observation, and recovery."""
+    """Coordinates planning, reasoning, tools, observation, and recovery."""
 
     def __init__(
         self,
@@ -45,9 +44,27 @@ class AgentLoop:
         self.observer = observer or Observer()
         self.recovery = recovery or RecoveryManager()
         self.explorer = explorer or CodebaseExplorer(workspace)
+
         self.context_manager = ContextManager(
             summarizer=ContextSummarizer(llm),
         )
+
+    @staticmethod
+    def _is_commit_request(task: str) -> bool:
+        text = task.lower().strip()
+
+        signals = (
+            "commit ",
+            "commit all",
+            "commit this",
+            "commit these",
+            "git commit",
+            "make a commit",
+            "create a commit",
+            "save this as a commit",
+        )
+
+        return any(signal in text for signal in signals)
 
     def run(
         self,
@@ -62,39 +79,15 @@ class AgentLoop:
             if on_event is not None:
                 on_event(event)
 
-        # ======================================
-        # 1️⃣ INITIAL SETUP
-        # ======================================
-
-        # 🔎 Detect commit-only workflow.
-        is_commit = is_commit_request(task)
-
-        # 📋 Plan + 🧭 explore only when needed.
-        if is_commit:
-            plan_state = None
-            exploration_summary = ""
-        else:
+        try:
+            # 📋 Create plan.
             plan_state = self.planner.create_initial_plan(task)
+
+            # 🧭 Explore workspace.
             exploration_summary = self.explorer.summary()
 
-        # ======================================
-        # 2️⃣ BUILD INITIAL CONTEXT
-        # ======================================
-
-        # 💬 Commit tasks need only the essential context.
-        if is_commit:
+            # 💬 Build initial context.
             messages: list[dict[str, str]] = [
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT,
-                },
-                {
-                    "role": "user",
-                    "content": task,
-                },
-            ]
-        else:
-            messages = [
                 {
                     "role": "system",
                     "content": SYSTEM_PROMPT,
@@ -109,7 +102,6 @@ class AgentLoop:
                 },
             ]
 
-            # 📋 Add plan only for normal tasks.
             if plan_state is not None:
                 messages.append(
                     {
@@ -118,285 +110,263 @@ class AgentLoop:
                     }
                 )
 
-        # 🧠 Create session state.
-        state = SessionState(
-            task=task,
-            messages=messages,
-        )
-
-        # ======================================
-        # 3️⃣ PREPARE AVAILABLE TOOLS
-        # ======================================
-
-        all_tool_schemas = self.tools.schemas()
-
-        if is_commit:
-            # 🔐 Commit workflow exposes ONLY git_commit.
-            tool_schemas = [
-                schema for schema in all_tool_schemas if schema["function"]["name"] == "git_commit"
-            ]
-
-            # ❌ Fail early if git_commit is not registered.
-            if not tool_schemas:
-                raise RuntimeError("git_commit tool is required for commit tasks.")
-        else:
-            # 🛠️ Normal tasks can use all registered tools.
-            tool_schemas = all_tool_schemas
-
-        # ======================================
-        # 4️⃣ MAIN AGENT LOOP
-        # ======================================
-
-        while state.turn_count < self.max_turns:
-            turn = state.next_turn()
-            turn_started_at = time.monotonic()
-
-            emit(
-                AgentEvent(
-                    kind="turn_start",
-                    turn=turn,
-                )
+            state = SessionState(
+                task=task,
+                messages=messages,
             )
 
-            # ======================================
-            # 5️⃣ ASK LLM
-            # ======================================
+            # 🔧 Available tools.
+            all_tool_schemas = self.tools.schemas()
 
-            # 🤖 Prepare context.
-            try:
-                context = self.context_manager.prepare(
-                    state.messages,
-                )
+            if self._is_commit_request(task):
+                tool_schemas = [
+                    schema
+                    for schema in all_tool_schemas
+                    if schema["function"]["name"] == "git_commit"
+                ]
+            else:
+                tool_schemas = all_tool_schemas
 
-                # 🎯 Force git_commit on the first commit turn.
-                tool_choice = (
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "git_commit",
-                        },
-                    }
-                    if is_commit and turn == 1
-                    else None
-                )
-
-                response = self.llm.chat(
-                    messages=context,
-                    tools=tool_schemas,
-                    tool_choice=tool_choice,
-                )
-
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                OSError,
-            ) as exc:
-                total_elapsed = time.monotonic() - started_at
-
-                message = f"LLM request failed.\nError type: {type(exc).__name__}\nError: {exc}"
+            # 🔄 ReAct loop.
+            while state.turn_count < self.max_turns:
+                turn = state.next_turn()
+                turn_started_at = time.monotonic()
 
                 emit(
                     AgentEvent(
-                        kind="error",
+                        kind="turn_start",
                         turn=turn,
-                        elapsed=total_elapsed,
-                        message=message,
                     )
                 )
 
-                raise RuntimeError(message) from exc
-
-            # ======================================
-            # 6️⃣ HANDLE LLM TURN
-            # ======================================
-
-            # ⏱️ Measure LLM turn.
-            turn_elapsed = time.monotonic() - turn_started_at
-
-            emit(
-                AgentEvent(
-                    kind="turn_end",
-                    turn=turn,
-                    elapsed=turn_elapsed,
-                    message=(
-                        "final response"
-                        if not response.tool_calls
-                        else f"{len(response.tool_calls)} tool call(s)"
-                    ),
-                )
-            )
-
-            # 💬 Save assistant response.
-            if response.assistant_message:
-                state.add_message(response.assistant_message)
-
-            # ✅ No tool calls = task finished.
-            if not response.tool_calls:
-                total_elapsed = time.monotonic() - started_at
-                result = response.content or ""
-
-                emit(
-                    AgentEvent(
-                        kind="complete",
-                        turn=turn,
-                        elapsed=total_elapsed,
-                        message=result,
-                    )
-                )
-
-                return result
-
-            # ======================================
-            # 7️⃣ EXECUTE TOOLS
-            # ======================================
-
-            for tool_call in response.tool_calls:
-                tool_started_at = time.monotonic()
-
-                emit(
-                    AgentEvent(
-                        kind="tool_start",
-                        turn=turn,
-                        tool_name=tool_call.name,
-                        arguments=tool_call.arguments,
-                    )
-                )
-
-                # 🛡️ ToolExecutor handles:
-                # - tool lookup
-                # - argument validation
-                # - tool execution
-                # - error normalization
-                tool_result = self.executor.execute(
-                    tool_name=tool_call.name,
-                    arguments=tool_call.arguments,
-                )
-
-                # ======================================
-                # 8️⃣ PREPARE TOOL RESULT
-                # ======================================
-
-                # ✂️ Limit output before sending it to the LLM.
-                result = truncate_output(
-                    tool_result.output
-                    if tool_result.success
-                    else (
-                        f"Tool '{tool_call.name}' failed.\n"
-                        f"Error type: {tool_result.error_type}\n"
-                        f"Error: {tool_result.error}"
-                    )
-                )
-
-                # ⏱️ Measure tool execution time.
-                tool_elapsed = time.monotonic() - tool_started_at
-
-                # ======================================
-                # 9️⃣ OBSERVE TOOL RESULT
-                # ======================================
-
-                # 👀 Observe success or failure.
-                if tool_result.success:
-                    observation = self.observer.observe_success(
-                        tool_name=tool_call.name,
-                        result=result,
-                    )
-                else:
-                    observation = self.observer.observe_failure(
-                        tool_name=tool_call.name,
-                        error=RuntimeError(tool_result.error or "Unknown tool error."),
+                # 🤖 LLM request.
+                try:
+                    context = self.context_manager.prepare(
+                        state.messages,
                     )
 
-                # 📢 Tell the UI what happened.
-                emit(
-                    AgentEvent(
-                        kind="tool_end",
-                        turn=turn,
-                        tool_name=tool_call.name,
-                        elapsed=tool_elapsed,
-                        message=("ok" if tool_result.success else "error"),
+                    response = self.llm.chat(
+                        messages=context,
+                        tools=tool_schemas,
                     )
-                )
 
-                # ======================================
-                # 🔟 RECOVERY
-                # ======================================
-
-                # 🛠️ Try recovery when the tool fails.
-                if not tool_result.success:
-                    recovery_exception = RuntimeError(tool_result.error or "Unknown tool error.")
-
-                    recovery_decision = self.recovery.recover(recovery_exception)
-
-                    # ❌ Recovery says stop.
-                    if not recovery_decision.should_continue:
-                        total_elapsed = time.monotonic() - started_at
-                        message = recovery_decision.message
-
-                        emit(
-                            AgentEvent(
-                                kind="error",
-                                turn=turn,
-                                elapsed=total_elapsed,
-                                message=message,
-                            )
-                        )
-
-                        raise RuntimeError(message) from recovery_exception
-
-                # ======================================
-                # 1️⃣1️⃣ SAVE TOOL RESULT
-                # ======================================
-
-                # 📩 Send observation back into conversation state.
-                state.add_message(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_call.name,
-                        "content": observation.result,
-                    }
-                )
-
-                # ======================================
-                # 1️⃣2️⃣ EARLY TASK COMPLETION
-                # ======================================
-
-                # ✅ A final tool can explicitly stop the agent.
-                if (
-                    tool_call.name == "git_commit"
-                    and tool_result.success
-                    and tool_result.metadata.get("task_complete") is True
-                ):
+                except Exception as exc:
                     total_elapsed = time.monotonic() - started_at
-                    final_message = tool_result.output
+
+                    message = (
+                        str(exc)
+                        if str(exc)
+                        else (f"❌ LLM request failed.\nError type: {type(exc).__name__}")
+                    )
+
+                    emit(
+                        AgentEvent(
+                            kind="error",
+                            turn=turn,
+                            elapsed=total_elapsed,
+                            message=message,
+                        )
+                    )
+
+                    raise RuntimeError(message) from exc
+
+                turn_elapsed = time.monotonic() - turn_started_at
+
+                emit(
+                    AgentEvent(
+                        kind="turn_end",
+                        turn=turn,
+                        elapsed=turn_elapsed,
+                        message=(
+                            "final response"
+                            if not response.tool_calls
+                            else (f"{len(response.tool_calls)} tool call(s)")
+                        ),
+                    )
+                )
+
+                # 💬 Save assistant response.
+                if response.assistant_message:
+                    state.add_message(
+                        response.assistant_message,
+                    )
+
+                # ✅ Finished.
+                if not response.tool_calls:
+                    total_elapsed = time.monotonic() - started_at
+
+                    result = response.content or ""
 
                     emit(
                         AgentEvent(
                             kind="complete",
                             turn=turn,
                             elapsed=total_elapsed,
-                            message=final_message,
+                            message=result,
                         )
                     )
 
-                    return final_message
+                    return result
 
-        # ======================================
-        # 1️⃣3️⃣ MAX TURNS REACHED
-        # ======================================
+                # 🔧 Execute tools.
+                for tool_call in response.tool_calls:
+                    tool_started_at = time.monotonic()
 
-        total_elapsed = time.monotonic() - started_at
+                    emit(
+                        AgentEvent(
+                            kind="tool_start",
+                            turn=turn,
+                            tool_name=tool_call.name,
+                            arguments=tool_call.arguments,
+                        )
+                    )
 
-        message = f"Jimmy stopped after reaching the maximum of {self.max_turns} turns."
+                    try:
+                        tool_result = self.executor.execute(
+                            tool_name=tool_call.name,
+                            arguments=tool_call.arguments,
+                        )
+                    except Exception as exc:
+                        tool_elapsed = time.monotonic() - tool_started_at
 
-        emit(
-            AgentEvent(
-                kind="error",
-                turn=state.turn_count,
-                elapsed=total_elapsed,
-                message=message,
+                        message = (
+                            str(exc)
+                            if str(exc)
+                            else (f"Tool execution failed.\nError type: {type(exc).__name__}")
+                        )
+
+                        emit(
+                            AgentEvent(
+                                kind="tool_end",
+                                turn=turn,
+                                tool_name=tool_call.name,
+                                elapsed=tool_elapsed,
+                                message="error",
+                            )
+                        )
+
+                        emit(
+                            AgentEvent(
+                                kind="error",
+                                turn=turn,
+                                elapsed=(time.monotonic() - started_at),
+                                message=message,
+                            )
+                        )
+
+                        raise RuntimeError(message) from exc
+
+                    # ✂️ Limit result.
+                    result = truncate_output(
+                        tool_result.output
+                        if tool_result.success
+                        else (
+                            f"Tool '{tool_call.name}' failed.\n"
+                            f"Error type: "
+                            f"{tool_result.error_type}\n"
+                            f"Error: "
+                            f"{tool_result.error}"
+                        )
+                    )
+
+                    tool_elapsed = time.monotonic() - tool_started_at
+
+                    # 👀 Observe.
+                    if tool_result.success:
+                        observation = self.observer.observe_success(
+                            tool_name=tool_call.name,
+                            result=result,
+                        )
+                    else:
+                        observation = self.observer.observe_failure(
+                            tool_name=tool_call.name,
+                            error=RuntimeError(
+                                tool_result.error or "Unknown tool error.",
+                            ),
+                        )
+
+                    emit(
+                        AgentEvent(
+                            kind="tool_end",
+                            turn=turn,
+                            tool_name=tool_call.name,
+                            elapsed=tool_elapsed,
+                            message=("ok" if tool_result.success else "error"),
+                        )
+                    )
+
+                    # 🛠️ Recovery.
+                    if not tool_result.success:
+                        recovery_exception = RuntimeError(
+                            tool_result.error or "Unknown tool error.",
+                        )
+
+                        recovery_decision = self.recovery.recover(
+                            recovery_exception,
+                        )
+
+                        if not (recovery_decision.should_continue):
+                            total_elapsed = time.monotonic() - started_at
+
+                            message = recovery_decision.message
+
+                            emit(
+                                AgentEvent(
+                                    kind="error",
+                                    turn=turn,
+                                    elapsed=total_elapsed,
+                                    message=message,
+                                )
+                            )
+
+                            raise RuntimeError(message) from recovery_exception
+
+                    # 📩 Save tool result.
+                    state.add_message(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_call.name,
+                            "content": observation.result,
+                        }
+                    )
+
+            # 🛑 Max turns.
+            total_elapsed = time.monotonic() - started_at
+
+            message = f"Jimmy stopped after reaching the maximum of {self.max_turns} turns."
+
+            emit(
+                AgentEvent(
+                    kind="error",
+                    turn=state.turn_count,
+                    elapsed=total_elapsed,
+                    message=message,
+                )
             )
-        )
 
-        raise RuntimeError(message)
+            raise RuntimeError(message)
+
+        except KeyboardInterrupt:
+            raise
+
+        except RuntimeError:
+            raise
+
+        except Exception as exc:
+            message = (
+                str(exc)
+                if str(exc)
+                else (f"❌ Jimmy failed unexpectedly.\nError type: {type(exc).__name__}")
+            )
+
+            emit(
+                AgentEvent(
+                    kind="error",
+                    turn=0,
+                    elapsed=(time.monotonic() - started_at),
+                    message=message,
+                )
+            )
+
+            raise RuntimeError(message) from exc
