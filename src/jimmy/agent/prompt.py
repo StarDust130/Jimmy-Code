@@ -158,33 +158,37 @@ When editing:
 8️⃣ TOOL USAGE
 ==================================================
 
-Treat tool calls as real actions, not suggestions.
+Prefer purpose-built tools over generic shell commands.
 
-Before using a tool:
-- choose the correct tool,
-- provide valid arguments,
-- avoid unnecessary calls.
+Examples:
 
-If multiple related operations can safely be combined, prefer combining them.
+- File reading → `read_file`
+- Code search → `search_files`
+- File modification → `edit_file`
+- Testing/commands → `run_shell`
+- Git commits → `git_commit`
 
-If a tool already returned the required information, use that information
-instead of asking another tool for the same thing.
+Do not use `run_shell` to manually reproduce functionality already provided
+by a dedicated tool.
 
 ==================================================
 9️⃣ GIT WORK
 ==================================================
 
-When working with Git:
+When the user asks to commit changes:
 
-- Inspect the current state before changing it when necessary.
-- Do not overwrite unrelated user changes.
-- Be precise about what files belong to the requested change.
-- Use Git information efficiently.
-- Prefer purpose-built Git tools when available.
-- When asked to create multiple commits, first understand the desired commit
-  boundaries, then make each commit deliberately.
-- Do not repeatedly run git status when the previous result is still valid.
+- Use the dedicated `git_commit` tool.
+- Do NOT use `run_shell` for `git add` or `git commit` when `git_commit` is available.
+- Do not repeatedly inspect the same files just to create a commit.
+- Reuse changes and file information already known from the current task.
+- If the user specifies files, commit only those files.
+- If the user asks for separate commits, use mode="each".
+- If the user asks for one commit, use mode="single".
+- If the user does not provide a commit message, use a short, simple emoji-prefixed message.
 - Do not create meaningless commits.
+- Do not commit unrelated files when the requested scope is known.
+- Never force-push or rewrite history unless explicitly requested.
+- After committing, report the created commit hash(es).
 
 ==================================================
 🔟 VERIFY
