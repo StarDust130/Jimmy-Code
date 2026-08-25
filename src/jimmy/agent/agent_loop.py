@@ -12,11 +12,21 @@ from jimmy.exploration.explorer import CodebaseExplorer
 from jimmy.git.state import GitState
 from jimmy.llm.base import LLMProvider
 from jimmy.llm.errors import LLMProviderError
+from jimmy.permissions.errors import PermissionRequired
+from jimmy.permissions.manager import (
+    PermissionAction,
+    PermissionManager,
+)
 from jimmy.state.session import SessionState
 from jimmy.tools.registry import ToolRegistry
 from jimmy.utils.limits import truncate_output
 
 from .prompt import SYSTEM_PROMPT
+
+PermissionHandler = Callable[
+    [str, str, dict],
+    bool,
+]
 
 EventHandler = Callable[[AgentEvent], None]
 
@@ -36,6 +46,7 @@ class AgentLoop:
         recovery: RecoveryManager | None = None,
         explorer: CodebaseExplorer | None = None,
         git_state: GitState | None = None,
+        permission_manager: PermissionManager | None = None,
     ) -> None:
         self.llm = llm
         self.tools = tools
@@ -48,6 +59,7 @@ class AgentLoop:
         self.recovery = recovery or RecoveryManager()
         self.explorer = explorer or CodebaseExplorer(workspace)
         self.git_state = git_state or GitState(workspace)
+        self.permissions = permission_manager or PermissionManager()
 
         self.context_manager = ContextManager(
             summarizer=ContextSummarizer(llm),
@@ -57,6 +69,7 @@ class AgentLoop:
         self,
         task: str,
         on_event: EventHandler | None = None,
+        on_permission: PermissionHandler | None = None,
     ) -> str:
         """Run Jimmy until the model decides the task is complete."""
 
@@ -133,7 +146,6 @@ class AgentLoop:
 
             except LLMProviderError as exc:
                 total_elapsed = time.monotonic() - started_at
-
                 message = str(exc)
 
                 emit(
@@ -154,7 +166,6 @@ class AgentLoop:
                 OSError,
             ) as exc:
                 total_elapsed = time.monotonic() - started_at
-
                 message = f"❌ LLM request failed.\n{exc}"
 
                 emit(
@@ -178,14 +189,16 @@ class AgentLoop:
                     message=(
                         "final response"
                         if not response.tool_calls
-                        else (f"{len(response.tool_calls)} tool call(s)")
+                        else f"{len(response.tool_calls)} tool call(s)"
                     ),
                 )
             )
 
             # Save model response.
             if response.assistant_message:
-                state.add_message(response.assistant_message)
+                state.add_message(
+                    response.assistant_message,
+                )
 
             # ==============================
             # DONE
@@ -193,7 +206,6 @@ class AgentLoop:
 
             if not response.tool_calls:
                 total_elapsed = time.monotonic() - started_at
-
                 result = response.content or ""
 
                 emit(
@@ -223,6 +235,74 @@ class AgentLoop:
                     )
                 )
 
+                # ==============================
+                # PERMISSION CHECK
+                # ==============================
+
+                tool = self.tools.get(
+                    tool_call.name,
+                )
+
+                permission = self.permissions.check(
+                    tool,
+                )
+
+                if permission.action == PermissionAction.DENY:
+                    message = f"❌ Permission denied for '{tool_call.name}'.\n{permission.reason}"
+
+                    emit(
+                        AgentEvent(
+                            kind="error",
+                            turn=turn,
+                            elapsed=time.monotonic() - started_at,
+                            message=message,
+                        )
+                    )
+
+                    raise PermissionError(message)
+
+                if permission.action == PermissionAction.ASK:
+                    if on_permission is None:
+                        raise PermissionRequired(
+                            tool_name=tool_call.name,
+                            reason=permission.reason,
+                            arguments=tool_call.arguments,
+                        )
+
+                    approved = on_permission(
+                        tool_call.name,
+                        permission.reason,
+                        tool_call.arguments,
+                    )
+
+                    if not approved:
+                        state.add_message(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": tool_call.name,
+                                "content": (
+                                    "Permission denied by the user. Do not retry this tool call."
+                                ),
+                            }
+                        )
+
+                        emit(
+                            AgentEvent(
+                                kind="tool_end",
+                                turn=turn,
+                                tool_name=tool_call.name,
+                                elapsed=(time.monotonic() - tool_started_at),
+                                message="denied",
+                            )
+                        )
+
+                        continue
+
+                # ==============================
+                # EXECUTE TOOL
+                # ==============================
+
                 try:
                     tool_result = self.executor.execute(
                         tool_name=tool_call.name,
@@ -235,7 +315,6 @@ class AgentLoop:
                     OSError,
                     RuntimeError,
                     TimeoutError,
-                    PermissionError,
                     FileNotFoundError,
                 ) as exc:
                     tool_elapsed = time.monotonic() - tool_started_at
@@ -252,9 +331,13 @@ class AgentLoop:
                         )
                     )
 
-                    recovery_exception = RuntimeError(message)
+                    recovery_exception = RuntimeError(
+                        message,
+                    )
 
-                    recovery_decision = self.recovery.recover(recovery_exception)
+                    recovery_decision = self.recovery.recover(
+                        recovery_exception,
+                    )
 
                     if not recovery_decision.should_continue:
                         total_elapsed = time.monotonic() - started_at
@@ -305,7 +388,9 @@ class AgentLoop:
                 else:
                     observation = self.observer.observe_failure(
                         tool_name=tool_call.name,
-                        error=RuntimeError(tool_result.error or "Unknown tool error."),
+                        error=RuntimeError(
+                            tool_result.error or "Unknown tool error.",
+                        ),
                     )
 
                 emit(
@@ -318,11 +403,16 @@ class AgentLoop:
                     )
                 )
 
-                # Recover failed tools.
+                # Recover actual tool failures.
+                # Permission failures never reach this section.
                 if not tool_result.success:
-                    recovery_exception = RuntimeError(tool_result.error or "Unknown tool error.")
+                    recovery_exception = RuntimeError(
+                        tool_result.error or "Unknown tool error.",
+                    )
 
-                    recovery_decision = self.recovery.recover(recovery_exception)
+                    recovery_decision = self.recovery.recover(
+                        recovery_exception,
+                    )
 
                     if not recovery_decision.should_continue:
                         total_elapsed = time.monotonic() - started_at
