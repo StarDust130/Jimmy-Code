@@ -33,8 +33,9 @@ class EditFileTool(Tool):
     def metadata(self) -> ToolMetadata:
         return ToolMetadata(
             read_only=False,
-            destructive=True,
+            destructive=False,
             requires_confirmation=False,
+            timeout_seconds=10,
         )
 
     @property

@@ -258,3 +258,209 @@ RichLog {
     background: #164e63;
     color: #ecfeff;
 }
+/* =========================================================
+   PERMISSION OVERLAYS
+   Transparent overlay so the existing terminal stays visible.
+   Both permission screens appear as centered dialogs.
+   ========================================================= */
+
+PermissionScreen,
+PermissionPrompt {
+    align: center middle;
+    background: #000000 0%;
+}
+
+
+/* =========================================================
+   PERMISSION MODE DIALOG
+   Ctrl+P → Ask / Full Access / Safe Only
+   ========================================================= */
+
+#permission-dialog {
+    width: 64;
+    height: auto;
+    min-height: 12;
+    padding: 1 2;
+
+    background: #0b1220;
+    border: round #334155;
+}
+
+#permission-title {
+    height: 1;
+    margin-bottom: 1;
+
+    color: #f8fafc;
+    text-style: bold;
+}
+
+#permission-subtitle {
+    height: 1;
+    margin-bottom: 1;
+
+    color: #64748b;
+}
+
+#permission-options {
+    height: auto;
+    padding: 0 0 1 0;
+
+    color: #cbd5e1;
+}
+
+#permission-footer {
+    height: 1;
+    margin-top: 1;
+
+    color: #475569;
+    content-align: center middle;
+}
+
+
+/* =========================================================
+   PERMISSION APPROVAL DIALOG
+   Appears when Jimmy needs approval for a risky tool.
+   ========================================================= */
+
+#approval-dialog {
+    width: 66;
+    height: auto;
+    min-height: 13;
+    padding: 1 2;
+
+    background: #0b1220;
+    border: round #f59e0b;
+}
+
+#approval-title {
+    height: 1;
+    margin-bottom: 1;
+
+    color: #f8fafc;
+    text-style: bold;
+}
+
+#approval-tool {
+    height: auto;
+    padding: 1;
+    margin-bottom: 1;
+
+    background: #111827;
+    color: #cbd5e1;
+}
+
+#approval-reason {
+    height: auto;
+    margin-bottom: 1;
+
+    color: #94a3b8;
+}
+
+
+/* =========================================================
+   APPROVAL BUTTON ROW
+   ========================================================= */
+
+#approval-actions {
+    height: 3;
+    align: center middle;
+}
+
+
+/* Allow */
+
+#approval-allow {
+    width: 20;
+    height: 3;
+    margin-right: 1;
+
+    background: #14532d;
+    color: #dcfce7;
+
+    content-align: center middle;
+    text-style: bold;
+}
+
+
+/* Deny */
+
+#approval-deny {
+    width: 20;
+    height: 3;
+    margin-right: 1;
+
+    background: #3f1d1d;
+    color: #fecaca;
+
+    content-align: center middle;
+    text-style: bold;
+}
+
+
+/* Full Access */
+
+#approval-full {
+    width: 20;
+    height: 3;
+
+    background: #1e293b;
+    color: #fde68a;
+
+    content-align: center middle;
+    text-style: bold;
+}
+
+
+/* =========================================================
+   APPROVAL FOOTER
+   ========================================================= */
+
+#approval-footer {
+    height: 1;
+    margin-top: 1;
+
+    color: #475569;
+    content-align: center middle;
+}
+
+
+/* =========================================================
+   BUTTON HOVER / FOCUS
+   Gives the approval UI better mouse + keyboard feedback.
+   ========================================================= */
+
+#approval-allow:hover,
+#approval-allow:focus {
+    background: #166534;
+}
+
+#approval-deny:hover,
+#approval-deny:focus {
+    background: #7f1d1d;
+}
+
+#approval-full:hover,
+#approval-full:focus {
+    background: #334155;
+    color: #fef3c7;
+}
+
+
+/* =========================================================
+   PERMISSION MODE HOVER / FOCUS
+   ========================================================= */
+
+#permission-options:hover {
+    color: #f8fafc;
+}
+
+
+/* =========================================================
+   KEEP DIALOGS COMPACT
+   No fullscreen panel or large overlay box.
+   ========================================================= */
+
+PermissionScreen > Vertical,
+PermissionPrompt > Vertical {
+    height: auto;
+}

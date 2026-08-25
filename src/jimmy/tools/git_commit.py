@@ -79,7 +79,7 @@ class GitCommitTool(Tool):
         return ToolMetadata(
             read_only=False,
             destructive=True,
-            requires_confirmation=False,
+            requires_confirmation=True,
             timeout_seconds=30,
         )
 

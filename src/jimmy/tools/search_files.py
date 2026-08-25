@@ -33,7 +33,7 @@ class SearchFilesTool(Tool):
             read_only=True,
             destructive=False,
             requires_confirmation=False,
-            timeout_seconds=30,
+            timeout_seconds=10,
         )
 
     @property

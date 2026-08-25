@@ -35,6 +35,7 @@ class ReadFileTool(Tool):
             read_only=True,
             destructive=False,
             requires_confirmation=False,
+            timeout_seconds=10,
         )
 
     @property

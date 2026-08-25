@@ -8,6 +8,10 @@ from jimmy.llm.base import (
     LLMResponse,
     ToolCall,
 )
+from jimmy.permissions.manager import (
+    PermissionManager,
+    PermissionMode,
+)
 from jimmy.tools.defaults import create_default_registry
 
 
@@ -81,7 +85,12 @@ def create_initial_commit(path: Path) -> None:
     )
 
     subprocess.run(
-        ["git", "commit", "-m", "initial"],
+        [
+            "git",
+            "commit",
+            "-m",
+            "initial",
+        ],
         cwd=path,
         capture_output=True,
         text=True,
@@ -218,17 +227,12 @@ def test_edit_then_commit(
 
     create_initial_commit(tmp_path)
 
-    # Jimmy session starts here.
     git_state = GitState(tmp_path)
 
     llm = FakeLLM(
         [
-            # 1. Edit the file.
             edit_tool_call(),
-            # 2. Commit the change.
             git_commit_tool_call(),
-            # 3. Main agent receives the commit result
-            #    and returns its final answer.
             final_response("Done. Edited and committed example.txt."),
         ]
     )
@@ -239,17 +243,21 @@ def test_edit_then_commit(
         git_state=git_state,
     )
 
+    permissions = PermissionManager(
+        mode=PermissionMode.FULL_ACCESS,
+    )
+
     agent = AgentLoop(
         llm=llm,
         tools=tools,
         workspace=tmp_path,
         git_state=git_state,
         max_turns=5,
+        permission_manager=permissions,
     )
 
     result = agent.run("Edit example.txt and commit it.")
 
-    # File was actually changed.
     assert (
         file.read_text(
             encoding="utf-8",
@@ -257,16 +265,12 @@ def test_edit_then_commit(
         == "hello Jimmy\n"
     )
 
-    # Agent returned the final model response.
     assert result == "Done. Edited and committed example.txt."
 
-    # A real commit exists.
     log = git_log(tmp_path)
 
     assert log
-    assert "commit" not in log.lower() or log
 
-    # Working tree is clean.
     assert git_status(tmp_path) == ""
 
 
@@ -284,10 +288,8 @@ def test_commit_then_continue(
 
     create_initial_commit(tmp_path)
 
-    # Jimmy session starts BEFORE the Jimmy change.
     git_state = GitState(tmp_path)
 
-    # Change happens during the Jimmy session.
     file.write_text(
         "hello Jimmy\n",
         encoding="utf-8",
@@ -295,10 +297,7 @@ def test_commit_then_continue(
 
     llm = FakeLLM(
         [
-            # 1. Commit.
             git_commit_tool_call(),
-            # 2. Agent gets the commit result and
-            #    continues with the next reasoning turn.
             final_response("Done. The changes were committed and I continued."),
         ]
     )
@@ -309,23 +308,25 @@ def test_commit_then_continue(
         git_state=git_state,
     )
 
+    permissions = PermissionManager(
+        mode=PermissionMode.FULL_ACCESS,
+    )
+
     agent = AgentLoop(
         llm=llm,
         tools=tools,
         workspace=tmp_path,
         git_state=git_state,
         max_turns=5,
+        permission_manager=permissions,
     )
 
     result = agent.run("Commit my changes, then continue.")
 
-    # The commit really happened.
-    assert git_log(tmp_path)
-
-    # Agent continued to the next model response.
     assert result == "Done. The changes were committed and I continued."
 
     assert llm.index == 2
 
-    # Working tree is clean.
+    assert git_log(tmp_path)
+
     assert git_status(tmp_path) == ""
