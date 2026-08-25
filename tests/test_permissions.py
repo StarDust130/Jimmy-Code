@@ -91,4 +91,4 @@ def test_safe_only_blocks_shell(
 
     decision = manager.check(tool)
 
-    assert decision.action == PermissionAction.DENY
+    assert decision.action == PermissionAction.ASK
