@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from jimmy.git.state import GitState
 from jimmy.llm.base import LLMProvider
 from jimmy.tools.commit_message_generator import (
     CommitMessageGenerator,
@@ -16,6 +17,7 @@ from jimmy.tools.search_files import SearchFilesTool
 def create_default_registry(
     root: Path,
     llm: LLMProvider | None = None,
+    git_state: GitState | None = None,
 ) -> ToolRegistry:
     filesystem = Filesystem(root)
 
@@ -35,6 +37,7 @@ def create_default_registry(
         GitCommitTool(
             filesystem=filesystem,
             message_generator=message_generator,
+            git_state=git_state,
         )
     )
 

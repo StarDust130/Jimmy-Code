@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from jimmy.tools.base import Tool
 from jimmy.tools.filesystem import Filesystem
@@ -8,7 +8,11 @@ from jimmy.tools.models import ToolMetadata, ToolResult
 class ReadFileInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    path: str
+    path: str = Field(description="File path relative to the workspace.")
+
+    line_start: int | None = Field(default=None, ge=1, description="First line to read, inclusive.")
+
+    line_end: int | None = Field(default=None, ge=1, description="Last line to read, inclusive.")
 
 
 class ReadFileTool(Tool):
@@ -43,6 +47,13 @@ class ReadFileTool(Tool):
     ) -> ToolResult:
         args = ReadFileInput.model_validate(arguments)
 
+        if (
+            args.line_start is not None
+            and args.line_end is not None
+            and args.line_end < args.line_start
+        ):
+            raise ValueError("'line_end' must be greater than or equal to 'line_start'.")
+
         file_path = self.filesystem.resolve_path(args.path)
 
         if not file_path.exists():
@@ -56,9 +67,19 @@ class ReadFileTool(Tool):
         except UnicodeDecodeError as exc:
             raise ValueError(f"File is not valid UTF-8 text: {args.path}") from exc
 
+        lines = content.splitlines()
+
+        start = args.line_start - 1 if args.line_start is not None else 0
+
+        end = args.line_end if args.line_end is not None else len(lines)
+
+        content = "\n".join(lines[start:end])
+
         return ToolResult.ok(
             output=content,
             metadata={
                 "path": args.path,
+                "line_start": args.line_start,
+                "line_end": args.line_end,
             },
         )

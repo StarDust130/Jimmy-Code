@@ -33,7 +33,9 @@ class RunShellTool(Tool):
     def description(self) -> str:
         return (
             "Run a shell command inside the current workspace. "
-            "Returns stdout, stderr, and the exit code."
+            "Use this for tests, builds, scripts, and other shell commands. "
+            "When the user asks to commit Git changes, use git_commit instead "
+            "of manually running git add or git commit."
         )
 
     @property

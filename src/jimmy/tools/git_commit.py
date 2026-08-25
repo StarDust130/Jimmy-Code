@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from jimmy.git.state import GitState
 from jimmy.tools.base import Tool
 from jimmy.tools.commit_message_generator import (
     CommitChange,
@@ -19,37 +20,45 @@ class GitCommitInput(BaseModel):
     paths: list[str] | None = Field(
         default=None,
         description=(
-            "Specific changed files to commit. If omitted, commit all currently changed files."
+            "Specific changed files to commit. If omitted, use all current changed files."
         ),
     )
 
     mode: Literal["each", "single"] = Field(
-        default="each",
+        default="single",
         description=(
             "Use 'each' for one commit per selected file. "
             "Use 'single' for one commit containing all selected files."
         ),
     )
 
+    scope: Literal["all", "jimmy", "paths"] = Field(
+        default="all",
+        description=(
+            "all = all current changes; "
+            "jimmy = only changes created during this Jimmy session; "
+            "paths = only the requested files."
+        ),
+    )
+
     message: str | None = Field(
         default=None,
-        description=(
-            "Optional explicit commit message. "
-            "When omitted, Jimmy generates one from the actual diff."
-        ),
+        description=("Optional commit message. If omitted, Jimmy generates one from the diff."),
     )
 
 
 class GitCommitTool(Tool):
-    """Create Git commits without making the main agent manage Git manually."""
+    """Commit Git changes safely through one dedicated tool."""
 
     def __init__(
         self,
         filesystem: Filesystem,
         message_generator: CommitMessageGenerator | None = None,
+        git_state: GitState | None = None,
     ) -> None:
         self.filesystem = filesystem
         self.message_generator = message_generator
+        self.git_state = git_state
 
     @property
     def name(self) -> str:
@@ -58,11 +67,11 @@ class GitCommitTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Create Git commits. Always use this tool for Git commits "
-            "instead of run_shell. Supports one commit per file or one "
-            "commit for all selected files. When no message is supplied, "
-            "generate meaningful short commit messages from the actual "
-            "Git diff."
+            "Commit Git changes. "
+            "Use this when the user asks you to commit changes. "
+            "This tool handles git status, diff, staging, and commits internally. "
+            "Do not use run_shell for git add or git commit when this tool can do it. "
+            "Use mode='each' for one commit per file or mode='single' for one commit."
         )
 
     @property
@@ -78,61 +87,67 @@ class GitCommitTool(Tool):
     def input_model(self) -> type[BaseModel]:
         return GitCommitInput
 
-    def execute(self, arguments: BaseModel) -> ToolResult:
+    def execute(
+        self,
+        arguments: BaseModel,
+    ) -> ToolResult:
         args = GitCommitInput.model_validate(arguments)
 
-        # 1️⃣ Find changed files.
-        changed_files = self._get_changed_files()
+        files = self._select_files(args)
 
-        # 2️⃣ Select requested files.
-        if args.paths:
-            selected_files = self._select_requested_files(
-                args.paths,
-                changed_files,
-            )
-        else:
-            selected_files = changed_files
-
-        # 3️⃣ Nothing to commit.
-        if not selected_files:
+        if not files:
             return ToolResult.ok(
                 output="No Git changes to commit.",
                 metadata={
                     "mode": args.mode,
-                    "commits": [],
                     "files": [],
-                    "task_complete": True,
+                    "commits": [],
                 },
             )
 
-        # 4️⃣ Read actual diffs before staging.
         changes = [
             CommitChange(
                 path=path,
                 diff=self._get_diff(path),
             )
-            for path in selected_files
+            for path in files
         ]
 
-        # 5️⃣ Create commits.
-        if args.mode == "single":
-            result = self._commit_single(
-                files=selected_files,
-                changes=changes,
-                message=args.message,
-            )
-        else:
-            result = self._commit_each(
-                files=selected_files,
+        if args.mode == "each":
+            return self._commit_each(
+                files=files,
                 changes=changes,
                 message=args.message,
             )
 
-        return result
+        return self._commit_single(
+            files=files,
+            changes=changes,
+            message=args.message,
+        )
 
-    # ======================================
-    # 1️⃣ COMMIT EACH FILE
-    # ======================================
+    def _select_files(
+        self,
+        args: GitCommitInput,
+    ) -> list[str]:
+        changed_files = self._get_changed_files()
+
+        if args.scope == "all":
+            return changed_files
+
+        if args.scope == "jimmy":
+            if self.git_state is None:
+                return []
+
+            return sorted(self.git_state.jimmy_files() & set(changed_files))
+
+        if not args.paths:
+            raise ValueError("paths are required when scope='paths'.")
+
+        return self._select_requested_files(
+            args.paths,
+            changed_files,
+        )
 
     def _commit_each(
         self,
@@ -142,12 +157,9 @@ class GitCommitTool(Tool):
     ) -> ToolResult:
         generated_messages: dict[str, str] = {}
 
-        # 🤖 Generate messages when needed.
         if message is None and self.message_generator is not None:
             try:
-                generated_messages = self.message_generator.generate_per_file(
-                    changes,
-                )
+                generated_messages = self.message_generator.generate_per_file(changes)
             except (
                 RuntimeError,
                 ValueError,
@@ -158,21 +170,20 @@ class GitCommitTool(Tool):
 
         commits: list[dict[str, object]] = []
 
-        # 🔄 Create one commit per file.
-        for path in files:
-            # 📦 Stage only this file.
-            self._stage([path])
+        diff_map = {change.path: change.diff for change in changes}
 
+        for path in files:
             commit_message = (
                 message
                 or generated_messages.get(path)
                 or self._fallback_file_message(
                     path,
-                    self._get_diff(path),
+                    diff_map.get(path, ""),
                 )
             )
 
-            # ✅ Create commit.
+            self._stage([path])
+
             commit_hash = self._commit(commit_message)
 
             commits.append(
@@ -183,9 +194,7 @@ class GitCommitTool(Tool):
                 }
             )
 
-        lines = [
-            f"Created {len(commits)} commit(s):",
-        ]
+        lines = [f"Created {len(commits)} commit(s):"]
 
         for commit in commits:
             lines.append(f"- {commit['message']} ({commit['hash']})")
@@ -194,15 +203,10 @@ class GitCommitTool(Tool):
             output="\n".join(lines),
             metadata={
                 "mode": "each",
-                "commits": commits,
                 "files": files,
-                "task_complete": True,
+                "commits": commits,
             },
         )
-
-    # ======================================
-    # 2️⃣ COMMIT ALL TOGETHER
-    # ======================================
 
     def _commit_single(
         self,
@@ -210,34 +214,25 @@ class GitCommitTool(Tool):
         changes: list[CommitChange],
         message: str | None,
     ) -> ToolResult:
-        # 📦 Stage selected files.
-        self._stage(files)
-
-        # 📝 Create commit message.
         if message is not None:
             commit_message = message
 
         elif self.message_generator is not None:
             try:
-                commit_message = self.message_generator.generate_group(
-                    changes,
-                )
+                commit_message = self.message_generator.generate_group(changes)
             except (
                 RuntimeError,
                 ValueError,
                 TypeError,
                 OSError,
             ):
-                commit_message = self._fallback_group_message(
-                    files,
-                )
+                commit_message = self._fallback_group_message(files)
 
         else:
-            commit_message = self._fallback_group_message(
-                files,
-            )
+            commit_message = self._fallback_group_message(files)
 
-        # ✅ Create commit.
+        self._stage(files)
+
         commit_hash = self._commit(commit_message)
 
         return ToolResult.ok(
@@ -248,6 +243,7 @@ class GitCommitTool(Tool):
             ),
             metadata={
                 "mode": "single",
+                "files": files,
                 "commits": [
                     {
                         "hash": commit_hash,
@@ -255,32 +251,25 @@ class GitCommitTool(Tool):
                         "files": files,
                     }
                 ],
-                "files": files,
-                "task_complete": True,
             },
         )
-
-    # ======================================
-    # 3️⃣ FIND CHANGED FILES
-    # ======================================
 
     def _get_changed_files(self) -> list[str]:
         result = self._run_git(
             [
                 "status",
                 "--short",
-            ],
+            ]
         )
 
         files: list[str] = []
 
         for line in result.stdout.splitlines():
-            if not line.strip():
+            if len(line) < 4:
                 continue
 
             path = line[3:].strip()
 
-            # 🔄 Handle renamed files.
             if " -> " in path:
                 path = path.split(
                     " -> ",
@@ -288,26 +277,16 @@ class GitCommitTool(Tool):
                 )[1]
 
             if path:
-                files.append(
-                    path.replace(
-                        "\\",
-                        "/",
-                    )
-                )
+                files.append(path.replace("\\", "/"))
 
         return sorted(set(files))
-
-    # ======================================
-    # 4️⃣ SELECT REQUESTED FILES
-    # ======================================
 
     def _select_requested_files(
         self,
         requested: list[str],
         changed_files: list[str],
     ) -> list[str]:
-        changed = {path.replace("\\", "/") for path in changed_files}
-
+        changed = set(changed_files)
         selected: list[str] = []
 
         for path in requested:
@@ -322,14 +301,7 @@ class GitCommitTool(Tool):
 
         return selected
 
-    # ======================================
-    # 5️⃣ GET REAL DIFF
-    # ======================================
-
     def _get_diff(self, path: str) -> str:
-        """Return the real diff, including brand-new files."""
-
-        # 🔎 Check whether this repository already has a HEAD.
         head_check = subprocess.run(
             [
                 "git",
@@ -348,14 +320,12 @@ class GitCommitTool(Tool):
 
         file_path = self.filesystem.resolve_path(path)
 
-        # 🆕 No commits yet.
         if head_check.returncode != 0:
             return self._untracked_file_diff(
                 path,
                 file_path,
             )
 
-        # 📄 Existing repository.
         result = self._run_git(
             [
                 "diff",
@@ -364,21 +334,16 @@ class GitCommitTool(Tool):
                 "HEAD",
                 "--",
                 path,
-            ],
+            ]
         )
 
         if result.stdout:
             return result.stdout
 
-        # 🆕 Untracked file in an existing repository.
         return self._untracked_file_diff(
             path,
             file_path,
         )
-
-    # ======================================
-    # 6️⃣ BUILD UNTRACKED FILE DIFF
-    # ======================================
 
     def _untracked_file_diff(
         self,
@@ -389,9 +354,7 @@ class GitCommitTool(Tool):
             return ""
 
         try:
-            content = file_path.read_text(
-                encoding="utf-8",
-            )
+            content = file_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             return f"Binary file: {path}"
 
@@ -399,76 +362,39 @@ class GitCommitTool(Tool):
 
         return f"--- /dev/null\n+++ b/{path}\n" + "\n".join(f"+{line}" for line in lines)
 
-    # ======================================
-    # 7️⃣ STAGE FILES
-    # ======================================
-
-    def _stage(self, files: list[str]) -> None:
+    def _stage(
+        self,
+        files: list[str],
+    ) -> None:
         self._run_git(
             [
                 "add",
                 "--",
                 *files,
-            ],
+            ]
         )
 
-    # ======================================
-    # 8️⃣ CREATE COMMIT
-    # ======================================
-
-    def _commit(self, message: str) -> str:
-        # ✅ Create the commit.
+    def _commit(
+        self,
+        message: str,
+    ) -> str:
         self._run_git(
             [
                 "commit",
                 "-m",
                 message,
-            ],
+            ]
         )
 
-        # 🔎 Verify HEAD now exists.
-        head_check = subprocess.run(
-            [
-                "git",
-                "rev-parse",
-                "--verify",
-                "HEAD",
-            ],
-            cwd=self.filesystem.root,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=30,
-        )
-
-        if head_check.returncode != 0:
-            error = (
-                head_check.stderr.strip() or "Git commit succeeded but HEAD could not be verified."
-            )
-
-            raise RuntimeError(error)
-
-        # 🏷️ Get the short commit hash.
         result = self._run_git(
             [
                 "rev-parse",
                 "--short",
                 "HEAD",
-            ],
+            ]
         )
 
-        commit_hash = result.stdout.strip()
-
-        if not commit_hash:
-            raise RuntimeError("Git commit was created but no commit hash was returned.")
-
-        return commit_hash
-
-    # ======================================
-    # 9️⃣ RUN GIT COMMAND
-    # ======================================
+        return result.stdout.strip()
 
     def _run_git(
         self,
@@ -492,17 +418,16 @@ class GitCommitTool(Tool):
 
         return result
 
-    # ======================================
-    # 🔟 FALLBACK FILE MESSAGE
-    # ======================================
-
     @staticmethod
     def _fallback_file_message(
         path: str,
         diff: str,
     ) -> str:
-        text = diff.lower()
         filename = Path(path).stem
+        text = diff.lower()
+
+        if "--- /dev/null" in diff:
+            return f"✨ add {filename}"
 
         if "test" in filename.lower():
             return f"🧪 improve {filename} tests"
@@ -510,23 +435,13 @@ class GitCommitTool(Tool):
         if "security" in text or "permission" in text:
             return f"🔐 improve {filename} security"
 
-        if "import " in text:
-            return f"🔧 update {filename} integration"
-
-        if "class " in text and "def " in text:
+        if "class " in text:
             return f"♻️ refactor {filename}"
-
-        if "--- /dev/null" in diff:
-            return f"✨ add {filename}"
 
         if diff.count("\n+") > diff.count("\n-"):
             return f"✨ improve {filename}"
 
         return f"🔧 improve {filename}"
-
-    # ======================================
-    # 1️⃣1️⃣ FALLBACK GROUP MESSAGE
-    # ======================================
 
     @staticmethod
     def _fallback_group_message(
