@@ -4,6 +4,7 @@ import re
 import subprocess
 import threading
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -12,6 +13,7 @@ from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Center, Horizontal, Vertical
+from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Input, RichLog, Static
@@ -79,12 +81,153 @@ HELP_TEXT = """\
 
 [b #22d3ee]h[/b #22d3ee]     Toggle help
 [b #22d3ee]^x[/b #22d3ee]    Cancel task
-[b #22d3ee]^l[/b #22d3ee]    Clear & home
+[b #22d3ee]^l[/b #22d3ee]    Clear input
+[b #22d3ee]^n[/b #22d3ee]    New task
 [b #22d3ee]^p[/b #22d3ee]    Permission mode
 [b #22d3ee]^q[/b #22d3ee]    Quit
 
 Press [bold]Esc[/bold] or [bold]h[/bold] to close.
 """
+
+
+# ═════════════════════════════════════════════════════════════
+# SESSION WIDGETS
+# ═════════════════════════════════════════════════════════════
+
+
+class SessionCard(Static):
+    can_focus = True
+
+    class Selected(Message):
+        def __init__(self, session_id: str) -> None:
+            self.session_id = session_id
+            super().__init__()
+
+    def __init__(self, session: dict, **kwargs: Any) -> None:
+        self.session = session
+        kwargs.setdefault("classes", "session-card")
+        super().__init__(**kwargs)
+
+    def on_mount(self) -> None:
+        self.update(self._render_text())
+
+    def _render_text(self) -> Text:
+        t = Text()
+        title = self.session.get("task", "Untitled")
+        if len(title) > 46:
+            title = title[:43] + "…"
+        status = self.session.get("status", "unknown")
+        status_icon = "✓" if status == "completed" else "○"
+        status_color = "#4ade80" if status == "completed" else "#60a5fa"
+        status_text = "Completed" if status == "completed" else "Active"
+        turn_count = self.session.get("turn_count", 0)
+        updated_at = self.session.get("updated_at", "")
+        ago = self._time_ago(updated_at)
+        t.append(f"{title}\n", style="bold #e0f2fe")
+        t.append(f"{status_icon} ", style=status_color)
+        t.append(f"{status_text}  ·  {turn_count} turns  ·  {ago}", style="dim #94a3b8")
+        return t
+
+    def _time_ago(self, iso_str: str) -> str:
+        try:
+            dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+            diff = datetime.now(UTC) - dt
+            seconds = diff.total_seconds()
+            if seconds < 60:
+                return "just now"
+            elif seconds < 3600:
+                return f"{int(seconds // 60)}m ago"
+            elif seconds < 86400:
+                return f"{int(seconds // 3600)}h ago"
+            else:
+                return f"{int(seconds // 86400)}d ago"
+        except Exception:
+            return ""
+
+    def on_click(self) -> None:
+        self.post_message(self.Selected(self.session.get("id", "")))
+
+
+class ViewAllLink(Static):
+    class ShowAll(Message):
+        pass
+
+    def __init__(self) -> None:
+        super().__init__("View all →", classes="view-all-link")
+
+    def on_click(self) -> None:
+        self.post_message(self.ShowAll())
+
+
+class AllSessionsScreen(Screen[str | None]):
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        ("up,k", "select_prev", ""),
+        ("down,j", "select_next", ""),
+        ("enter", "select_open", ""),
+        ("escape", "close_dialog", ""),
+    ]
+
+    def __init__(
+        self,
+        sessions: list[dict],
+        current_session_id: str | None = None,
+    ) -> None:
+        super().__init__()
+        self.sessions = sessions
+        self.current_session_id = current_session_id
+        self.selected_index = 0
+        if current_session_id:
+            for i, s in enumerate(sessions):
+                if s.get("id") == current_session_id:
+                    self.selected_index = i
+                    break
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="all-sessions-dialog"):
+            yield Static("All Sessions", id="all-sessions-title")
+            with Vertical(id="all-sessions-list"):
+                for session in self.sessions:
+                    yield SessionCard(session, classes="all-session-card")
+            yield Static(
+                "↑↓ select · Enter open · Esc close",
+                id="all-sessions-footer",
+            )
+
+    def on_mount(self) -> None:
+        self._update_selection()
+
+    def _update_selection(self) -> None:
+        cards = list(self.query(".all-session-card"))
+        for i, card in enumerate(cards):
+            if i == self.selected_index:
+                card.add_class("selected")
+                card.scroll_visible()
+            else:
+                card.remove_class("selected")
+
+    def action_select_prev(self) -> None:
+        self.selected_index = max(0, self.selected_index - 1)
+        self._update_selection()
+
+    def action_select_next(self) -> None:
+        self.selected_index = min(len(self.sessions) - 1, self.selected_index + 1)
+        self._update_selection()
+
+    def action_select_open(self) -> None:
+        if 0 <= self.selected_index < len(self.sessions):
+            self.dismiss(self.sessions[self.selected_index].get("id"))
+
+    def action_close_dialog(self) -> None:
+        self.dismiss(None)
+
+    def on_session_card_selected(self, event: SessionCard.Selected) -> None:
+        self.dismiss(event.session_id)
+        event.stop()
+
+
+# ═════════════════════════════════════════════════════════════
+# HELP & PERMISSION SCREENS
+# ═════════════════════════════════════════════════════════════
 
 
 class HelpScreen(Screen):
@@ -94,10 +237,7 @@ class HelpScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Vertical(
-            Static(
-                HELP_TEXT,
-                id="help-text",
-            ),
+            Static(HELP_TEXT, id="help-text"),
             id="help-box",
         )
 
@@ -109,14 +249,8 @@ class HelpScreen(Screen):
 
 
 class PermissionScreen(Screen[PermissionMode | None]):
-    """Permission mode selector."""
-
-    def __init__(
-        self,
-        current_mode: PermissionMode,
-    ) -> None:
+    def __init__(self, current_mode: PermissionMode) -> None:
         super().__init__()
-
         self.options = [
             (
                 PermissionMode.SAFE_ONLY,
@@ -137,7 +271,6 @@ class PermissionScreen(Screen[PermissionMode | None]):
                 "Allow every tool without prompts",
             ),
         ]
-
         self.selected_index = next(
             (i for i, (mode, _, _, _) in enumerate(self.options) if mode == current_mode),
             1,
@@ -146,18 +279,12 @@ class PermissionScreen(Screen[PermissionMode | None]):
     def compose(self) -> ComposeResult:
         yield Center(
             Vertical(
-                Static(
-                    "🔐  Permission Mode",
-                    id="permission-title",
-                ),
+                Static("🔐  Permission Mode", id="permission-title"),
                 Static(
                     "Choose how Jimmy should handle tool permissions.",
                     id="permission-subtitle",
                 ),
-                Static(
-                    "",
-                    id="permission-options",
-                ),
+                Static("", id="permission-options"),
                 Static(
                     "↑↓ select   Enter confirm   Esc close",
                     id="permission-footer",
@@ -171,47 +298,31 @@ class PermissionScreen(Screen[PermissionMode | None]):
 
     def _refresh(self) -> None:
         lines: list[str] = []
-
         for i, (_, icon, name, description) in enumerate(self.options):
             prefix = "❯" if i == self.selected_index else " "
-
             lines.append(f"{prefix} {icon}  {name:<13} {description}")
+        self.query_one("#permission-options", Static).update("\n".join(lines))
 
-        self.query_one(
-            "#permission-options",
-            Static,
-        ).update("\n".join(lines))
-
-    def on_key(self, event) -> None:
+    def on_key(self, event: Any) -> None:
         if event.key in {"up", "k"}:
             self.selected_index = (self.selected_index - 1) % len(self.options)
-
             self._refresh()
-
         elif event.key in {"down", "j"}:
             self.selected_index = (self.selected_index + 1) % len(self.options)
-
             self._refresh()
-
         elif event.key in {"enter", "return"}:
             self.dismiss(self.options[self.selected_index][0])
-
         elif event.key == "1":
             self.dismiss(PermissionMode.SAFE_ONLY)
-
         elif event.key == "2":
             self.dismiss(PermissionMode.ASK)
-
         elif event.key == "3":
             self.dismiss(PermissionMode.FULL_ACCESS)
-
         elif event.key == "escape":
             self.dismiss(None)
 
 
 class PermissionPrompt(Screen[str]):
-    """Compact approval dialog for risky actions."""
-
     def __init__(
         self,
         tool_name: str,
@@ -219,7 +330,6 @@ class PermissionPrompt(Screen[str]):
         arguments: dict[str, Any],
     ) -> None:
         super().__init__()
-
         self.tool_name = tool_name
         self.reason = reason
         self.arguments = arguments
@@ -227,33 +337,13 @@ class PermissionPrompt(Screen[str]):
     def compose(self) -> ComposeResult:
         yield Center(
             Vertical(
-                Static(
-                    "⚠  Permission Required",
-                    id="approval-title",
-                ),
-                Static(
-                    self._tool_text(),
-                    id="approval-tool",
-                ),
-                Static(
-                    self.reason,
-                    id="approval-reason",
-                ),
+                Static("⚠  Permission Required", id="approval-title"),
+                Static(self._tool_text(), id="approval-tool"),
+                Static(self.reason, id="approval-reason"),
                 Horizontal(
-                    Button(
-                        "✓ Allow",
-                        id="approval-allow",
-                        variant="success",
-                    ),
-                    Button(
-                        "✕ Deny",
-                        id="approval-deny",
-                        variant="error",
-                    ),
-                    Button(
-                        "⚡ Full Access",
-                        id="approval-full",
-                    ),
+                    Button("✓ Allow", id="approval-allow", variant="success"),
+                    Button("✕ Deny", id="approval-deny", variant="error"),
+                    Button("⚡ Full Access", id="approval-full"),
                     id="approval-actions",
                 ),
                 Static(
@@ -266,49 +356,37 @@ class PermissionPrompt(Screen[str]):
 
     def _tool_text(self) -> str:
         detail = ""
-
-        for key in (
-            "command",
-            "path",
-            "file_path",
-            "query",
-        ):
+        for key in ("command", "path", "file_path", "query"):
             value = self.arguments.get(key)
-
             if value is not None:
                 detail = str(value)
                 break
-
         if detail:
             return f"Tool   {self.tool_name}\nTarget {detail[:100]}"
-
         return f"Tool   {self.tool_name}"
 
-    def on_key(self, event) -> None:
+    def on_key(self, event: Any) -> None:
         if event.key == "y":
             self.dismiss("allow")
-
         elif event.key == "n":
             self.dismiss("deny")
-
         elif event.key == "f":
             self.dismiss("full_access")
-
         elif event.key == "escape":
             self.dismiss("deny")
 
-    def on_button_pressed(
-        self,
-        event: Button.Pressed,
-    ) -> None:
+    def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "approval-allow":
             self.dismiss("allow")
-
         elif event.button.id == "approval-deny":
             self.dismiss("deny")
-
         elif event.button.id == "approval-full":
             self.dismiss("full_access")
+
+
+# ═════════════════════════════════════════════════════════════
+# MAIN APP
+# ═════════════════════════════════════════════════════════════
 
 
 class JimmyTUI(App[None]):
@@ -321,7 +399,8 @@ class JimmyTUI(App[None]):
         ("ctrl+x", "cancel_task", "Cancel"),
         ("ctrl+p", "permission_mode", "Permissions"),
         ("h", "show_help", "Help"),
-        ("ctrl+l", "clear_conversation", "Clear"),
+        ("ctrl+l", "clear_input", "Clear"),
+        ("ctrl+n", "new_task", "New Task"),
     ]
 
     status = reactive("ready")
@@ -373,10 +452,14 @@ class JimmyTUI(App[None]):
 
         self._git_branch = self._detect_git_branch()
 
+        self._current_session_id: str | None = None
+        self._current_task: str | None = None
+
     def compose(self) -> ComposeResult:
         yield Horizontal(
             Static("", id="brand"),
             Static("", id="project"),
+            Static("", id="session-indicator"),
             Static("", id="file-context"),
             Static("", id="permission-mode"),
             Static("", id="status-indicator"),
@@ -386,20 +469,22 @@ class JimmyTUI(App[None]):
         )
 
         yield Vertical(
-            Static(
-                LOGO,
-                id="logo-large",
-            ),
-            Static(
-                "",
-                id="tagline",
-            ),
+            Static(LOGO, id="logo-large"),
+            Static("", id="tagline"),
             Center(
                 Input(
                     placeholder="What should Jimmy do?",
                     id="prompt-landing",
                 ),
                 id="input-wrapper",
+            ),
+            Center(
+                Vertical(
+                    Static("Recent Sessions", classes="recent-sessions-header"),
+                    Vertical(id="recent-sessions-list"),
+                    id="recent-sessions-container",
+                ),
+                id="recent-sessions-wrapper",
             ),
             id="landing-main",
         )
@@ -412,10 +497,7 @@ class JimmyTUI(App[None]):
                 wrap=True,
                 auto_scroll=True,
             ),
-            Static(
-                "",
-                id="typing-indicator",
-            ),
+            Static("", id="typing-indicator"),
             Input(
                 placeholder="Ask Jimmy anything...",
                 id="prompt-chat",
@@ -430,26 +512,17 @@ class JimmyTUI(App[None]):
         self._update_brand()
         self._update_project()
         self._update_permission_mode()
+        self._update_session_indicator()
+        self._refresh_landing_sessions()
 
-        self.set_interval(
-            0.08,
-            self._tick_fast,
-        )
-        self.set_interval(
-            0.5,
-            self._tick_accent,
-        )
-        self.set_interval(
-            1.0,
-            self._tick_slow,
-        )
+        self.set_interval(0.08, self._tick_fast)
+        self.set_interval(0.5, self._tick_accent)
+        self.set_interval(1.0, self._tick_slow)
 
         self._focus_input()
 
         if self._initial_task:
-            self._submit_task(
-                self._initial_task,
-            )
+            self._submit_task(self._initial_task)
         else:
             self._start_typewriter()
 
@@ -460,16 +533,11 @@ class JimmyTUI(App[None]):
     def _tick_fast(self) -> None:
         if self.running:
             self.elapsed = time.monotonic() - self._task_started_at
-
             self.spinner_index = (self.spinner_index + 1) % len(SPINNER_FRAMES)
-
             self._think_idx = (self._think_idx + 1) % len(THINKING_BAR)
 
         try:
-            self.query_one(
-                "#clock",
-                Static,
-            ).update(self._fmt_dur(self.elapsed))
+            self.query_one("#clock", Static).update(self._fmt_dur(self.elapsed))
         except Exception:
             pass
 
@@ -477,31 +545,20 @@ class JimmyTUI(App[None]):
 
         if self.running:
             bar = THINKING_BAR[self._think_idx]
-
             try:
-                self.query_one(
-                    "#typing-indicator",
-                    Static,
-                ).update(
-                    Text(
-                        f"{bar}  Jimmy is thinking",
-                        style="dim #22d3ee",
-                    )
+                self.query_one("#typing-indicator", Static).update(
+                    Text(f"{bar}  Jimmy is thinking", style="dim #22d3ee")
                 )
             except Exception:
                 pass
         else:
             try:
-                self.query_one(
-                    "#typing-indicator",
-                    Static,
-                ).update("")
+                self.query_one("#typing-indicator", Static).update("")
             except Exception:
                 pass
 
     def _tick_accent(self) -> None:
         self._accent_idx = (self._accent_idx + 1) % 6
-
         colors = [
             "#22d3ee",
             "#38bdf8",
@@ -510,35 +567,18 @@ class JimmyTUI(App[None]):
             "#a78bfa",
             "#c084fc",
         ]
-
         color = colors[self._accent_idx]
 
         if self.mode == "landing":
             try:
-                logo = self.query_one(
-                    "#logo-large",
-                    Static,
-                )
-
-                logo.update(
-                    Text(
-                        LOGO,
-                        style=f"bold {color}",
-                    )
-                )
+                logo = self.query_one("#logo-large", Static)
+                logo.update(Text(LOGO, style=f"bold {color}"))
             except Exception:
                 pass
 
             try:
-                inp = self.query_one(
-                    "#prompt-landing",
-                    Input,
-                )
-
-                inp.styles.border = (
-                    "solid",
-                    color,
-                )
+                inp = self.query_one("#prompt-landing", Input)
+                inp.styles.border = ("solid", color)
             except Exception:
                 pass
 
@@ -551,34 +591,16 @@ class JimmyTUI(App[None]):
 
     def _update_brand(self) -> None:
         try:
-            self.query_one(
-                "#brand",
-                Static,
-            ).update(
-                Text(
-                    "◆ JIMMY",
-                    style="bold #22d3ee",
-                )
-            )
+            self.query_one("#brand", Static).update(Text("◆ JIMMY", style="bold #22d3ee"))
         except Exception:
             pass
 
     def _update_project(self) -> None:
         path_str = str(self._workspace)
-
         if self._git_branch:
             path_str = f"{path_str} ({self._git_branch})"
-
         try:
-            self.query_one(
-                "#project",
-                Static,
-            ).update(
-                Text(
-                    path_str,
-                    style="#60a5fa",
-                )
-            )
+            self.query_one("#project", Static).update(Text(path_str, style="#60a5fa"))
         except Exception:
             pass
 
@@ -588,100 +610,68 @@ class JimmyTUI(App[None]):
             PermissionMode.FULL_ACCESS: "⚡ Full Access",
             PermissionMode.SAFE_ONLY: "🔒 Safe Only",
         }
-
         try:
-            self.query_one(
-                "#permission-mode",
-                Static,
-            ).update(
-                Text(
-                    labels[self._permission_manager.mode],
-                    style="bold #fbbf24",
-                )
+            self.query_one("#permission-mode", Static).update(
+                Text(labels[self._permission_manager.mode], style="bold #fbbf24")
             )
+        except Exception:
+            pass
+
+    def _update_session_indicator(self) -> None:
+        try:
+            widget = self.query_one("#session-indicator", Static)
+            if self._current_session_id and self._current_task:
+                title = self._current_task
+                if len(title) > 25:
+                    title = title[:22] + "…"
+                widget.update(Text(f"◈ {title}", style="#c4b5fd"))
+            else:
+                widget.update("")
         except Exception:
             pass
 
     def _update_datetime(self) -> None:
         try:
-            self.query_one(
-                "#datetime",
-                Static,
-            ).update(
-                Text(
-                    self._fmt_datetime(),
-                    style="#475569",
-                )
-            )
+            self.query_one("#datetime", Static).update(Text(self._fmt_datetime(), style="#475569"))
         except Exception:
             pass
 
     def _fmt_datetime(self) -> str:
         now = time.localtime()
-
         day = str(now.tm_mday)
-        mon = time.strftime(
-            "%b",
-            now,
-        )
+        mon = time.strftime("%b", now)
         year = str(now.tm_year)
-
         hour = now.tm_hour % 12 or 12
-
         minute = f"{now.tm_min:02d}"
-
         ampm = "AM" if now.tm_hour < 12 else "PM"
-
         return f"{day} {mon} {year} {hour}:{minute} {ampm}"
 
     @staticmethod
-    def _fmt_dur(
-        seconds: float,
-    ) -> str:
+    def _fmt_dur(seconds: float) -> str:
         if seconds < 60:
             return f"{seconds:.1f}s"
-
         if seconds < 3600:
-            m, s = divmod(
-                int(seconds),
-                60,
-            )
-
+            m, s = divmod(int(seconds), 60)
             return f"{m}m {s}s"
-
-        h, rem = divmod(
-            int(seconds),
-            3600,
-        )
-
-        m, s = divmod(
-            rem,
-            60,
-        )
-
+        h, rem = divmod(int(seconds), 3600)
+        m, s = divmod(rem, 60)
         return f"{h}h {m}m {s}s"
 
     # ------------------------------------------------------------------
     # MODE
     # ------------------------------------------------------------------
 
-    def watch_mode(
-        self,
-        mode: str,
-    ) -> None:
+    def watch_mode(self, mode: str) -> None:
         self._apply_mode(mode)
         self._focus_input()
+        if mode == "landing":
+            self._refresh_landing_sessions()
 
-    def _apply_mode(
-        self,
-        mode: str,
-    ) -> None:
+    def _apply_mode(self, mode: str) -> None:
         try:
             screen = self.screen
-
             screen.remove_class("landing")
             screen.remove_class("chat")
-
             screen.add_class(mode)
         except Exception:
             pass
@@ -692,29 +682,18 @@ class JimmyTUI(App[None]):
 
     def _start_typewriter(self) -> None:
         self._typewriter_idx = 0
-
         self._typewriter_text = "Terminal-native AI coding assistant"
-
-        self._typewriter_timer = self.set_interval(
-            0.04,
-            self._typewriter_step,
-        )
+        self._typewriter_timer = self.set_interval(0.04, self._typewriter_step)
 
     def _typewriter_step(self) -> None:
         self._typewriter_idx += 1
-
         try:
-            tagline = self.query_one(
-                "#tagline",
-                Static,
-            )
-
+            tagline = self.query_one("#tagline", Static)
             if self._typewriter_idx <= len(self._typewriter_text):
                 tagline.update(self._typewriter_text[: self._typewriter_idx])
             else:
                 if self._typewriter_timer:
                     self._typewriter_timer.stop()
-
         except Exception:
             if self._typewriter_timer:
                 self._typewriter_timer.stop()
@@ -723,91 +702,51 @@ class JimmyTUI(App[None]):
     # INPUT
     # ------------------------------------------------------------------
 
-    def on_input_submitted(
-        self,
-        event: Input.Submitted,
-    ) -> None:
+    def on_input_submitted(self, event: Input.Submitted) -> None:
         if self.running:
             return
-
         task = event.value.strip()
-
         if not task:
             return
-
         event.input.value = ""
-
         self._submit_task(task)
 
     def _focus_input(self) -> None:
         try:
             if self.mode == "landing":
-                self.query_one(
-                    "#prompt-landing",
-                    Input,
-                ).focus()
+                self.query_one("#prompt-landing", Input).focus()
             else:
-                self.query_one(
-                    "#prompt-chat",
-                    Input,
-                ).focus()
+                self.query_one("#prompt-chat", Input).focus()
         except Exception:
             pass
 
     def _disable_input(self) -> None:
-        for iid in (
-            "#prompt-landing",
-            "#prompt-chat",
-        ):
+        for iid in ("#prompt-landing", "#prompt-chat"):
             try:
-                self.query_one(
-                    iid,
-                    Input,
-                ).disabled = True
+                self.query_one(iid, Input).disabled = True
             except Exception:
                 pass
 
     def _enable_input(self) -> None:
-        for iid in (
-            "#prompt-landing",
-            "#prompt-chat",
-        ):
+        for iid in ("#prompt-landing", "#prompt-chat"):
             try:
-                self.query_one(
-                    iid,
-                    Input,
-                ).disabled = False
+                self.query_one(iid, Input).disabled = False
             except Exception:
                 pass
-
         self._focus_input()
 
     # ------------------------------------------------------------------
     # FILE CONTEXT
     # ------------------------------------------------------------------
 
-    def watch_current_file(
-        self,
-        path: str,
-    ) -> None:
+    def watch_current_file(self, path: str) -> None:
         try:
-            widget = self.query_one(
-                "#file-context",
-                Static,
-            )
-
+            widget = self.query_one("#file-context", Static)
             if path:
                 display = path if len(path) < 30 else "…" + path[-27:]
-
-                widget.update(
-                    Text(
-                        f"◆ {display}",
-                        style="#fbbf24",
-                    )
-                )
+                widget.update(Text(f"◆ {display}", style="#fbbf24"))
             else:
                 widget.update("")
-
         except Exception:
             pass
 
@@ -821,40 +760,38 @@ class JimmyTUI(App[None]):
     def action_new_task(self) -> None:
         if self.running:
             self.action_cancel_task()
-
         self._clear_conversation()
-
         self.mode = "landing"
         self.status = "ready"
         self.current_file = ""
-
+        self.current_tool = ""
+        self.turn = 0
+        self._step_number = 0
+        self.elapsed = 0.0
+        self._last_error = None
+        self._current_session_id = None
+        self._current_task = None
         self._update_status_indicator()
+        self._update_session_indicator()
         self._start_typewriter()
+        self._focus_input()
+        self._refresh_landing_sessions()
 
-    def action_clear_conversation(self) -> None:
-        self._clear_conversation()
-
-        if self.mode == "chat":
-            self.mode = "landing"
-
-        self.status = "ready"
-        self.current_file = ""
-
-        self._update_status_indicator()
-        self._start_typewriter()
-
-    def _clear_conversation(self) -> None:
-        try:
-            self.query_one(
-                "#conversation",
-                RichLog,
-            ).clear()
-        except Exception:
-            pass
-
-        self._conversation_history.clear()
-        self._last_response = ""
-        self._files_touched.clear()
+    def action_clear_input(self) -> None:
+        if self.mode == "landing":
+            try:
+                inp = self.query_one("#prompt-landing", Input)
+                inp.value = ""
+                inp.focus()
+            except Exception:
+                pass
+        else:
+            try:
+                inp = self.query_one("#prompt-chat", Input)
+                inp.value = ""
+                inp.focus()
+            except Exception:
+                pass
 
     def action_show_help(self) -> None:
         self.push_screen(HelpScreen())
@@ -871,34 +808,24 @@ class JimmyTUI(App[None]):
     ) -> None:
         if mode is None:
             return
-
         try:
             if isinstance(mode, str):
                 mode = PermissionMode(mode)
-
             self._permission_manager.set_mode(mode)
-
             self.permission_mode = mode
             self._update_permission_mode()
-
         except (ValueError, TypeError):
             pass
 
     def action_scroll_up(self) -> None:
         try:
-            self.query_one(
-                "#conversation",
-                RichLog,
-            ).scroll_up()
+            self.query_one("#conversation", RichLog).scroll_up()
         except Exception:
             pass
 
     def action_scroll_down(self) -> None:
         try:
-            self.query_one(
-                "#conversation",
-                RichLog,
-            ).scroll_down()
+            self.query_one("#conversation", RichLog).scroll_down()
         except Exception:
             pass
 
@@ -911,94 +838,187 @@ class JimmyTUI(App[None]):
 
     def _update_status_indicator(self) -> None:
         try:
-            self.query_one(
-                "#status-indicator",
-                Static,
-            ).update(self._status_text())
+            self.query_one("#status-indicator", Static).update(self._status_text())
         except Exception:
             pass
 
     def _status_text(self) -> Text:
         text = Text()
-
         if self.running:
             frame = SPINNER_FRAMES[self.spinner_index]
-
-            text.append(
-                f"{frame} ",
-                style="cyan",
-            )
-
-            text.append(
-                self.status,
-                style="bold white",
-            )
-
+            text.append(f"{frame} ", style="cyan")
+            text.append(self.status, style="bold white")
         elif self.status == "error":
-            text.append(
-                "× ",
-                style="bold red",
-            )
-
-            text.append(
-                "error",
-                style="bold red",
-            )
-
+            text.append("× ", style="bold red")
+            text.append("error", style="bold red")
         else:
-            text.append(
-                "› ",
-                style="green",
-            )
-
-            text.append(
-                "ready",
-                style="bold green",
-            )
+            text.append("› ", style="green")
+            text.append("ready", style="bold green")
 
         if self.turn:
-            text.append(
-                f"  ·  turn {self.turn}",
-                style="dim",
-            )
-
+            text.append(f"  ·  turn {self.turn}", style="dim")
         if self.current_tool:
-            text.append(
-                "  ·  ",
-                style="dim",
-            )
-
-            text.append(
-                self.current_tool,
-                style="cyan",
-            )
-
+            text.append("  ·  ", style="dim")
+            text.append(self.current_tool, style="cyan")
         return text
+
+    # ------------------------------------------------------------------
+    # SESSIONS
+    # ------------------------------------------------------------------
+
+    def _refresh_landing_sessions(self) -> None:
+        try:
+            container = self.query_one("#recent-sessions-list", Vertical)
+            for child in list(container.children):
+                child.remove()
+        except Exception:
+            return
+
+        try:
+            wrapper = self.query_one("#recent-sessions-wrapper", Center)
+        except Exception:
+            return
+
+        sessions: list[dict] = []
+        try:
+            store = getattr(self._agent, "session_store", None)
+            if store is not None:
+                sessions = store.list()
+        except Exception:
+            pass
+
+        if not sessions:
+            wrapper.styles.display = "none"
+            return
+
+        wrapper.styles.display = "block"
+
+        for session in sessions[:3]:
+            try:
+                container.mount(SessionCard(session))
+            except Exception:
+                pass
+
+        if len(sessions) > 3:
+            try:
+                container.mount(ViewAllLink())
+            except Exception:
+                pass
+
+    def _show_all_sessions(self) -> None:
+        sessions: list[dict] = []
+        try:
+            store = getattr(self._agent, "session_store", None)
+            if store is not None:
+                sessions = store.list()
+        except Exception:
+            pass
+        if not sessions:
+            return
+
+        def handle_selection(result: str | None) -> None:
+            if result:
+                self._resume_session(result)
+
+        self.push_screen(
+            AllSessionsScreen(sessions, self._current_session_id),
+            handle_selection,
+        )
+
+    def _resume_session(self, session_id: str) -> None:
+        if self.running:
+            return
+
+        try:
+            store = getattr(self._agent, "session_store", None)
+            if store is None:
+                return
+            state = store.load(session_id)
+        except Exception:
+            return
+
+        self._current_session_id = session_id
+        self._current_task = getattr(state, "task", "Session")
+        self._conversation_history = []
+        self._files_touched = set()
+        self._last_response = ""
+        self._step_number = 0
+        self.turn = getattr(state, "turn_count", 0)
+
+        self._clear_conversation()
+
+        for msg in getattr(state, "messages", []):
+            role = msg.get("role")
+            if role == "user":
+                self._conversation_history.append(
+                    {"role": "user", "content": msg.get("content", "")}
+                )
+                self._render_user_message(msg.get("content", ""))
+            elif role == "assistant":
+                self._conversation_history.append(
+                    {"role": "assistant", "content": msg.get("content", "")}
+                )
+                self._render_agent_header()
+                self._render_content(msg.get("content", ""))
+
+        try:
+            log = self.query_one("#conversation", RichLog)
+            log.scroll_end()
+        except Exception:
+            pass
+
+        self.mode = "chat"
+        self.status = "ready"
+        self.current_tool = ""
+        self.current_file = ""
+        self._update_status_indicator()
+        self._update_session_indicator()
+        self._enable_input()
+        self._focus_input()
+
+    def _render_user_message(self, message: str) -> None:
+        try:
+            log = self.query_one("#conversation", RichLog)
+            log.write("")
+            log.write(Text("▎ YOU", style="bold #22d3ee"))
+            for line in message.splitlines():
+                log.write(Text(f"▎ {line}", style="bold white"))
+            log.write("")
+        except Exception:
+            pass
+
+    def _render_agent_header(self) -> None:
+        try:
+            log = self.query_one("#conversation", RichLog)
+            log.write(Text("▎ JIMMY", style="bold #a78bfa"))
+        except Exception:
+            pass
+
+    def on_view_all_link_show_all(self, event: ViewAllLink.ShowAll) -> None:
+        self._show_all_sessions()
+
+    def on_session_card_selected(self, event: SessionCard.Selected) -> None:
+        if isinstance(self.screen, AllSessionsScreen):
+            return
+        self._resume_session(event.session_id)
 
     # ------------------------------------------------------------------
     # TASK SUBMISSION
     # ------------------------------------------------------------------
 
-    def _submit_task(
-        self,
-        task: str,
-    ) -> None:
+    def _submit_task(self, task: str) -> None:
         if self.running:
             return
 
         self.running = True
         self.status = "thinking"
-        self.turn = 0
         self.current_tool = ""
         self.current_file = ""
         self.elapsed = 0.0
-
         self._task_started_at = time.monotonic()
-
         self._last_error = None
         self._step_number = 0
         self._worker_cancelled = False
-
         self._task_generation += 1
         self._current_generation = self._task_generation
 
@@ -1008,154 +1028,69 @@ class JimmyTUI(App[None]):
             except Exception:
                 pass
 
+        self._current_task = task
         self.mode = "chat"
 
-        self._write_user_message(task)
-
-        self._update_status_indicator()
-        self._disable_input()
-
-        self._start_agent(task)
+        if self._current_session_id:
+            try:
+                store = getattr(self._agent, "session_store", None)
+                if store is not None:
+                    state = store.load(self._current_session_id)
+                    state.add_message({"role": "user", "content": task})
+                    store.save(self._current_session_id, state, "running")
+            except Exception:
+                pass
+            self._write_user_message(task)
+            self._update_status_indicator()
+            self._disable_input()
+            self._start_agent_resume(self._current_session_id)
+        else:
+            self._write_user_message(task)
+            self._update_status_indicator()
+            self._disable_input()
+            self._start_agent(task)
 
     # ------------------------------------------------------------------
     # CONVERSATION
     # ------------------------------------------------------------------
 
-    def _write_user_message(
-        self,
-        message: str,
-    ) -> None:
-        self._conversation_history.append(
-            {
-                "role": "user",
-                "content": message,
-            }
-        )
+    def _write_user_message(self, message: str) -> None:
+        self._conversation_history.append({"role": "user", "content": message})
+        self._render_user_message(message)
 
+    def _write_agent_text(self, text: str) -> None:
+        self._last_response = text
+        self._conversation_history.append({"role": "assistant", "content": text})
+        self._render_content(text)
+
+    def _render_content(self, text: str) -> None:
         try:
-            log = self.query_one(
-                "#conversation",
-                RichLog,
-            )
-
-            log.write("")
-            log.write(
-                Text(
-                    "▎ YOU",
-                    style="bold #22d3ee",
-                )
-            )
-
-            for line in message.splitlines():
-                log.write(
-                    Text(
-                        f"▎ {line}",
-                        style="bold white",
-                    )
-                )
-
-            log.write("")
-
-        except Exception:
-            pass
-
-    def _write_agent_header(self) -> None:
-        try:
-            log = self.query_one(
-                "#conversation",
-                RichLog,
-            )
-
-            log.write(
-                Text(
-                    "▎ JIMMY",
-                    style="bold #a78bfa",
-                )
-            )
-
-        except Exception:
-            pass
-
-    def _render_content(
-        self,
-        text: str,
-    ) -> None:
-        try:
-            log = self.query_one(
-                "#conversation",
-                RichLog,
-            )
+            log = self.query_one("#conversation", RichLog)
         except Exception:
             return
 
         if "```" not in text:
             for line in text.splitlines():
-                log.write(
-                    Text(
-                        f"▎ {line}",
-                        style="#d8dee9",
-                    )
-                )
-
+                log.write(Text(f"▎ {line}", style="#d8dee9"))
             return
 
-        parts = re.split(
-            r"(```[\w]*\n[\s\S]*?```)",
-            text,
-        )
-
+        parts = re.split(r"(```[\w]*\n[\s\S]*?```)", text)
         for part in parts:
             if part.startswith("```"):
                 lines = part.split("\n")
-
                 lang = lines[0].strip("`").strip() or "text"
-
                 code = "\n".join(lines[1:-1])
-
                 if code:
                     try:
-                        syntax = Syntax(
-                            code,
-                            lang,
-                            theme="monokai",
-                            background="default",
-                        )
-
+                        syntax = Syntax(code, lang, theme="monokai", background="default")
                         log.write(syntax)
-
                     except Exception:
                         for code_line in code.splitlines():
-                            log.write(
-                                Text(
-                                    f"▎ {code_line}",
-                                    style="dim",
-                                )
-                            )
-
+                            log.write(Text(f"▎ {code_line}", style="dim"))
             else:
                 for line in part.splitlines():
                     if line.strip():
-                        log.write(
-                            Text(
-                                f"▎ {line}",
-                                style="#d8dee9",
-                            )
-                        )
-
-    def _write_agent_text(
-        self,
-        text: str,
-    ) -> None:
-        self._last_response = text
-
-        self._conversation_history.append(
-            {
-                "role": "assistant",
-                "content": text,
-            }
-        )
-
-        self._render_content(text)
+                        log.write(Text(f"▎ {line}", style="#d8dee9"))
 
     def _write_tool_start(
         self,
@@ -1164,116 +1099,59 @@ class JimmyTUI(App[None]):
         arguments: dict[str, Any] | None,
     ) -> None:
         try:
-            log = self.query_one(
-                "#conversation",
-                RichLog,
-            )
-
-            icon = TOOL_ICONS.get(
-                tool_name or "",
-                "▪",
-            )
-
+            log = self.query_one("#conversation", RichLog)
+            icon = TOOL_ICONS.get(tool_name or "", "▪")
             detail = self._tool_detail(arguments)
-
             t = Text()
-
-            t.append(
-                f"  {icon} ",
-                style="cyan",
-            )
-
-            t.append(
-                tool_name or "unknown",
-                style="bold white",
-            )
-
+            t.append(f"  {icon} ", style="cyan")
+            t.append(tool_name or "unknown", style="bold white")
             if detail:
-                t.append(
-                    f"  {detail}",
-                    style="dim",
-                )
-
+                t.append(f"  {detail}", style="dim")
                 self._files_touched.add(detail)
-
             log.write(t)
-
         except Exception:
             pass
 
-    def _write_tool_end(
-        self,
-        elapsed: float,
-        success: bool,
-    ) -> None:
+    def _write_tool_end(self, elapsed: float, success: bool) -> None:
         try:
-            log = self.query_one(
-                "#conversation",
-                RichLog,
-            )
-
+            log = self.query_one("#conversation", RichLog)
             t = Text()
-
             t.append("    ")
-
-            t.append(
-                "✓ " if success else "× ",
-                style=("green" if success else "red"),
-            )
-
-            t.append(
-                self._fmt_dur(elapsed),
-                style="dim",
-            )
-
+            t.append("✓ " if success else "× ", style=("green" if success else "red"))
+            t.append(self._fmt_dur(elapsed), style="dim")
             log.write(t)
-
         except Exception:
             pass
 
     def _write_separator(self) -> None:
         try:
-            log = self.query_one(
-                "#conversation",
-                RichLog,
-            )
-
-            log.write(
-                Text(
-                    "─" * 50,
-                    style="dim #1e293b",
-                )
-            )
-
+            log = self.query_one("#conversation", RichLog)
+            log.write(Text("─" * 50, style="dim #1e293b"))
         except Exception:
             pass
+
+    def _clear_conversation(self) -> None:
+        try:
+            self.query_one("#conversation", RichLog).clear()
+        except Exception:
+            pass
+        self._conversation_history.clear()
+        self._last_response = ""
+        self._files_touched.clear()
 
     # ------------------------------------------------------------------
     # AGENT WORKER
     # ------------------------------------------------------------------
 
-    @work(
-        thread=True,
-        group="agent",
-        exclusive=True,
-        exit_on_error=False,
-    )
-    def _start_agent(
-        self,
-        task: str,
-    ) -> None:
+    @work(thread=True, group="agent", exclusive=True, exit_on_error=False)
+    def _start_agent(self, task: str) -> None:
         gen = self._current_generation
-
         try:
             self._agent.run(
                 task,
-                lambda event: self._agent_event(
-                    event,
-                    gen,
-                ),
+                lambda event: self._agent_event(event, gen),
                 self._ask_permission,
             )
-
         except (
             RuntimeError,
             ValueError,
@@ -1282,22 +1160,29 @@ class JimmyTUI(App[None]):
             TimeoutError,
             PermissionError,
         ) as exc:
-            self.call_from_thread(
-                self._agent_failed,
-                exc,
-                gen,
-            )
+            self.call_from_thread(self._agent_failed, exc, gen)
 
-    def _agent_event(
-        self,
-        event: AgentEvent,
-        generation: int,
-    ) -> None:
-        self.call_from_thread(
-            self._handle_agent_event,
-            event,
-            generation,
-        )
+    @work(thread=True, group="agent", exclusive=True, exit_on_error=False)
+    def _start_agent_resume(self, session_id: str) -> None:
+        gen = self._current_generation
+        try:
+            self._agent.resume(
+                session_id,
+                lambda event: self._agent_event(event, gen),
+                self._ask_permission,
+            )
+        except (
+            RuntimeError,
+            ValueError,
+            TypeError,
+            OSError,
+            TimeoutError,
+            PermissionError,
+        ) as exc:
+            self.call_from_thread(self._agent_failed, exc, gen)
+
+    def _agent_event(self, event: AgentEvent, generation: int) -> None:
+        self.call_from_thread(self._handle_agent_event, event, generation)
 
     # ------------------------------------------------------------------
     # PERMISSION
@@ -1309,37 +1194,19 @@ class JimmyTUI(App[None]):
         reason: str,
         arguments: dict[str, Any],
     ) -> bool:
-        """
-        Called from the agent worker thread.
-
-        Show the permission prompt on the Textual UI thread,
-        then block this worker until the user answers.
-        """
-
-        decision = {
-            "approved": False,
-        }
-
+        decision = {"approved": False}
         finished = threading.Event()
 
-        def handle_result(
-            result: str | None,
-        ) -> None:
+        def handle_result(result: str | None) -> None:
             if result == "allow":
                 decision["approved"] = True
-
             elif result == "full_access":
                 self._permission_manager.set_mode(PermissionMode.FULL_ACCESS)
-
                 self.permission_mode = PermissionMode.FULL_ACCESS
-
                 self._update_permission_mode()
-
                 decision["approved"] = True
-
             else:
                 decision["approved"] = False
-
             finished.set()
 
         def show_prompt() -> None:
@@ -1347,7 +1214,6 @@ class JimmyTUI(App[None]):
                 decision["approved"] = False
                 finished.set()
                 return
-
             self.push_screen(
                 PermissionPrompt(
                     tool_name=tool_name,
@@ -1358,20 +1224,14 @@ class JimmyTUI(App[None]):
             )
 
         self.call_from_thread(show_prompt)
-
         finished.wait()
-
         return decision["approved"]
 
     # ------------------------------------------------------------------
     # AGENT EVENTS
     # ------------------------------------------------------------------
 
-    def _handle_agent_event(
-        self,
-        event: AgentEvent,
-        generation: int,
-    ) -> None:
+    def _handle_agent_event(self, event: AgentEvent, generation: int) -> None:
         if generation != self._current_generation or self._worker_cancelled:
             return
 
@@ -1381,72 +1241,43 @@ class JimmyTUI(App[None]):
             self.status = "thinking"
             self.current_tool = ""
             self._update_status_indicator()
-            self._write_agent_header()
+            self._render_agent_header()
 
         elif event.kind == "turn_end":
             if event.message == "final response":
                 self.status = "finalizing"
-
             else:
                 self.status = "planning"
-
                 if event.message:
                     self._write_agent_text(event.message)
-
             self._update_status_indicator()
 
         elif event.kind == "tool_start":
             self.status = "running"
             self.current_tool = event.tool_name or "unknown"
-
             detail = self._tool_detail(event.arguments)
-
             if detail:
                 self.current_file = detail
-
             self._update_status_indicator()
-
-            self._write_tool_start(
-                event.turn,
-                event.tool_name,
-                event.arguments,
-            )
+            self._write_tool_start(event.turn, event.tool_name, event.arguments)
 
         elif event.kind == "tool_end":
             self._step_number += 1
-
-            success = event.message not in {
-                "error",
-                "denied",
-            }
-
-            self._write_tool_end(
-                event.elapsed or 0.0,
-                success,
-            )
-
+            success = event.message not in {"error", "denied"}
+            self._write_tool_end(event.elapsed or 0.0, success)
             self.current_tool = ""
             self.current_file = ""
-
             if event.message == "denied":
                 self.status = "planning"
             else:
                 self.status = "planning" if success else "tool failed"
-
             self._update_status_indicator()
 
         elif event.kind == "complete":
-            self._task_finished(
-                event.message or "",
-                event.elapsed,
-                generation,
-            )
+            self._task_finished(event.message or "", event.elapsed, generation)
 
         elif event.kind == "error":
-            self._agent_failed(
-                RuntimeError(event.message or "Jimmy failed."),
-                generation,
-            )
+            self._agent_failed(RuntimeError(event.message or "Jimmy failed."), generation)
 
     # ------------------------------------------------------------------
     # TASK FINISH
@@ -1465,63 +1296,35 @@ class JimmyTUI(App[None]):
         self.status = "ready"
         self.current_tool = ""
         self.current_file = ""
-
         self.elapsed = elapsed or (time.monotonic() - self._task_started_at)
 
         if result.strip():
             self._last_response = result.strip()
-
-            self._conversation_history.append(
-                {
-                    "role": "assistant",
-                    "content": result.strip(),
-                }
-            )
+            self._conversation_history.append({"role": "assistant", "content": result.strip()})
 
         try:
-            log = self.query_one(
-                "#conversation",
-                RichLog,
-            )
-
+            log = self.query_one("#conversation", RichLog)
             log.write("")
-
-            log.write(
-                Text(
-                    "▎ ✓ done",
-                    style="bold green",
-                )
-            )
-
-            log.write(
-                Text(
-                    f"▎ {self._summary()}",
-                    style="dim",
-                )
-            )
-
+            log.write(Text("▎ ✓ done", style="bold green"))
+            log.write(Text(f"▎ {self._summary()}", style="dim"))
             if result.strip():
                 log.write("")
                 self._render_content(result.strip())
-
             log.write("")
             self._write_separator()
-
         except Exception:
             pass
 
         self._enable_input()
         self._update_status_indicator()
+        self._update_session_indicator()
+        self._refresh_landing_sessions()
 
     # ------------------------------------------------------------------
     # ERROR
     # ------------------------------------------------------------------
 
-    def _agent_failed(
-        self,
-        exc: Exception,
-        generation: int,
-    ) -> None:
+    def _agent_failed(self, exc: Exception, generation: int) -> None:
         if generation != self._current_generation:
             return
 
@@ -1530,38 +1333,21 @@ class JimmyTUI(App[None]):
         self.current_tool = ""
         self.current_file = ""
         self._last_error = str(exc)
-
         self.elapsed = time.monotonic() - self._task_started_at
 
         try:
-            log = self.query_one(
-                "#conversation",
-                RichLog,
-            )
-
+            log = self.query_one("#conversation", RichLog)
             log.write("")
-
-            log.write(
-                Text(
-                    f"▎ × {type(exc).__name__}: {exc}",
-                    style="bold red",
-                )
-            )
-
-            log.write(
-                Text(
-                    f"▎ {self._summary()}",
-                    style="dim",
-                )
-            )
-
+            log.write(Text(f"▎ × {type(exc).__name__}: {exc}", style="bold red"))
+            log.write(Text(f"▎ {self._summary()}", style="dim"))
             log.write("")
-
         except Exception:
             pass
 
         self._enable_input()
         self._update_status_indicator()
+        self._update_session_indicator()
+        self._refresh_landing_sessions()
 
     # ------------------------------------------------------------------
     # CANCEL
@@ -1586,22 +1372,10 @@ class JimmyTUI(App[None]):
         self.current_file = ""
 
         try:
-            log = self.query_one(
-                "#conversation",
-                RichLog,
-            )
-
+            log = self.query_one("#conversation", RichLog)
             log.write("")
-
-            log.write(
-                Text(
-                    "▎ task cancelled",
-                    style="yellow",
-                )
-            )
-
+            log.write(Text("▎ task cancelled", style="yellow"))
             log.write("")
-
         except Exception:
             pass
 
@@ -1613,25 +1387,13 @@ class JimmyTUI(App[None]):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _tool_detail(
-        arguments: dict[str, Any] | None,
-    ) -> str:
+    def _tool_detail(arguments: dict[str, Any] | None) -> str:
         if not arguments:
             return ""
-
-        for key in (
-            "path",
-            "file_path",
-            "filename",
-            "query",
-            "pattern",
-            "command",
-        ):
+        for key in ("path", "file_path", "filename", "query", "pattern", "command"):
             value = arguments.get(key)
-
             if value is not None:
                 return str(value).replace("\n", " ")[:90]
-
         return ""
 
     def _summary(self) -> str:
@@ -1647,24 +1409,16 @@ class JimmyTUI(App[None]):
     def _detect_git_branch(self) -> str:
         try:
             result = subprocess.run(
-                [
-                    "git",
-                    "rev-parse",
-                    "--abbrev-ref",
-                    "HEAD",
-                ],
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                 cwd=self._workspace,
                 capture_output=True,
                 text=True,
                 timeout=2,
             )
-
             if result.returncode == 0:
                 return result.stdout.strip()
-
         except Exception:
             pass
-
         return ""
 
 
@@ -1685,5 +1439,4 @@ def run_tui(
         workspace=workspace,
         show_time=show_time,
     )
-
     app.run(mouse=True)
