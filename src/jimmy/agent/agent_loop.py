@@ -1,5 +1,6 @@
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 from jimmy.agent.events import AgentEvent
 from jimmy.agent.executor import ToolExecutor
@@ -17,6 +18,8 @@ from jimmy.permissions.manager import (
     PermissionAction,
     PermissionManager,
 )
+from jimmy.session.json_store import JsonSessionStore
+from jimmy.session.store import SessionStore
 from jimmy.state.session import SessionState
 from jimmy.tools.registry import ToolRegistry
 from jimmy.utils.limits import truncate_output
@@ -38,7 +41,7 @@ class AgentLoop:
         self,
         llm: LLMProvider,
         tools: ToolRegistry,
-        workspace,
+        workspace: Path,
         max_turns: int = 20,
         planner: Planner | None = None,
         executor: ToolExecutor | None = None,
@@ -47,6 +50,7 @@ class AgentLoop:
         explorer: CodebaseExplorer | None = None,
         git_state: GitState | None = None,
         permission_manager: PermissionManager | None = None,
+        session_store: SessionStore | None = None,
     ) -> None:
         self.llm = llm
         self.tools = tools
@@ -58,8 +62,21 @@ class AgentLoop:
         self.observer = observer or Observer()
         self.recovery = recovery or RecoveryManager()
         self.explorer = explorer or CodebaseExplorer(workspace)
-        self.git_state = git_state or GitState(workspace)
-        self.permissions = permission_manager or PermissionManager()
+
+        self.git_state = git_state if git_state is not None else GitState(workspace)
+
+        self.permissions = (
+            permission_manager if permission_manager is not None else PermissionManager()
+        )
+
+        # IMPORTANT:
+        # Use the concrete implementation by default.
+        #
+        # It stores sessions outside the project,
+        # so .jimmy does not become a Git change.
+        self.session_store = (
+            session_store if session_store is not None else JsonSessionStore(Path.home())
+        )
 
         self.context_manager = ContextManager(
             summarizer=ContextSummarizer(llm),
@@ -71,21 +88,15 @@ class AgentLoop:
         on_event: EventHandler | None = None,
         on_permission: PermissionHandler | None = None,
     ) -> str:
-        """Run Jimmy until the model decides the task is complete."""
+        """Start a new Jimmy session."""
 
         started_at = time.monotonic()
 
-        def emit(event: AgentEvent) -> None:
-            if on_event is not None:
-                on_event(event)
-
-        # Keep planning cheap for small tasks.
         plan_state = None
 
         if len(task.split()) >= 15:
             plan_state = self.planner.create_initial_plan(task)
 
-        # Explore once at session start.
         exploration_summary = self.explorer.summary()
 
         messages: list[dict[str, str]] = [
@@ -116,11 +127,110 @@ class AgentLoop:
             messages=messages,
         )
 
-        # Every task gets the same tool set.
+        session_id = self.session_store.create(state)
+
+        self.session_store.save(
+            session_id=session_id,
+            state=state,
+            status="running",
+        )
+
+        try:
+            return self._run_state(
+                state=state,
+                session_id=session_id,
+                started_at=started_at,
+                on_event=on_event,
+                on_permission=on_permission,
+            )
+
+        except KeyboardInterrupt:
+            self.session_store.save(
+                session_id=session_id,
+                state=state,
+                status="interrupted",
+            )
+            raise
+
+        except Exception:
+            self.session_store.save(
+                session_id=session_id,
+                state=state,
+                status="failed",
+            )
+            raise
+
+    def resume(
+        self,
+        session_id: str,
+        on_event: EventHandler | None = None,
+        on_permission: PermissionHandler | None = None,
+    ) -> str:
+        """Resume a saved session."""
+
+        # load() returns SessionState directly.
+        state = self.session_store.load(session_id)
+
+        started_at = time.monotonic()
+
+        self.session_store.save(
+            session_id=session_id,
+            state=state,
+            status="running",
+        )
+
+        try:
+            return self._run_state(
+                state=state,
+                session_id=session_id,
+                started_at=started_at,
+                on_event=on_event,
+                on_permission=on_permission,
+            )
+
+        except KeyboardInterrupt:
+            self.session_store.save(
+                session_id=session_id,
+                state=state,
+                status="interrupted",
+            )
+            raise
+
+        except Exception:
+            self.session_store.save(
+                session_id=session_id,
+                state=state,
+                status="failed",
+            )
+            raise
+
+    def _run_state(
+        self,
+        state: SessionState,
+        session_id: str,
+        started_at: float,
+        on_event: EventHandler | None,
+        on_permission: PermissionHandler | None,
+    ) -> str:
+        """Run the ReAct loop for a new or resumed session."""
+
+        def emit(
+            event: AgentEvent,
+        ) -> None:
+            if on_event is not None:
+                on_event(event)
+
         tool_schemas = self.tools.schemas()
 
         while state.turn_count < self.max_turns:
             turn = state.next_turn()
+
+            self.session_store.save(
+                session_id=session_id,
+                state=state,
+                status="running",
+            )
+
             turn_started_at = time.monotonic()
 
             emit(
@@ -135,9 +245,7 @@ class AgentLoop:
             # ==============================
 
             try:
-                context = self.context_manager.prepare(
-                    state.messages,
-                )
+                context = self.context_manager.prepare(state.messages)
 
                 response = self.llm.chat(
                     messages=context,
@@ -145,14 +253,13 @@ class AgentLoop:
                 )
 
             except LLMProviderError as exc:
-                total_elapsed = time.monotonic() - started_at
                 message = str(exc)
 
                 emit(
                     AgentEvent(
                         kind="error",
                         turn=turn,
-                        elapsed=total_elapsed,
+                        elapsed=(time.monotonic() - started_at),
                         message=message,
                     )
                 )
@@ -165,14 +272,13 @@ class AgentLoop:
                 TypeError,
                 OSError,
             ) as exc:
-                total_elapsed = time.monotonic() - started_at
-                message = f"❌ LLM request failed.\n{exc}"
+                message = f"❌ LLM request failed.\n{type(exc).__name__}: {exc}"
 
                 emit(
                     AgentEvent(
                         kind="error",
                         turn=turn,
-                        elapsed=total_elapsed,
+                        elapsed=(time.monotonic() - started_at),
                         message=message,
                     )
                 )
@@ -189,15 +295,22 @@ class AgentLoop:
                     message=(
                         "final response"
                         if not response.tool_calls
-                        else f"{len(response.tool_calls)} tool call(s)"
+                        else (f"{len(response.tool_calls)} tool call(s)")
                     ),
                 )
             )
 
-            # Save model response.
+            # ==============================
+            # SAVE ASSISTANT
+            # ==============================
+
             if response.assistant_message:
-                state.add_message(
-                    response.assistant_message,
+                state.add_message(response.assistant_message)
+
+                self.session_store.save(
+                    session_id=session_id,
+                    state=state,
+                    status="running",
                 )
 
             # ==============================
@@ -205,14 +318,19 @@ class AgentLoop:
             # ==============================
 
             if not response.tool_calls:
-                total_elapsed = time.monotonic() - started_at
                 result = response.content or ""
+
+                self.session_store.save(
+                    session_id=session_id,
+                    state=state,
+                    status="completed",
+                )
 
                 emit(
                     AgentEvent(
                         kind="complete",
                         turn=turn,
-                        elapsed=total_elapsed,
+                        elapsed=(time.monotonic() - started_at),
                         message=result,
                     )
                 )
@@ -236,30 +354,12 @@ class AgentLoop:
                 )
 
                 # ==============================
-                # PERMISSION CHECK
+                # PERMISSION
                 # ==============================
 
-                tool = self.tools.get(
-                    tool_call.name,
-                )
+                tool = self.tools.get(tool_call.name)
 
-                permission = self.permissions.check(
-                    tool,
-                )
-
-                if permission.action == PermissionAction.DENY:
-                    message = f"❌ Permission denied for '{tool_call.name}'.\n{permission.reason}"
-
-                    emit(
-                        AgentEvent(
-                            kind="error",
-                            turn=turn,
-                            elapsed=time.monotonic() - started_at,
-                            message=message,
-                        )
-                    )
-
-                    raise PermissionError(message)
+                permission = self.permissions.check(tool)
 
                 if permission.action == PermissionAction.ASK:
                     if on_permission is None:
@@ -287,6 +387,12 @@ class AgentLoop:
                             }
                         )
 
+                        self.session_store.save(
+                            session_id=session_id,
+                            state=state,
+                            status="running",
+                        )
+
                         emit(
                             AgentEvent(
                                 kind="tool_end",
@@ -298,6 +404,21 @@ class AgentLoop:
                         )
 
                         continue
+
+                elif permission.action == PermissionAction.DENY:
+                    message = f"❌ Permission denied for '{tool_call.name}'.\n{permission.reason}"
+
+                    emit(
+                        AgentEvent(
+                            kind="tool_end",
+                            turn=turn,
+                            tool_name=tool_call.name,
+                            elapsed=(time.monotonic() - tool_started_at),
+                            message="denied",
+                        )
+                    )
+
+                    raise PermissionError(message)
 
                 # ==============================
                 # EXECUTE TOOL
@@ -317,54 +438,56 @@ class AgentLoop:
                     TimeoutError,
                     FileNotFoundError,
                 ) as exc:
-                    tool_elapsed = time.monotonic() - tool_started_at
-
-                    message = str(exc)
+                    error_message = str(exc)
 
                     emit(
                         AgentEvent(
                             kind="tool_end",
                             turn=turn,
                             tool_name=tool_call.name,
-                            elapsed=tool_elapsed,
+                            elapsed=(time.monotonic() - tool_started_at),
                             message="error",
                         )
                     )
 
-                    recovery_exception = RuntimeError(
-                        message,
-                    )
+                    recovery_exception = RuntimeError(error_message)
 
-                    recovery_decision = self.recovery.recover(
-                        recovery_exception,
-                    )
+                    recovery_decision = self.recovery.recover(recovery_exception)
 
                     if not recovery_decision.should_continue:
-                        total_elapsed = time.monotonic() - started_at
-
-                        error_message = recovery_decision.message
+                        final_error = recovery_decision.message
 
                         emit(
                             AgentEvent(
                                 kind="error",
                                 turn=turn,
-                                elapsed=total_elapsed,
-                                message=error_message,
+                                elapsed=(time.monotonic() - started_at),
+                                message=final_error,
                             )
                         )
 
-                        raise RuntimeError(error_message) from recovery_exception
+                        raise RuntimeError(final_error) from recovery_exception
 
                     state.add_message(
                         {
                             "role": "tool",
-                            "tool_call_id": tool_call.id,
+                            "tool_call_id": (tool_call.id),
                             "name": tool_call.name,
-                            "content": (f"Tool failed: {message}"),
+                            "content": (f"Tool failed: {error_message}"),
                         }
                     )
 
+                    self.session_store.save(
+                        session_id=session_id,
+                        state=state,
+                        status="running",
+                    )
+
                     continue
+
+                # ==============================
+                # OBSERVE RESULT
+                # ==============================
 
                 result = truncate_output(
                     tool_result.output
@@ -388,9 +511,7 @@ class AgentLoop:
                 else:
                     observation = self.observer.observe_failure(
                         tool_name=tool_call.name,
-                        error=RuntimeError(
-                            tool_result.error or "Unknown tool error.",
-                        ),
+                        error=RuntimeError(tool_result.error or "Unknown tool error."),
                     )
 
                 emit(
@@ -403,34 +524,33 @@ class AgentLoop:
                     )
                 )
 
-                # Recover actual tool failures.
-                # Permission failures never reach this section.
-                if not tool_result.success:
-                    recovery_exception = RuntimeError(
-                        tool_result.error or "Unknown tool error.",
-                    )
+                # ==============================
+                # RECOVERY
+                # ==============================
 
-                    recovery_decision = self.recovery.recover(
-                        recovery_exception,
-                    )
+                if not tool_result.success:
+                    recovery_exception = RuntimeError(tool_result.error or "Unknown tool error.")
+
+                    recovery_decision = self.recovery.recover(recovery_exception)
 
                     if not recovery_decision.should_continue:
-                        total_elapsed = time.monotonic() - started_at
-
-                        error_message = recovery_decision.message
+                        final_error = recovery_decision.message
 
                         emit(
                             AgentEvent(
                                 kind="error",
                                 turn=turn,
-                                elapsed=total_elapsed,
-                                message=error_message,
+                                elapsed=(time.monotonic() - started_at),
+                                message=final_error,
                             )
                         )
 
-                        raise RuntimeError(error_message) from recovery_exception
+                        raise RuntimeError(final_error) from recovery_exception
 
-                # Send result back to the LLM.
+                # ==============================
+                # SAVE TOOL RESULT
+                # ==============================
+
                 state.add_message(
                     {
                         "role": "tool",
@@ -440,15 +560,25 @@ class AgentLoop:
                     }
                 )
 
-        total_elapsed = time.monotonic() - started_at
+                self.session_store.save(
+                    session_id=session_id,
+                    state=state,
+                    status="running",
+                )
 
         message = f"Jimmy stopped after reaching the maximum of {self.max_turns} turns."
+
+        self.session_store.save(
+            session_id=session_id,
+            state=state,
+            status="failed",
+        )
 
         emit(
             AgentEvent(
                 kind="error",
                 turn=state.turn_count,
-                elapsed=total_elapsed,
+                elapsed=(time.monotonic() - started_at),
                 message=message,
             )
         )
