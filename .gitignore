@@ -209,3 +209,6 @@ Desktop.ini
 *.secrets
 *.token
 *.token.json
+
+# Jimmy local session/state data — never commit
+sessions/*
