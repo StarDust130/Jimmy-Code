@@ -109,7 +109,7 @@ class HelpScreen(Screen):
 
 
 class PermissionScreen(Screen[PermissionMode | None]):
-    """Compact permission mode selector."""
+    """Permission mode selector."""
 
     def __init__(
         self,
@@ -119,28 +119,28 @@ class PermissionScreen(Screen[PermissionMode | None]):
 
         self.options = [
             (
+                PermissionMode.SAFE_ONLY,
+                "🔒",
+                "Safe Only",
+                "Read/search freely • approve edits & commands",
+            ),
+            (
                 PermissionMode.ASK,
                 "🛡",
                 "Ask",
-                "Approve risky actions",
+                "Work normally • approve risky actions",
             ),
             (
                 PermissionMode.FULL_ACCESS,
                 "⚡",
                 "Full Access",
-                "Allow tools without asking",
-            ),
-            (
-                PermissionMode.SAFE_ONLY,
-                "🔒",
-                "Safe Only",
-                "Ask before risky actions",
+                "Allow every tool without prompts",
             ),
         ]
 
         self.selected_index = next(
             (i for i, (mode, _, _, _) in enumerate(self.options) if mode == current_mode),
-            0,
+            1,
         )
 
     def compose(self) -> ComposeResult:
@@ -151,7 +151,7 @@ class PermissionScreen(Screen[PermissionMode | None]):
                     id="permission-title",
                 ),
                 Static(
-                    "Choose how Jimmy handles risky actions",
+                    "Choose how Jimmy should handle tool permissions.",
                     id="permission-subtitle",
                 ),
                 Static(
@@ -159,7 +159,7 @@ class PermissionScreen(Screen[PermissionMode | None]):
                     id="permission-options",
                 ),
                 Static(
-                    "↑↓ select   Enter confirm",
+                    "↑↓ select   Enter confirm   Esc close",
                     id="permission-footer",
                 ),
                 id="permission-dialog",
@@ -197,16 +197,17 @@ class PermissionScreen(Screen[PermissionMode | None]):
             self.dismiss(self.options[self.selected_index][0])
 
         elif event.key == "1":
-            self.dismiss(PermissionMode.ASK)
+            self.dismiss(PermissionMode.SAFE_ONLY)
 
         elif event.key == "2":
-            self.dismiss(PermissionMode.FULL_ACCESS)
+            self.dismiss(PermissionMode.ASK)
 
         elif event.key == "3":
-            self.dismiss(PermissionMode.SAFE_ONLY)
+            self.dismiss(PermissionMode.FULL_ACCESS)
 
         elif event.key == "escape":
             self.dismiss(None)
+
 
 class PermissionPrompt(Screen[str]):
     """Compact approval dialog for risky actions."""
@@ -308,6 +309,7 @@ class PermissionPrompt(Screen[str]):
 
         elif event.button.id == "approval-full":
             self.dismiss("full_access")
+
 
 class JimmyTUI(App[None]):
     CSS_PATH = "styles.tcss"
