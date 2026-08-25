@@ -42,7 +42,7 @@ class PermissionManager:
         metadata = tool.metadata
 
         # ⚡ Full Access
-        # Allow everything without asking.
+        # Allow every tool without asking.
         if self.mode == PermissionMode.FULL_ACCESS:
             return PermissionDecision(
                 action=PermissionAction.ALLOW,
@@ -50,8 +50,9 @@ class PermissionManager:
             )
 
         # 🔒 Safe Only
-        # Safe/read-only tools run automatically.
-        # Risky tools require user approval.
+        # Read-only tools are allowed automatically.
+        # Anything that changes, writes, executes, or commits
+        # must ask the user first.
         if self.mode == PermissionMode.SAFE_ONLY:
             if metadata.read_only:
                 return PermissionDecision(
@@ -61,29 +62,34 @@ class PermissionManager:
 
             return PermissionDecision(
                 action=PermissionAction.ASK,
-                reason=("This action is not read-only and requires your approval."),
+                reason=(
+                    "This action can modify or execute in the workspace and requires your approval."
+                ),
             )
 
-        # 🛡️ Ask
-        # Read-only tools run automatically.
+        # 🛡 Ask
+        # Normal/safe tools run automatically.
         if metadata.read_only:
             return PermissionDecision(
                 action=PermissionAction.ALLOW,
                 reason="Tool is read-only.",
             )
 
+        # Explicit confirmation requirement.
         if metadata.requires_confirmation:
             return PermissionDecision(
                 action=PermissionAction.ASK,
                 reason="This tool requires approval.",
             )
 
+        # Destructive tools require approval.
         if metadata.destructive:
             return PermissionDecision(
                 action=PermissionAction.ASK,
                 reason=("This tool can perform a destructive action."),
             )
 
+        # Normal non-destructive tool.
         return PermissionDecision(
             action=PermissionAction.ALLOW,
             reason="Allowed by policy.",
