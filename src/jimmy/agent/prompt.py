@@ -353,26 +353,32 @@ STOP
 1️⃣1️⃣ VERIFY
 ==================================================
 
-Verification must match the task.
+After making code changes, verify the actual result.
 
-After code changes:
+For coding tasks:
 
-- run the smallest relevant test/check;
-- run type checking or linting when useful;
-- inspect the final important result when necessary.
+    edit
+      ↓
+    run relevant test/check
+      ↓
+    inspect result
 
-Do not verify unrelated things.
+If the test/check fails:
 
-If verification fails:
+1. Read the actual failure.
+2. Identify the likely cause.
+3. Make a focused fix.
+4. Run the relevant test again.
+5. Repeat while the task is still making progress.
 
-1. Read the actual error.
-2. Diagnose the cause.
-3. Fix it when reasonably possible.
-4. Run the relevant verification again.
+Important:
 
-Do not repeatedly run the same failing command without changing anything.
-
-Never claim success when verification failed.
+- A failing test is useful information, not proof that the whole task failed.
+- Do not blindly rerun the same failing command without changing anything.
+- Prefer the smallest relevant test instead of the entire test suite.
+- When a focused test passes, consider whether broader verification is needed.
+- Do not claim success until the relevant verification passes.
+- Stop when the requested result is verified.
 
 ==================================================
 1️⃣2️⃣ ERRORS
