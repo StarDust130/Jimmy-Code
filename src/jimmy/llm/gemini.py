@@ -1,3 +1,5 @@
+import base64
+import binascii
 import json
 from typing import Any
 
@@ -44,8 +46,10 @@ class GeminiProvider(LLMProvider):
                 contents=contents,
                 config=config,
             )
+
         except errors.APIError as exc:
             raise self._normalize_error(exc) from exc
+
         except Exception as exc:
             raise LLMProviderError(
                 message=(f"❌ Gemini request failed.\n{exc}"),
@@ -54,6 +58,10 @@ class GeminiProvider(LLMProvider):
 
         return self._convert_response(response)
 
+    # ============================================================
+    # TOOLS
+    # ============================================================
+
     @staticmethod
     def _convert_tools(
         tools: list[dict[str, Any]] | None,
@@ -61,35 +69,46 @@ class GeminiProvider(LLMProvider):
         if not tools:
             return []
 
-        declarations: list[types.FunctionDeclaration] = []
+        declarations: list[dict[str, Any]] = []
 
         for tool in tools:
             function = tool["function"]
 
             declarations.append(
-                types.FunctionDeclaration(
-                    name=function["name"],
-                    description=function.get(
+                {
+                    "name": function["name"],
+                    "description": function.get(
                         "description",
                         "",
                     ),
-                    parameters_json_schema=function.get(
+                    "parameters_json_schema": function.get(
                         "parameters",
                         {
                             "type": "object",
                         },
                     ),
-                )
+                }
             )
 
+        # Use model_validate instead of passing
+        # function_declarations as a constructor keyword.
+        # This avoids the Pylance issue while producing
+        # the same Gemini Tool structure.
         return [
-            types.Tool(
-                function_declarations=declarations,
+            types.Tool.model_validate(
+                {
+                    "function_declarations": declarations,
+                }
             )
         ]
 
-    @staticmethod
+    # ============================================================
+    # MESSAGES
+    # ============================================================
+
+    @classmethod
     def _convert_messages(
+        cls,
         messages: list[dict[str, Any]],
     ) -> tuple[
         str | None,
@@ -105,9 +124,11 @@ class GeminiProvider(LLMProvider):
                 return
 
             contents.append(
-                types.Content(
-                    role="user",
-                    parts=list(pending_tool_responses),
+                types.Content.model_validate(
+                    {
+                        "role": "user",
+                        "parts": pending_tool_responses,
+                    }
                 )
             )
 
@@ -120,94 +141,131 @@ class GeminiProvider(LLMProvider):
                 "",
             )
 
+            # --------------------------------------------------
             # SYSTEM
+            # --------------------------------------------------
+
             if role == "system":
                 if content:
                     system_parts.append(str(content))
+
                 continue
 
+            # --------------------------------------------------
             # USER
+            # --------------------------------------------------
+
             if role == "user":
                 flush_tool_responses()
 
                 if content:
                     contents.append(
-                        types.Content(
-                            role="user",
-                            parts=[types.Part.from_text(text=str(content))],
+                        types.Content.model_validate(
+                            {
+                                "role": "user",
+                                "parts": [{"text": str(content)}],
+                            }
                         )
                     )
 
                 continue
 
+            # --------------------------------------------------
             # ASSISTANT / MODEL
+            # --------------------------------------------------
+
             if role == "assistant":
                 flush_tool_responses()
 
                 parts: list[types.Part] = []
 
                 if content:
-                    parts.append(types.Part.from_text(text=str(content)))
+                    parts.append(types.Part.model_validate({"text": str(content)}))
 
                 for call in message.get(
                     "tool_calls",
                     [],
                 ):
-                    function = call["function"]
+                    function = call.get(
+                        "function",
+                        {},
+                    )
+
+                    name = function.get("name")
+
+                    if (
+                        not isinstance(
+                            name,
+                            str,
+                        )
+                        or not name
+                    ):
+                        continue
 
                     raw_arguments = function.get(
                         "arguments",
                         {},
                     )
 
-                    if isinstance(
-                        raw_arguments,
-                        str,
-                    ):
-                        arguments = json.loads(raw_arguments)
-                    else:
-                        arguments = raw_arguments
+                    arguments = cls._parse_arguments(raw_arguments)
 
-                    if not isinstance(
-                        arguments,
-                        dict,
-                    ):
-                        raise TypeError("Assistant tool arguments must be an object.")
+                    signature = cls._decode_signature(call.get("thought_signature"))
 
-                    # IMPORTANT:
-                    # Preserve Gemini's thought signature.
-                    thought_signature = call.get("thought_signature")
+                    part_data: dict[str, Any] = {
+                        "function_call": {
+                            "name": name,
+                            "args": arguments,
+                        }
+                    }
 
-                    function_call = types.FunctionCall(
-                        name=function["name"],
-                        args=arguments,
-                    )
+                    # Only add a signature when we have
+                    # a valid decoded one.
+                    #
+                    # This prevents malformed old session
+                    # data from crashing Pydantic.
+                    if signature is not None:
+                        part_data["thought_signature"] = cls._encode_signature(signature)
 
-                    part = types.Part(
-                        function_call=function_call,
-                        thought_signature=(thought_signature),
-                    )
-
-                    parts.append(part)
+                    parts.append(types.Part.model_validate(part_data))
 
                 if parts:
                     contents.append(
-                        types.Content(
-                            role="model",
-                            parts=parts,
+                        types.Content.model_validate(
+                            {
+                                "role": "model",
+                                "parts": parts,
+                            }
                         )
                     )
 
                 continue
 
+            # --------------------------------------------------
             # TOOL RESULT
+            # --------------------------------------------------
+
             if role == "tool":
+                tool_name = message.get("name")
+
+                if (
+                    not isinstance(
+                        tool_name,
+                        str,
+                    )
+                    or not tool_name
+                ):
+                    continue
+
                 pending_tool_responses.append(
-                    types.Part.from_function_response(
-                        name=message["name"],
-                        response={
-                            "result": str(content),
-                        },
+                    types.Part.model_validate(
+                        {
+                            "function_response": {
+                                "name": tool_name,
+                                "response": {
+                                    "result": str(content),
+                                },
+                            }
+                        }
                     )
                 )
 
@@ -222,8 +280,13 @@ class GeminiProvider(LLMProvider):
             contents,
         )
 
-    @staticmethod
+    # ============================================================
+    # RESPONSE
+    # ============================================================
+
+    @classmethod
     def _convert_response(
+        cls,
         response: Any,
     ) -> LLMResponse:
         tool_calls: list[ToolCall] = []
@@ -233,9 +296,42 @@ class GeminiProvider(LLMProvider):
             "content": response.text or "",
         }
 
-        # Read the actual model response parts.
-        candidate = response.candidates[0]
-        response_parts = candidate.content.parts if candidate.content is not None else []
+        candidates = getattr(
+            response,
+            "candidates",
+            None,
+        )
+
+        if not candidates:
+            return LLMResponse(
+                content=response.text or "",
+                tool_calls=[],
+                assistant_message=assistant_message,
+            )
+
+        candidate = candidates[0]
+
+        candidate_content = getattr(
+            candidate,
+            "content",
+            None,
+        )
+
+        if candidate_content is None:
+            return LLMResponse(
+                content=response.text or "",
+                tool_calls=[],
+                assistant_message=assistant_message,
+            )
+
+        response_parts = (
+            getattr(
+                candidate_content,
+                "parts",
+                None,
+            )
+            or []
+        )
 
         serialized_tool_calls: list[dict[str, Any]] = []
 
@@ -249,7 +345,29 @@ class GeminiProvider(LLMProvider):
             if function_call is None:
                 continue
 
-            arguments = dict(function_call.args or {})
+            name = getattr(
+                function_call,
+                "name",
+                None,
+            )
+
+            if (
+                not isinstance(
+                    name,
+                    str,
+                )
+                or not name
+            ):
+                continue
+
+            arguments = dict(
+                getattr(
+                    function_call,
+                    "args",
+                    None,
+                )
+                or {}
+            )
 
             tool_call_id = (
                 getattr(
@@ -260,31 +378,33 @@ class GeminiProvider(LLMProvider):
                 or f"gemini-call-{index}"
             )
 
-            thought_signature = getattr(
+            tool_calls.append(
+                ToolCall(
+                    id=tool_call_id,
+                    name=name,
+                    arguments=arguments,
+                )
+            )
+
+            serialized_call: dict[str, Any] = {
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": json.dumps(arguments),
+                },
+            }
+
+            raw_signature = getattr(
                 part,
                 "thought_signature",
                 None,
             )
 
-            tool_calls.append(
-                ToolCall(
-                    id=tool_call_id,
-                    name=function_call.name,
-                    arguments=arguments,
-                )
-            )
+            encoded_signature = cls._signature_for_storage(raw_signature)
 
-            serialized_call = {
-                "id": tool_call_id,
-                "type": "function",
-                "function": {
-                    "name": function_call.name,
-                    "arguments": json.dumps(arguments),
-                },
-            }
-
-            if thought_signature is not None:
-                serialized_call["thought_signature"] = thought_signature
+            if encoded_signature is not None:
+                serialized_call["thought_signature"] = encoded_signature
 
             serialized_tool_calls.append(serialized_call)
 
@@ -296,6 +416,174 @@ class GeminiProvider(LLMProvider):
             tool_calls=tool_calls,
             assistant_message=assistant_message,
         )
+
+    # ============================================================
+    # ARGUMENTS
+    # ============================================================
+
+    @staticmethod
+    def _parse_arguments(
+        value: Any,
+    ) -> dict[str, Any]:
+        if isinstance(
+            value,
+            dict,
+        ):
+            return value
+
+        if isinstance(
+            value,
+            str,
+        ):
+            parsed = json.loads(value)
+
+            if not isinstance(
+                parsed,
+                dict,
+            ):
+                raise TypeError("Tool arguments must be a JSON object.")
+
+            return parsed
+
+        raise TypeError("Tool arguments must be an object.")
+
+    # ============================================================
+    # THOUGHT SIGNATURES
+    # ============================================================
+
+    @staticmethod
+    def _signature_for_storage(
+        value: Any,
+    ) -> str | None:
+        """
+        Convert Gemini's signature to JSON-safe text.
+
+        Gemini's Python SDK may expose the signature as bytes.
+        Session history is JSON, so store base64 text.
+        """
+
+        if value is None:
+            return None
+
+        if isinstance(
+            value,
+            bytes,
+        ):
+            return base64.urlsafe_b64encode(value).decode("ascii")
+
+        if isinstance(
+            value,
+            str,
+        ):
+            # Already encoded correctly.
+            if GeminiProvider._is_base64(value):
+                return value
+
+            # Some old Jimmy sessions may contain
+            # raw bytes decoded as Latin-1 text.
+            try:
+                raw = value.encode("latin-1")
+
+                if raw:
+                    return base64.urlsafe_b64encode(raw).decode("ascii")
+
+            except UnicodeEncodeError:
+                pass
+
+        return None
+
+    @staticmethod
+    def _decode_signature(
+        value: Any,
+    ) -> bytes | None:
+        """
+        Restore a persisted signature.
+
+        Handles:
+        - new base64 strings
+        - bytes
+        - old raw Latin-1 strings
+
+        Invalid legacy data is ignored instead of
+        crashing the entire conversation.
+        """
+
+        if value is None:
+            return None
+
+        if isinstance(
+            value,
+            bytes,
+        ):
+            return value
+
+        if not isinstance(
+            value,
+            str,
+        ):
+            return None
+
+        value = value.strip()
+
+        if not value:
+            return None
+
+        # Normal persisted representation.
+        if GeminiProvider._is_base64(value):
+            try:
+                padding = "=" * (-len(value) % 4)
+
+                return base64.urlsafe_b64decode(value + padding)
+
+            except (
+                ValueError,
+                binascii.Error,
+            ):
+                pass
+
+        # Legacy Jimmy representation:
+        # raw bytes were accidentally decoded into
+        # a Python string. Try to recover them.
+        try:
+            raw = value.encode("latin-1")
+
+            if raw:
+                return raw
+
+        except UnicodeEncodeError:
+            pass
+
+        return None
+
+    @staticmethod
+    def _encode_signature(
+        value: bytes,
+    ) -> str:
+        return base64.urlsafe_b64encode(value).decode("ascii")
+
+    @staticmethod
+    def _is_base64(
+        value: str,
+    ) -> bool:
+        if not value:
+            return False
+
+        try:
+            padding = "=" * (-len(value) % 4)
+
+            decoded = base64.urlsafe_b64decode(value + padding)
+
+            return bool(decoded)
+
+        except (
+            ValueError,
+            binascii.Error,
+        ):
+            return False
+
+    # ============================================================
+    # ERRORS
+    # ============================================================
 
     @staticmethod
     def _normalize_error(
