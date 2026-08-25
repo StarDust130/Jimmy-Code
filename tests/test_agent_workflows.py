@@ -1,3 +1,4 @@
+import json
 import subprocess
 from pathlib import Path
 
@@ -135,15 +136,26 @@ def edit_tool_call(
 
 def git_commit_tool_call(
     call_id: str = "commit-1",
+    *,
+    paths: list[str] | None = None,
+    all_changes: bool = False,
+    mode: str = "each",
 ) -> LLMResponse:
     call = ToolCall(
         id=call_id,
         name="git_commit",
         arguments={
-            "mode": "each",
-            "scope": "jimmy",
+            "paths": paths,
+            "all_changes": all_changes,
+            "mode": mode,
         },
     )
+
+    arguments = {
+        "paths": paths,
+        "all_changes": all_changes,
+        "mode": mode,
+    }
 
     return LLMResponse(
         content="",
@@ -157,7 +169,7 @@ def git_commit_tool_call(
                     "type": "function",
                     "function": {
                         "name": "git_commit",
-                        "arguments": ('{"mode":"each","scope":"jimmy"}'),
+                        "arguments": json.dumps(arguments),
                     },
                 }
             ],
@@ -232,7 +244,10 @@ def test_edit_then_commit(
     llm = FakeLLM(
         [
             edit_tool_call(),
-            git_commit_tool_call(),
+            git_commit_tool_call(
+                paths=["example.txt"],
+                mode="each",
+            ),
             final_response("Done. Edited and committed example.txt."),
         ]
     )
@@ -297,7 +312,10 @@ def test_commit_then_continue(
 
     llm = FakeLLM(
         [
-            git_commit_tool_call(),
+            git_commit_tool_call(
+                all_changes=True,
+                mode="each",
+            ),
             final_response("Done. The changes were committed and I continued."),
         ]
     )
