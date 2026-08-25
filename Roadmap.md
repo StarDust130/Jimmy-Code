@@ -49,7 +49,7 @@
 |  ✅  | **04** | 🛠️ **Tool System V2**          | Schemas, validation, results & metadata      |
 |  ✅  | **05** | ✂️ **Context Management**       | Compression, summarization & context budgets |
 |  ✅  | **06** | 🔄 **Recovery + Retry**         | Recover from failed tools, tests & edits     |
-|  ⭕  | **07** | 🧪 **Test → Fix → Retest**      | Autonomous debugging loops                   |
+|  ✅  | **07** | 🧪 **Test → Fix → Retest**      | Autonomous debugging loops                   |
 |  ⭕  | **08** | 🌳 **Git Intelligence**         | Status, diff, branches, commits & rollback   |
 |  ⭕  | **09** | 🔐 **Permission System**        | Approve dangerous actions                    |
 |  ⭕  | **10** | 💾 **Session Persistence**      | Resume interrupted sessions                  |
@@ -84,7 +84,7 @@
 - 🧩 17–22 — Extensibility & Multi-Agent
 - 📊 23–30 — Evaluation & Productization
 
-**V2 status: `4 / 30` complete 🚧**
+**V2 status: `7 / 30` complete 🚧**
 ---
 
 🎍 Extra 
