@@ -802,4 +802,4 @@ def run_tui(
         workspace=workspace,
         show_time=show_time,
     )
-    app.run()
+    app.run(mouse=False)
