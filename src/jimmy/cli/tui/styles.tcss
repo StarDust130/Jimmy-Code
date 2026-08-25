@@ -1,11 +1,18 @@
 /* ═════════════════════════════════════════════════════════════
-   DARK ONLY  —  Deep space terminal aesthetic
+   JIMMY — DARK TERMINAL THEME
+   Single consistent palette across the entire TUI.
+   ═════════════════════════════════════════════════════════════ */
+
+
+/* ═════════════════════════════════════════════════════════════
+   GLOBAL
    ═════════════════════════════════════════════════════════════ */
 
 Screen {
     background: #020408;
     color: #d8dee9;
 }
+
 
 /* ═════════════════════════════════════════════════════════════
    MODE VISIBILITY
@@ -23,8 +30,9 @@ Screen.chat #landing-main {
     display: none;
 }
 
+
 /* ═════════════════════════════════════════════════════════════
-   LANDING SCREEN
+   LANDING
    ═════════════════════════════════════════════════════════════ */
 
 #landing-main {
@@ -87,6 +95,7 @@ Screen.chat #landing-main {
     text-style: dim;
 }
 
+
 /* ═════════════════════════════════════════════════════════════
    TOP BAR
    ═════════════════════════════════════════════════════════════ */
@@ -126,6 +135,13 @@ Screen.chat #landing-main {
     padding: 0 1;
 }
 
+#permission-mode {
+    width: auto;
+    color: #fbbf24;
+    content-align: left middle;
+    padding: 0 1;
+}
+
 #status-indicator {
     width: auto;
     color: #c4b5fd;
@@ -146,8 +162,9 @@ Screen.chat #landing-main {
     content-align: right middle;
 }
 
+
 /* ═════════════════════════════════════════════════════════════
-   CHAT SCREEN
+   CHAT
    ═════════════════════════════════════════════════════════════ */
 
 #chat-main {
@@ -160,12 +177,13 @@ Screen.chat #landing-main {
 #conversation {
     width: 100%;
     height: 1fr;
-    background: #070a0f;
+    background: #020408;
     color: #d8dee9;
     border: none;
     padding: 0 1;
+
     scrollbar-size: 1 1;
-    scrollbar-background: #070a0f;
+    scrollbar-background: #020408;
     scrollbar-color: #1e293b;
     scrollbar-color-hover: #334155;
     scrollbar-color-active: #22d3ee;
@@ -199,8 +217,9 @@ Screen.chat #landing-main {
     opacity: 0.35;
 }
 
+
 /* ═════════════════════════════════════════════════════════════
-   HELP SCREEN
+   HELP
    ═════════════════════════════════════════════════════════════ */
 
 HelpScreen {
@@ -228,6 +247,7 @@ HelpScreen {
     text-style: dim;
 }
 
+
 /* ═════════════════════════════════════════════════════════════
    FOOTER
    ═════════════════════════════════════════════════════════════ */
@@ -246,6 +266,7 @@ Footer > .footer--description {
     color: #64748b;
 }
 
+
 /* ═════════════════════════════════════════════════════════════
    GENERAL
    ═════════════════════════════════════════════════════════════ */
@@ -258,28 +279,28 @@ RichLog {
     background: #164e63;
     color: #ecfeff;
 }
-/* =========================================================
+
+
+/* ═════════════════════════════════════════════════════════════
    PERMISSION OVERLAYS
-   Transparent overlay so the existing terminal stays visible.
-   Both permission screens appear as centered dialogs.
-   ========================================================= */
+   Transparent screen so Jimmy remains visible underneath.
+   ═════════════════════════════════════════════════════════════ */
 
 PermissionScreen,
 PermissionPrompt {
     align: center middle;
-    background: #000000 0%;
+    background: rgba(0, 0, 0, 0);
 }
 
 
-/* =========================================================
+/* ═════════════════════════════════════════════════════════════
    PERMISSION MODE DIALOG
-   Ctrl+P → Ask / Full Access / Safe Only
-   ========================================================= */
+   Ctrl+P → Safe Only / Ask / Full Access
+   ═════════════════════════════════════════════════════════════ */
 
 #permission-dialog {
-    width: 64;
+    width: 72;
     height: auto;
-    min-height: 12;
     padding: 1 2;
 
     background: #0b1220;
@@ -317,15 +338,13 @@ PermissionPrompt {
 }
 
 
-/* =========================================================
+/* ═════════════════════════════════════════════════════════════
    PERMISSION APPROVAL DIALOG
-   Appears when Jimmy needs approval for a risky tool.
-   ========================================================= */
+   ═════════════════════════════════════════════════════════════ */
 
 #approval-dialog {
     width: 66;
     height: auto;
-    min-height: 13;
     padding: 1 2;
 
     background: #0b1220;
@@ -357,17 +376,20 @@ PermissionPrompt {
 }
 
 
-/* =========================================================
+/* ═════════════════════════════════════════════════════════════
    APPROVAL BUTTON ROW
-   ========================================================= */
+   ═════════════════════════════════════════════════════════════ */
 
 #approval-actions {
+    width: 100%;
     height: 3;
     align: center middle;
 }
 
 
-/* Allow */
+/* ═════════════════════════════════════════════════════════════
+   ALLOW
+   ═════════════════════════════════════════════════════════════ */
 
 #approval-allow {
     width: 20;
@@ -381,8 +403,16 @@ PermissionPrompt {
     text-style: bold;
 }
 
+#approval-allow:hover,
+#approval-allow:focus {
+    background: #166534;
+    color: #f0fdf4;
+}
 
-/* Deny */
+
+/* ═════════════════════════════════════════════════════════════
+   DENY
+   ═════════════════════════════════════════════════════════════ */
 
 #approval-deny {
     width: 20;
@@ -396,8 +426,16 @@ PermissionPrompt {
     text-style: bold;
 }
 
+#approval-deny:hover,
+#approval-deny:focus {
+    background: #7f1d1d;
+    color: #fee2e2;
+}
 
-/* Full Access */
+
+/* ═════════════════════════════════════════════════════════════
+   FULL ACCESS
+   ═════════════════════════════════════════════════════════════ */
 
 #approval-full {
     width: 20;
@@ -410,10 +448,16 @@ PermissionPrompt {
     text-style: bold;
 }
 
+#approval-full:hover,
+#approval-full:focus {
+    background: #334155;
+    color: #fef3c7;
+}
 
-/* =========================================================
+
+/* ═════════════════════════════════════════════════════════════
    APPROVAL FOOTER
-   ========================================================= */
+   ═════════════════════════════════════════════════════════════ */
 
 #approval-footer {
     height: 1;
@@ -424,41 +468,9 @@ PermissionPrompt {
 }
 
 
-/* =========================================================
-   BUTTON HOVER / FOCUS
-   Gives the approval UI better mouse + keyboard feedback.
-   ========================================================= */
-
-#approval-allow:hover,
-#approval-allow:focus {
-    background: #166534;
-}
-
-#approval-deny:hover,
-#approval-deny:focus {
-    background: #7f1d1d;
-}
-
-#approval-full:hover,
-#approval-full:focus {
-    background: #334155;
-    color: #fef3c7;
-}
-
-
-/* =========================================================
-   PERMISSION MODE HOVER / FOCUS
-   ========================================================= */
-
-#permission-options:hover {
-    color: #f8fafc;
-}
-
-
-/* =========================================================
-   KEEP DIALOGS COMPACT
-   No fullscreen panel or large overlay box.
-   ========================================================= */
+/* ═════════════════════════════════════════════════════════════
+   KEEP MODALS COMPACT
+   ═════════════════════════════════════════════════════════════ */
 
 PermissionScreen > Vertical,
 PermissionPrompt > Vertical {
