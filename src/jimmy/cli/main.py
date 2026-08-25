@@ -10,6 +10,7 @@ from jimmy.cli.tui import run_tui
 from jimmy.config.settings import Settings
 from jimmy.git.state import GitState
 from jimmy.llm.gemini import GeminiProvider
+from jimmy.permissions.manager import PermissionManager
 from jimmy.tools.defaults import create_default_registry
 
 __version__ = version("jimmy")
@@ -21,6 +22,8 @@ app = typer.Typer(
     help="Jimmy — a terminal-native coding agent.",
     no_args_is_help=False,
 )
+
+permission_manager = PermissionManager()
 
 
 @app.command()
@@ -83,6 +86,7 @@ def main(
         workspace=project_root,
         git_state=git_state,
         max_turns=20,
+        permission_manager=permission_manager,
     )
 
     initial_task = None
@@ -97,6 +101,7 @@ def main(
             version=__version__,
             workspace=project_root,
             show_time=show_time,
+            permission_manager=permission_manager,
         )
 
     except KeyboardInterrupt:
