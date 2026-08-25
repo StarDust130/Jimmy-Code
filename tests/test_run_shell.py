@@ -82,3 +82,39 @@ def test_run_shell_empty_command(
                 command="",
             )
         )
+
+
+def test_run_shell_returns_nonzero_exit_code(
+    tmp_path: Path,
+) -> None:
+    tool = RunShellTool(
+        Filesystem(tmp_path),
+    )
+
+    result = tool.execute(
+        RunShellInput(
+            command='python -c "raise SystemExit(2)"',
+        )
+    )
+
+    assert result.success is True
+    assert result.metadata["exit_code"] == 2
+    assert "Exit code: 2" in result.output
+
+
+def test_run_shell_returns_stdout_and_stderr(
+    tmp_path: Path,
+) -> None:
+    tool = RunShellTool(
+        Filesystem(tmp_path),
+    )
+
+    result = tool.execute(
+        RunShellInput(
+            command=("python -c \"print('stdout'); import sys; print('stderr', file=sys.stderr)\""),
+        )
+    )
+
+    assert result.success is True
+    assert "stdout" in result.output
+    assert "stderr" in result.output
