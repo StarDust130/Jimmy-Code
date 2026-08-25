@@ -76,7 +76,7 @@ HELP_TEXT = """\
 [b #22d3ee]h[/b #22d3ee]     Toggle help
 [b #22d3ee]^x[/b #22d3ee]    Cancel task
 [b #22d3ee]^l[/b #22d3ee]    Clear & home
-[b #22d3ee]^c[/b #22d3ee]    Quit
+[b #22d3ee]^q[/b #22d3ee]    Quit
 
 Press [bold]Esc[/bold] or [bold]h[/bold] to close.
 """
@@ -106,7 +106,7 @@ class JimmyTUI(App[None]):
     ENABLE_COMMAND_PALETTE = False
 
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("ctrl+c", "quit_app", "Quit"),
+        ("ctrl+ q", "quit_app", "Quit"),
         ("ctrl+x", "cancel_task", "Cancel"),
         ("h", "show_help", "Help"),
         ("ctrl+l", "clear_conversation", "Clear"),

@@ -8,9 +8,8 @@ from rich.console import Console
 from jimmy.agent.agent_loop import AgentLoop
 from jimmy.cli.tui import run_tui
 from jimmy.config.settings import Settings
-from jimmy.llm.fallback import FallbackProvider
+from jimmy.git.state import GitState
 from jimmy.llm.gemini import GeminiProvider
-from jimmy.llm.groq import GroqProvider
 from jimmy.tools.defaults import create_default_registry
 
 __version__ = version("jimmy")
@@ -58,31 +57,31 @@ def main(
 
     project_root = Path.cwd().resolve()
 
-    groq = GroqProvider(
-        api_key=settings.groq_api_key,
-        model=settings.groq_model,
-    )
+    # groq = GroqProvider(
+    #     api_key=settings.groq_api_key,
+    #     model=settings.groq_model,
+    # )
 
     gemini = GeminiProvider(
         api_key=settings.gemini_api_key,
         model=settings.gemini_model,
     )
 
-    # Jimmy agent: Gemini first, Groq fallback.
-    llm = FallbackProvider(
-        primary=gemini,
-        fallback=groq,
-    )
+    llm = gemini
+
+    git_state = GitState(project_root)
 
     tools = create_default_registry(
         root=project_root,
         llm=llm,
+        git_state=git_state,
     )
 
     agent = AgentLoop(
         llm=llm,
         tools=tools,
         workspace=project_root,
+        git_state=git_state,
         max_turns=20,
     )
 
