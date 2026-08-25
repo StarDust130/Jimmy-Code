@@ -11,79 +11,151 @@ class CommitChange:
     diff: str
 
 
-PER_FILE_PROMPT = """You write short, meaningful Git commit messages.
+PER_FILE_PROMPT = """Write a short, useful, and fun Git commit message for each file.
 
-You receive real Git diffs for multiple files.
+You receive the real Git diff for each file.
 
-Return ONLY valid JSON.
+Return ONLY valid JSON:
 
-Format:
 {
-  "path/to/file.py": "🧠 improve agent routing"
+  "path/to/file.py": "🧠 improve tool routing"
 }
 
 Rules:
 - Use exactly the provided file paths as keys.
-- Every provided file MUST have one message.
+- Every file must have exactly one message.
 - Do not add extra keys.
 - 3-8 words.
-- Exactly one emoji at the beginning.
-- Describe the actual change.
-- Do not merely repeat the filename.
+- Start with exactly one emoji.
+- Describe the actual change in the diff.
+- Be specific and meaningful.
+- Do not repeat the filename as the message.
 - Do not invent behavior.
-- Use different messages for meaningfully different changes.
+- Use different messages when the files contain different changes.
+- Keep messages professional, clear, and slightly fun.
 
-Emoji guide:
-✨ new feature
+Choose a fun, relevant emoji that matches the actual change.
+
+Do NOT always use the same emoji.
+
+Emoji examples:
+
+✨ feature
+🚀 improvement
 🐛 bug fix
+🩹 small bug fix
 ♻️ refactor
 🧪 tests
 ⚡ performance
-🔐 security
-🎨 UI/style
-📝 documentation
-🧹 cleanup
-🔧 configuration/integration
-🏗️ architecture
-📦 dependency
 🔥 removal
-🛠️ tooling
-🚀 deployment
+🧹 cleanup
+🎨 UI/style
 🧠 AI/agent/model behavior
-🔌 API integration
+🏗️ architecture
+🔧 configuration
+🔌 integration/API
+📦 dependency
+🛠️ tooling
+📝 documentation
+🔐 security
+🧩 component change
+🎯 targeted fix
+🪄 behavior improvement
+💡 logic improvement
+🌱 new capability
+🧭 routing/navigation
+🧱 structural change
+🔍 search/inspection
 🗂️ organization
+📚 docs/content
+🎉 major feature
+🛡️ reliability/safety
+⚙️ internal behavior
 
-Bad:
-"🔧 update file.py"
-"✨ change code"
-"🛠️ update changes"
-"🐛 fix bug"
+Emoji rules:
+- Use EXACTLY one emoji at the beginning.
+- Choose the emoji based on the real change.
+- Vary emojis naturally when another fitting emoji is better.
+- Do not choose an emoji that does not match the change.
 
 Good:
 "🏗️ split agent runtime"
 "🧪 add planner tests"
 "🐛 fix Windows path handling"
 "🧠 improve tool routing"
-"✂️ reduce context size"
+"♻️ simplify commit workflow"
+"🎨 improve terminal status"
+"🩹 handle missing file errors"
+"🪄 simplify provider fallback"
+"🧩 add line range support"
+"🎯 fix tool selection"
+
+Bad:
+"🔧 update file.py"
+"✨ change code"
+"🛠️ update changes"
+"🐛 fix bug"
+"🧹 modify stuff"
 """
 
 
-GROUP_PROMPT = """Write ONE short Git commit message for the following
-collection of actual Git diffs.
+GROUP_PROMPT = """Write ONE short, meaningful, and fun Git commit message for
+the provided real Git diffs.
 
 Return ONLY valid JSON:
 
 {
-  "message": "🧠 improve agent architecture"
+  "message": "🧠 improve agent tool routing"
 }
 
 Rules:
 - 3-8 words.
-- Exactly one emoji at the beginning.
-- Describe the main combined change.
-- Use the actual diffs.
+- Start with exactly one emoji.
+- Describe the MAIN change shown by the diffs.
+- Use the actual changes, not filenames alone.
+- Be specific and meaningful.
 - Do not invent behavior.
-- Do not use vague messages like "update files".
+- Do not use vague messages like "update files" or "make changes".
+- Keep the message professional, clear, and slightly fun.
+
+Choose a relevant emoji based on the main change.
+
+Use varied emojis instead of always repeating the same one.
+
+Examples:
+
+✨ feature
+🚀 improvement
+🐛 bug fix
+🩹 small bug fix
+♻️ refactor
+🧪 tests
+⚡ performance
+🔥 removal
+🧹 cleanup
+🎨 UI/style
+🧠 AI/agent/model behavior
+🏗️ architecture
+🔧 configuration
+🔌 integration/API
+📦 dependency
+🛠️ tooling
+📝 documentation
+🔐 security
+🧩 component change
+🎯 targeted fix
+🪄 behavior improvement
+💡 logic improvement
+🌱 new capability
+🧭 routing/navigation
+🧱 structural change
+🔍 search/inspection
+🗂️ organization
+🎉 major feature
+🛡️ reliability/safety
+⚙️ internal behavior
+
+Do not choose an emoji randomly. It should fit the real change.
 """
 
 
