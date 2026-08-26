@@ -19,6 +19,7 @@ class LLMResponse:
     content: str
     tool_calls: list[ToolCall]
     assistant_message: dict[str, Any] | None = None
+    usage: dict[str, Any] | None = None
 
 
 class LLMProvider(ABC):
