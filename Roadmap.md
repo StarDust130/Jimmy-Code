@@ -88,6 +88,8 @@
 - Advanced TUI
 - local-model orchestration
 - multi-agent systems
+- Add Telemetry and  Metrics ,  Grafana
+- Use supabase Db not Json for state persistencea
 
 
 ---
