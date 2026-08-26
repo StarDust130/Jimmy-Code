@@ -53,7 +53,7 @@
 |  ✅  | **08** | 🌳 **Git Intelligence**         | Status, diff, branches, commits & rollback   |
 |  ✅  | **09** | 🔐 **Permission System**        | Approve dangerous actions                    |
 |  ✅  | **10** | 💾 **Session Persistence**      | Resume interrupted sessions                  |
-| ⭕ | **11** | 📊 **Observability** | Logs, traces, tokens, latency & cost |
+| ✅ | **11** | 📊 **Observability** | Logs, traces, tokens, latency & cost |
 | ⭕ | **12** | 💰 **Cost + Budgets** | Control task & model spending |
 | ⭕ | **13** | 🤖 **Multi-Provider LLM** | Cloud + local model support |
 | ⭕ | **14** | 🧩 **Model Routing** | Pick the right model per task |
@@ -74,7 +74,7 @@
 - 🧩 **16–18** — Agent Control & Workspace Safety
 - 📊 **19–20** — Evaluation & Production Release
 
-**V2 status: `10 / 20` complete 🚧**
+**V2 status: `11 / 20` complete 🚧**
 ---
 
 🎍 Extra  (v3 maybe)
