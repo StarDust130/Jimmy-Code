@@ -53,42 +53,41 @@
 |  ✅  | **08** | 🌳 **Git Intelligence**         | Status, diff, branches, commits & rollback   |
 |  ✅  | **09** | 🔐 **Permission System**        | Approve dangerous actions                    |
 |  ✅  | **10** | 💾 **Session Persistence**      | Resume interrupted sessions                  |
-|  ⭕  | **11** | ⚡ **Parallel Execution**        | Run independent tools concurrently           |
-|  ⭕  | **12** | 📊 **Observability**            | Logs, traces, tokens, latency & cost         |
-|  ⭕  | **13** | 💰 **Cost + Budgets**           | Control task & model spending                |
-|  ⭕  | **14** | 🤖 **Multi-Provider LLM**       | Cloud + local model support                  |
-|  ⭕  | **15** | 🧩 **Model Routing**            | Pick the right model per task                |
-|  ⭕  | **16** | 🧠 **Coding Intelligence**      | Symbols, language-aware search & discovery   |
-|  ⭕  | **17** | 🔌 **MCP Support**              | Connect external tools & services            |
-|  ⭕  | **18** | 🪝 **Hooks System**             | Tool, session & lifecycle hooks              |
-|  ⭕  | **19** | 🧱 **Workspace Isolation**      | Worktrees + optional sandbox                 |
-|  ⭕  | **20** | 🔍 **Diff Review**              | Review changes before finishing              |
-|  ⭕  | **21** | 🧑‍⚖️ **Reviewer Agent**        | Independent implementation review            |
-|  ⭕  | **22** | 🔁 **Revision Loop**            | Review → fix → review                        |
-|  ⭕  | **23** | 🧪 **Evaluation Harness**       | Benchmark repeatable coding tasks            |
-|  ⭕  | **24** | 📈 **Agent Metrics**            | Pass rate, cost/task & failure reasons       |
-|  ⭕  | **25** | 🖥️ **TUI V2**                  | Plans, tools, diffs & progress               |
-|  ⭕  | **26** | ⚙️ **Configuration**            | Project, model & tool settings               |
-|  ⭕  | **27** | 🧰 **Plugin Architecture**      | Add tools without changing core              |
-|  ⭕  | **28** | 📦 **Packaging + Distribution** | Install Jimmy with one command               |
-|  ⭕  | **29** | 🛡️ **Production Hardening**    | Reliability, security & concurrency          |
-|  ⭕  | **30** | 🏁 **V2 Release**               | Stable production-style coding agent         |
+| ⭕ | **11** | 📊 **Observability** | Logs, traces, tokens, latency & cost |
+| ⭕ | **12** | 💰 **Cost + Budgets** | Control task & model spending |
+| ⭕ | **13** | 🤖 **Multi-Provider LLM** | Cloud + local model support |
+| ⭕ | **14** | 🧩 **Model Routing** | Pick the right model per task |
+| ⭕ | **15** | 🧠 **Coding Intelligence** | Symbols, language-aware search & discovery |
+| ⭕ | **16** | 🔄 **Agent Control + Anti-Loop** | Prevent runaway loops & improve agent control |
+| ⭕ | **17** | 🔍 **Final Verification + Diff Review** | Verify changes and review diffs before finishing |
+| ⭕ | **18** | 🛡️ **Workspace Safety / Isolation** | Worktrees, sandboxing & safe execution |
+| ⭕ | **19** | 🧪 **Evaluation Harness** | Benchmark repeatable coding tasks |
+| ⭕ | **20** | 🏁 **Production Hardening + Release** | Reliability, security & production-ready V2 release |
 
 </details>
 
-🧭 V2 at a Glance
+### 🧭 V2 at a Glance
 
-- 🧠 01–07 — Agent Intelligence
-- 🛡️ 08–13 — Reliability & Control
-- 🤖 14–16 — Model Intelligence
-- 🧩 17–22 — Extensibility & Multi-Agent
-- 📊 23–30 — Evaluation & Productization
+- 🧠 **01–07** — Agent Intelligence
+- 🛡️ **08–12** — Reliability & Control
+- 🤖 **13–15** — Model Intelligence
+- 🧩 **16–18** — Agent Control & Workspace Safety
+- 📊 **19–20** — Evaluation & Production Release
 
-**V2 status: `9 / 30` complete 🚧**
+**V2 status: `10 / 20` complete 🚧**
 ---
 
-🎍 Extra 
+🎍 Extra  (v3 maybe)
 - Add agent Skills (e.g., `jimmy skills list`) to show what Jimmy can do
+- Parallel execution
+- MCP
+- Hooks
+- Reviewer agent
+- Revision loop
+- Advanced plugins
+- Advanced TUI
+- local-model orchestration
+- multi-agent systems
 
 
 ---
