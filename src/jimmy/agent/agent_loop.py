@@ -76,11 +76,8 @@ class AgentLoop:
             permission_manager if permission_manager is not None else PermissionManager()
         )
 
-        # IMPORTANT:
-        # Use the concrete implementation by default.
-        #
-        # It stores sessions outside the project,
-        # so .jimmy does not become a Git change.
+        # 💾 Keep session data outside the project.
+        # This prevents .jimmy files from showing up in Git.
         self.session_store = (
             session_store if session_store is not None else JsonSessionStore(Path.home())
         )
@@ -90,7 +87,7 @@ class AgentLoop:
         )
 
     # ============================================================
-    # NEW SESSION
+    # 🚀 1️⃣ START NEW SESSION
     # ============================================================
 
     def run(
@@ -208,7 +205,7 @@ class AgentLoop:
             raise
 
     # ============================================================
-    # RESUME
+    # 🔄 2️⃣ RESUME SESSION
     # ============================================================
 
     def resume(
@@ -289,7 +286,7 @@ class AgentLoop:
             raise
 
     # ============================================================
-    # MAIN REACT LOOP
+    # ! 🟢 3️⃣ MAIN REACT LOOP — START HERE
     # ============================================================
 
     def _run_state(
@@ -312,6 +309,7 @@ class AgentLoop:
         tool_schemas = self.tools.schemas()
 
         while state.turn_count < self.max_turns:
+            # 🔁 Each turn: ask → act → observe → save → repeat.
             turn = state.next_turn()
 
             self.session_store.save(
@@ -329,9 +327,7 @@ class AgentLoop:
                 )
             )
 
-            # ====================================================
-            # ASK LLM
-            # ====================================================
+            # 🤖 1️⃣ Ask the LLM what to do next.
 
             try:
                 context = self.context_manager.prepare(state.messages)
@@ -341,9 +337,7 @@ class AgentLoop:
                     tools=tool_schemas,
                 )
 
-                # ====================================================
-                # OBSERVABILITY: LLM USAGE
-                # ====================================================
+                # 📊 Track LLM usage and timing.
 
                 usage = LLMUsage.from_dict(response.usage)
 
@@ -446,9 +440,7 @@ class AgentLoop:
                 )
             )
 
-            # ====================================================
-            # SAVE ASSISTANT
-            # ====================================================
+            # 💬 2️⃣ Save the assistant response.
 
             if response.assistant_message:
                 state.add_message(response.assistant_message)
@@ -459,9 +451,7 @@ class AgentLoop:
                     status="running",
                 )
 
-            # ====================================================
-            # DONE
-            # ====================================================
+            # ✅ 3️⃣ No tools needed → task is complete.
 
             if not response.tool_calls:
                 result = response.content or ""
@@ -472,9 +462,7 @@ class AgentLoop:
                     status="completed",
                 )
 
-                # =================================================
-                # OBSERVABILITY: COMPLETED RUN
-                # =================================================
+                # 📊 Record the completed run.
 
                 metrics.finish(time.monotonic() - started_at)
 
@@ -494,9 +482,7 @@ class AgentLoop:
 
                 return result
 
-            # ====================================================
-            # EXECUTE TOOLS
-            # ====================================================
+            # 🛠️ 4️⃣ Execute each tool requested by the LLM.
 
             for tool_call in response.tool_calls:
                 tool_started_at = time.monotonic()
@@ -510,9 +496,7 @@ class AgentLoop:
                     )
                 )
 
-                # =================================================
-                # PERMISSION
-                # =================================================
+                # 🔐 Check tool permission before execution.
 
                 tool = self.tools.get(tool_call.name)
 
@@ -613,9 +597,7 @@ class AgentLoop:
 
                     raise PermissionError(message)
 
-                # =================================================
-                # EXECUTE TOOL
-                # =================================================
+                # ⚙️ Run the tool.
 
                 try:
                     tool_result = self.executor.execute(
@@ -708,9 +690,7 @@ class AgentLoop:
 
                     continue
 
-                # =================================================
-                # OBSERVE RESULT
-                # =================================================
+                # 👀 5️⃣ Observe and normalize the tool result.
 
                 result = truncate_output(
                     tool_result.output
@@ -726,9 +706,7 @@ class AgentLoop:
 
                 tool_elapsed = time.monotonic() - tool_started_at
 
-                # =================================================
-                # OBSERVABILITY: TOOL CALL
-                # =================================================
+                # 📊 Record tool timing and status.
 
                 metrics.add_tool_time(
                     tool_name=tool_call.name,
@@ -780,9 +758,7 @@ class AgentLoop:
                     )
                 )
 
-                # =================================================
-                # RECOVERY
-                # =================================================
+                # 🩹 Recover when the tool reports an error.
 
                 if not tool_result.success:
                     recovery_exception = RuntimeError(tool_result.error or "Unknown tool error.")
@@ -803,9 +779,7 @@ class AgentLoop:
 
                         raise RuntimeError(final_error) from recovery_exception
 
-                # =================================================
-                # SAVE TOOL RESULT
-                # =================================================
+                # 💾 6️⃣ Save the observation for the next LLM turn.
 
                 state.add_message(
                     {
@@ -823,7 +797,7 @@ class AgentLoop:
                 )
 
         # ========================================================
-        # MAX TURNS
+        # 🛑 MAX TURNS REACHED
         # ========================================================
 
         message = f"Jimmy stopped after reaching the maximum of {self.max_turns} turns."
