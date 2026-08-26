@@ -1,4 +1,6 @@
-from jimmy.cli.tui.app import JimmyTUI, run_tui
+"""Jimmy terminal user interface."""
+
+from .app import JimmyTUI, run_tui
 
 __all__ = [
     "JimmyTUI",
