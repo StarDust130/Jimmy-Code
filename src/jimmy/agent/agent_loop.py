@@ -1,6 +1,7 @@
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from jimmy.agent.events import AgentEvent
 from jimmy.agent.executor import ToolExecutor
@@ -13,6 +14,10 @@ from jimmy.exploration.explorer import CodebaseExplorer
 from jimmy.git.state import GitState
 from jimmy.llm.base import LLMProvider
 from jimmy.llm.errors import LLMProviderError
+from jimmy.observability.metrics import (
+    LLMUsage,
+    Observability,
+)
 from jimmy.permissions.errors import PermissionRequired
 from jimmy.permissions.manager import (
     PermissionAction,
@@ -51,6 +56,7 @@ class AgentLoop:
         git_state: GitState | None = None,
         permission_manager: PermissionManager | None = None,
         session_store: SessionStore | None = None,
+        observability: Observability | None = None,
     ) -> None:
         self.llm = llm
         self.tools = tools
@@ -62,6 +68,7 @@ class AgentLoop:
         self.observer = observer or Observer()
         self.recovery = recovery or RecoveryManager()
         self.explorer = explorer or CodebaseExplorer(workspace)
+        self.observability = observability or Observability()
 
         self.git_state = git_state if git_state is not None else GitState(workspace)
 
@@ -81,6 +88,10 @@ class AgentLoop:
         self.context_manager = ContextManager(
             summarizer=ContextSummarizer(llm),
         )
+
+    # ============================================================
+    # NEW SESSION
+    # ============================================================
 
     def run(
         self,
@@ -127,6 +138,8 @@ class AgentLoop:
             messages=messages,
         )
 
+        # Create the session BEFORE starting observability
+        # because observability needs the session ID.
         session_id = self.session_store.create(state)
 
         self.session_store.save(
@@ -135,30 +148,68 @@ class AgentLoop:
             status="running",
         )
 
+        metrics = self.observability.start_run(
+            task=task,
+            session_id=session_id,
+        )
+
         try:
             return self._run_state(
                 state=state,
                 session_id=session_id,
                 started_at=started_at,
+                metrics=metrics,
                 on_event=on_event,
                 on_permission=on_permission,
             )
 
         except KeyboardInterrupt:
+            metrics.finish(time.monotonic() - started_at)
+
+            self.observability.record_run(
+                metrics,
+                status="interrupted",
+            )
+
             self.session_store.save(
                 session_id=session_id,
                 state=state,
                 status="interrupted",
             )
+
             raise
 
-        except Exception:
+        except Exception as exc:
+            metrics.failures += 1
+
+            self.observability.record(
+                "error",
+                {
+                    "session_id": session_id,
+                    "turn": state.turn_count,
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
+            )
+
+            metrics.finish(time.monotonic() - started_at)
+
+            self.observability.record_run(
+                metrics,
+                status="failed",
+            )
+
             self.session_store.save(
                 session_id=session_id,
                 state=state,
                 status="failed",
             )
+
             raise
+
+    # ============================================================
+    # RESUME
+    # ============================================================
 
     def resume(
         self,
@@ -168,7 +219,6 @@ class AgentLoop:
     ) -> str:
         """Resume a saved session."""
 
-        # load() returns SessionState directly.
         state = self.session_store.load(session_id)
 
         started_at = time.monotonic()
@@ -179,36 +229,75 @@ class AgentLoop:
             status="running",
         )
 
+        metrics = self.observability.start_run(
+            task=state.task,
+            session_id=session_id,
+        )
+
         try:
             return self._run_state(
                 state=state,
                 session_id=session_id,
                 started_at=started_at,
+                metrics=metrics,
                 on_event=on_event,
                 on_permission=on_permission,
             )
 
         except KeyboardInterrupt:
+            metrics.finish(time.monotonic() - started_at)
+
+            self.observability.record_run(
+                metrics,
+                status="interrupted",
+            )
+
             self.session_store.save(
                 session_id=session_id,
                 state=state,
                 status="interrupted",
             )
+
             raise
 
-        except Exception:
+        except Exception as exc:
+            metrics.failures += 1
+
+            self.observability.record(
+                "error",
+                {
+                    "session_id": session_id,
+                    "turn": state.turn_count,
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
+            )
+
+            metrics.finish(time.monotonic() - started_at)
+
+            self.observability.record_run(
+                metrics,
+                status="failed",
+            )
+
             self.session_store.save(
                 session_id=session_id,
                 state=state,
                 status="failed",
             )
+
             raise
+
+    # ============================================================
+    # MAIN REACT LOOP
+    # ============================================================
 
     def _run_state(
         self,
         state: SessionState,
         session_id: str,
         started_at: float,
+        metrics: Any,
         on_event: EventHandler | None,
         on_permission: PermissionHandler | None,
     ) -> str:
@@ -240,9 +329,9 @@ class AgentLoop:
                 )
             )
 
-            # ==============================
+            # ====================================================
             # ASK LLM
-            # ==============================
+            # ====================================================
 
             try:
                 context = self.context_manager.prepare(state.messages)
@@ -252,7 +341,52 @@ class AgentLoop:
                     tools=tool_schemas,
                 )
 
+                # ====================================================
+                # OBSERVABILITY: LLM USAGE
+                # ====================================================
+
+                usage = LLMUsage.from_dict(response.usage)
+
+                metrics.turns = state.turn_count
+
+                model_name = getattr(
+                    self.llm,
+                    "model",
+                    type(self.llm).__name__,
+                )
+
+                self.observability.record(
+                    "llm_call",
+                    {
+                        "session_id": session_id,
+                        "turn": state.turn_count,
+                        "model": model_name,
+                        "input_tokens": usage.input_tokens,
+                        "output_tokens": usage.output_tokens,
+                        "total_tokens": usage.total_tokens,
+                        "cost_usd": usage.cost_usd,
+                        "elapsed_seconds": (time.monotonic() - turn_started_at),
+                    },
+                )
+
+                metrics.add_llm_usage(
+                    model=model_name,
+                    usage=usage,
+                )
+
             except LLMProviderError as exc:
+                metrics.failures += 1
+
+                self.observability.record(
+                    "error",
+                    {
+                        "session_id": session_id,
+                        "turn": turn,
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                    },
+                )
+
                 message = str(exc)
 
                 emit(
@@ -272,6 +406,18 @@ class AgentLoop:
                 TypeError,
                 OSError,
             ) as exc:
+                metrics.failures += 1
+
+                self.observability.record(
+                    "error",
+                    {
+                        "session_id": session_id,
+                        "turn": turn,
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                    },
+                )
+
                 message = f"❌ LLM request failed.\n{type(exc).__name__}: {exc}"
 
                 emit(
@@ -300,9 +446,9 @@ class AgentLoop:
                 )
             )
 
-            # ==============================
+            # ====================================================
             # SAVE ASSISTANT
-            # ==============================
+            # ====================================================
 
             if response.assistant_message:
                 state.add_message(response.assistant_message)
@@ -313,9 +459,9 @@ class AgentLoop:
                     status="running",
                 )
 
-            # ==============================
+            # ====================================================
             # DONE
-            # ==============================
+            # ====================================================
 
             if not response.tool_calls:
                 result = response.content or ""
@@ -323,6 +469,17 @@ class AgentLoop:
                 self.session_store.save(
                     session_id=session_id,
                     state=state,
+                    status="completed",
+                )
+
+                # =================================================
+                # OBSERVABILITY: COMPLETED RUN
+                # =================================================
+
+                metrics.finish(time.monotonic() - started_at)
+
+                self.observability.record_run(
+                    metrics,
                     status="completed",
                 )
 
@@ -337,9 +494,9 @@ class AgentLoop:
 
                 return result
 
-            # ==============================
+            # ====================================================
             # EXECUTE TOOLS
-            # ==============================
+            # ====================================================
 
             for tool_call in response.tool_calls:
                 tool_started_at = time.monotonic()
@@ -353,9 +510,9 @@ class AgentLoop:
                     )
                 )
 
-                # ==============================
+                # =================================================
                 # PERMISSION
-                # ==============================
+                # =================================================
 
                 tool = self.tools.get(tool_call.name)
 
@@ -376,6 +533,24 @@ class AgentLoop:
                     )
 
                     if not approved:
+                        tool_elapsed = time.monotonic() - tool_started_at
+
+                        metrics.add_tool_time(
+                            tool_name=tool_call.name,
+                            elapsed=tool_elapsed,
+                        )
+
+                        self.observability.record(
+                            "tool_call",
+                            {
+                                "session_id": session_id,
+                                "turn": turn,
+                                "tool": tool_call.name,
+                                "success": False,
+                                "elapsed_seconds": tool_elapsed,
+                            },
+                        )
+
                         state.add_message(
                             {
                                 "role": "tool",
@@ -398,7 +573,7 @@ class AgentLoop:
                                 kind="tool_end",
                                 turn=turn,
                                 tool_name=tool_call.name,
-                                elapsed=(time.monotonic() - tool_started_at),
+                                elapsed=tool_elapsed,
                                 message="denied",
                             )
                         )
@@ -406,6 +581,24 @@ class AgentLoop:
                         continue
 
                 elif permission.action == PermissionAction.DENY:
+                    tool_elapsed = time.monotonic() - tool_started_at
+
+                    metrics.add_tool_time(
+                        tool_name=tool_call.name,
+                        elapsed=tool_elapsed,
+                    )
+
+                    self.observability.record(
+                        "tool_call",
+                        {
+                            "session_id": session_id,
+                            "turn": turn,
+                            "tool": tool_call.name,
+                            "success": False,
+                            "elapsed_seconds": tool_elapsed,
+                        },
+                    )
+
                     message = f"❌ Permission denied for '{tool_call.name}'.\n{permission.reason}"
 
                     emit(
@@ -413,16 +606,16 @@ class AgentLoop:
                             kind="tool_end",
                             turn=turn,
                             tool_name=tool_call.name,
-                            elapsed=(time.monotonic() - tool_started_at),
+                            elapsed=tool_elapsed,
                             message="denied",
                         )
                     )
 
                     raise PermissionError(message)
 
-                # ==============================
+                # =================================================
                 # EXECUTE TOOL
-                # ==============================
+                # =================================================
 
                 try:
                     tool_result = self.executor.execute(
@@ -438,6 +631,36 @@ class AgentLoop:
                     TimeoutError,
                     FileNotFoundError,
                 ) as exc:
+                    tool_elapsed = time.monotonic() - tool_started_at
+
+                    metrics.add_tool_time(
+                        tool_name=tool_call.name,
+                        elapsed=tool_elapsed,
+                    )
+
+                    metrics.failures += 1
+
+                    self.observability.record(
+                        "tool_call",
+                        {
+                            "session_id": session_id,
+                            "turn": turn,
+                            "tool": tool_call.name,
+                            "success": False,
+                            "elapsed_seconds": tool_elapsed,
+                        },
+                    )
+
+                    self.observability.record(
+                        "error",
+                        {
+                            "session_id": session_id,
+                            "turn": turn,
+                            "error": str(exc),
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+
                     error_message = str(exc)
 
                     emit(
@@ -445,7 +668,7 @@ class AgentLoop:
                             kind="tool_end",
                             turn=turn,
                             tool_name=tool_call.name,
-                            elapsed=(time.monotonic() - tool_started_at),
+                            elapsed=tool_elapsed,
                             message="error",
                         )
                     )
@@ -471,7 +694,7 @@ class AgentLoop:
                     state.add_message(
                         {
                             "role": "tool",
-                            "tool_call_id": (tool_call.id),
+                            "tool_call_id": tool_call.id,
                             "name": tool_call.name,
                             "content": (f"Tool failed: {error_message}"),
                         }
@@ -485,9 +708,9 @@ class AgentLoop:
 
                     continue
 
-                # ==============================
+                # =================================================
                 # OBSERVE RESULT
-                # ==============================
+                # =================================================
 
                 result = truncate_output(
                     tool_result.output
@@ -502,6 +725,39 @@ class AgentLoop:
                 )
 
                 tool_elapsed = time.monotonic() - tool_started_at
+
+                # =================================================
+                # OBSERVABILITY: TOOL CALL
+                # =================================================
+
+                metrics.add_tool_time(
+                    tool_name=tool_call.name,
+                    elapsed=tool_elapsed,
+                )
+
+                self.observability.record(
+                    "tool_call",
+                    {
+                        "session_id": session_id,
+                        "turn": turn,
+                        "tool": tool_call.name,
+                        "success": tool_result.success,
+                        "elapsed_seconds": tool_elapsed,
+                    },
+                )
+
+                if not tool_result.success:
+                    metrics.failures += 1
+
+                    self.observability.record(
+                        "error",
+                        {
+                            "session_id": session_id,
+                            "turn": turn,
+                            "error": (tool_result.error or "Unknown tool error."),
+                            "error_type": (tool_result.error_type or "ToolError"),
+                        },
+                    )
 
                 if tool_result.success:
                     observation = self.observer.observe_success(
@@ -524,9 +780,9 @@ class AgentLoop:
                     )
                 )
 
-                # ==============================
+                # =================================================
                 # RECOVERY
-                # ==============================
+                # =================================================
 
                 if not tool_result.success:
                     recovery_exception = RuntimeError(tool_result.error or "Unknown tool error.")
@@ -547,9 +803,9 @@ class AgentLoop:
 
                         raise RuntimeError(final_error) from recovery_exception
 
-                # ==============================
+                # =================================================
                 # SAVE TOOL RESULT
-                # ==============================
+                # =================================================
 
                 state.add_message(
                     {
@@ -566,7 +822,30 @@ class AgentLoop:
                     status="running",
                 )
 
+        # ========================================================
+        # MAX TURNS
+        # ========================================================
+
         message = f"Jimmy stopped after reaching the maximum of {self.max_turns} turns."
+
+        metrics.failures += 1
+
+        self.observability.record(
+            "error",
+            {
+                "session_id": session_id,
+                "turn": state.turn_count,
+                "error": message,
+                "error_type": "MaxTurnsExceeded",
+            },
+        )
+
+        metrics.finish(time.monotonic() - started_at)
+
+        self.observability.record_run(
+            metrics,
+            status="failed",
+        )
 
         self.session_store.save(
             session_id=session_id,
