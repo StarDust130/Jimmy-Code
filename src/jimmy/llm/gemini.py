@@ -218,13 +218,10 @@ class GeminiProvider(LLMProvider):
                         }
                     }
 
-                    # Only add a signature when we have
-                    # a valid decoded one.
-                    #
-                    # This prevents malformed old session
-                    # data from crashing Pydantic.
+                    # Gemini expects the original thought signature
+                    # bytes on the same Part where they were received.
                     if signature is not None:
-                        part_data["thought_signature"] = cls._encode_signature(signature)
+                        part_data["thought_signature"] = signature
 
                     parts.append(types.Part.model_validate(part_data))
 
@@ -296,6 +293,43 @@ class GeminiProvider(LLMProvider):
             "content": response.text or "",
         }
 
+        usage_metadata = getattr(
+            response,
+            "usage_metadata",
+            None,
+        )
+
+        usage: dict[str, Any] | None = None
+
+        if usage_metadata is not None:
+            usage = {
+                "input_tokens": getattr(
+                    usage_metadata,
+                    "prompt_token_count",
+                    0,
+                ),
+                "output_tokens": getattr(
+                    usage_metadata,
+                    "candidates_token_count",
+                    0,
+                ),
+                "total_tokens": getattr(
+                    usage_metadata,
+                    "total_token_count",
+                    0,
+                ),
+                "cached_tokens": getattr(
+                    usage_metadata,
+                    "cached_content_token_count",
+                    0,
+                ),
+                "reasoning_tokens": getattr(
+                    usage_metadata,
+                    "thoughts_token_count",
+                    0,
+                ),
+            }
+
         candidates = getattr(
             response,
             "candidates",
@@ -307,6 +341,7 @@ class GeminiProvider(LLMProvider):
                 content=response.text or "",
                 tool_calls=[],
                 assistant_message=assistant_message,
+                usage=usage,
             )
 
         candidate = candidates[0]
@@ -322,6 +357,7 @@ class GeminiProvider(LLMProvider):
                 content=response.text or "",
                 tool_calls=[],
                 assistant_message=assistant_message,
+                usage=usage,
             )
 
         response_parts = (
@@ -415,9 +451,9 @@ class GeminiProvider(LLMProvider):
             content=response.text or "",
             tool_calls=tool_calls,
             assistant_message=assistant_message,
+            usage=usage,
         )
 
-    # ============================================================
     # ARGUMENTS
     # ============================================================
 
@@ -554,12 +590,6 @@ class GeminiProvider(LLMProvider):
             pass
 
         return None
-
-    @staticmethod
-    def _encode_signature(
-        value: bytes,
-    ) -> str:
-        return base64.urlsafe_b64encode(value).decode("ascii")
 
     @staticmethod
     def _is_base64(
