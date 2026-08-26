@@ -37,30 +37,66 @@ Screen.chat #landing-main {
 #landing-main {
     width: 100%;
     height: 100%;
-    align: center middle;
+
+    align: center top;
     layout: vertical;
+
     background: #020408;
+
+    /*
+     * Push the main Jimmy area lower so it feels
+     * centered in the upper/middle portion of the screen.
+     */
+    padding-top: 4;
 }
+
+
+/* ═════════════════════════════════════════════════════════════
+   LARGE LOGO
+   ═════════════════════════════════════════════════════════════ */
 
 #logo-large {
+    width: 100%;
     height: auto;
+
     color: #22d3ee;
+
     text-style: bold;
+
     content-align: center middle;
-    margin-top: 2;
+
+    margin-top: 0;
+    margin-bottom: 0;
 }
 
+
+/* ═════════════════════════════════════════════════════════════
+   TAGLINE
+   ═════════════════════════════════════════════════════════════ */
+
 #tagline {
+    width: 100%;
     height: 1;
+
     margin-top: 1;
+    margin-bottom: 0;
+
     color: #94a3b8;
+
     content-align: center middle;
 }
+
+
+/* ═════════════════════════════════════════════════════════════
+   LANDING INPUT
+   ═════════════════════════════════════════════════════════════ */
 
 #input-wrapper {
     width: 100%;
     height: auto;
+
     align: center middle;
+
     margin-top: 2;
     margin-bottom: 1;
 }
@@ -68,68 +104,188 @@ Screen.chat #landing-main {
 #prompt-landing {
     width: 80;
     height: 3;
+
     background: #0a0f16;
+
     color: #e0f2fe;
+
     border: solid #22d3ee;
+
     padding: 0 2;
 }
 
 #prompt-landing:focus {
     background: #0d1520;
+
     color: #f0f9ff;
+
     border: solid #67e8f9;
 }
 
 
 /* ═════════════════════════════════════════════════════════════
-   RECENT SESSIONS (landing)
+   RECENT SESSIONS
    ═════════════════════════════════════════════════════════════ */
 
 #recent-sessions-wrapper {
-    width: 60;
+    width: 100%;
     height: auto;
+
+    align: center top;
+
     margin-top: 1;
-    align: center middle;
+    margin-bottom: 0;
 }
 
 #recent-sessions-container {
-    width: 100%;
+    /*
+     * Smaller than the input so the session area
+     * feels secondary and lightweight.
+     */
+    width: 54;
     height: auto;
-    align: center middle;
 }
 
+
+/* ═════════════════════════════════════════════════════════════
+   RECENT SESSIONS HEADER
+   ═════════════════════════════════════════════════════════════ */
+
 .recent-sessions-header {
+    width: 100%;
     height: 1;
+
     color: #475569;
+
     text-style: dim;
+
     content-align: center middle;
+
+    margin-top: 0;
     margin-bottom: 1;
 }
 
-.session-card {
+
+/* ═════════════════════════════════════════════════════════════
+   SESSION ROW
+   ═════════════════════════════════════════════════════════════ */
+
+.session-row {
+    width: 100%;
     height: auto;
-    padding: 1 2;
+
     margin: 0 0 1 0;
-    background: #0b1017;
-    border: solid #1e293b;
+}
+
+
+/* ═════════════════════════════════════════════════════════════
+   SESSION CARD
+   ═════════════════════════════════════════════════════════════ */
+
+.session-card {
+    width: 1fr;
+    height: auto;
+
+    /*
+     * Very compact card.
+     * Keeps both title and status line.
+     */
+    padding: 0 1;
+
+    background: #090e15;
+
+    border: solid #19283a;
+
     content-align: left middle;
 }
 
 .session-card:hover {
-    background: #111827;
-    border: solid #334155;
+    background: #0d1520;
+
+    border: solid #2c4b68;
 }
 
-.view-all-link {
-    height: 1;
-    color: #22d3ee;
+
+/* ═════════════════════════════════════════════════════════════
+   SESSION TITLE
+   ═════════════════════════════════════════════════════════════ */
+
+.session-card .session-title {
+    width: 100%;
+
+    color: #dbeafe;
+
+    text-style: bold;
+
+    content-align: left middle;
+}
+
+
+/* ═════════════════════════════════════════════════════════════
+   SESSION META
+   ═════════════════════════════════════════════════════════════ */
+
+.session-card .session-meta {
+    width: 100%;
+
+    color: #64748b;
+
+    content-align: left middle;
+}
+
+
+/* ═════════════════════════════════════════════════════════════
+   COMPLETED STATUS
+   ═════════════════════════════════════════════════════════════ */
+
+.session-card .completed {
+    color: #4ade80;
+}
+
+
+/* ═════════════════════════════════════════════════════════════
+   DELETE BUTTON
+   ═════════════════════════════════════════════════════════════ */
+
+.delete-button {
+    width: 3;
+    height: auto;
+
+    color: #ef4444;
+
     content-align: center middle;
+
+    text-style: bold;
+}
+
+.delete-button:hover {
+    color: #f87171;
+
+    text-style: bold reverse;
+}
+
+
+/* ═════════════════════════════════════════════════════════════
+   VIEW ALL
+   ═════════════════════════════════════════════════════════════ */
+
+.view-all-link {
+    width: 100%;
+    height: 1;
+
+    color: #22d3ee;
+
+    content-align: center middle;
+
     text-style: dim;
-    margin-top: 1;
+
+    margin-top: 0;
+    margin-bottom: 0;
 }
 
 .view-all-link:hover {
     text-style: bold;
+
     color: #67e8f9;
 }
 
@@ -140,63 +296,90 @@ Screen.chat #landing-main {
 
 #topbar {
     dock: top;
+
+    width: 100%;
     height: 1;
+
     background: #020408;
+
     color: #d8dee9;
+
     padding: 0 1;
 }
 
 #brand {
     width: auto;
+
     color: #22d3ee;
+
     content-align: left middle;
 }
 
 #project {
     width: auto;
+
     color: #60a5fa;
+
     content-align: left middle;
+
     padding: 0 1;
 }
 
 #session-indicator {
     width: auto;
+
     color: #c4b5fd;
+
     content-align: left middle;
+
     padding: 0 1;
 }
 
 #file-context {
     width: 1fr;
+
     color: #fbbf24;
+
     content-align: left middle;
+
     padding: 0 1;
 }
 
 #permission-mode {
     width: auto;
+
     color: #fbbf24;
+
     content-align: left middle;
+
     padding: 0 1;
 }
 
 #status-indicator {
     width: auto;
+
     color: #c4b5fd;
+
     content-align: left middle;
+
     padding: 0 1;
 }
 
 #datetime {
     width: auto;
+
     color: #64748b;
+
     content-align: right middle;
+
     padding: 0 1;
 }
 
 #clock {
     width: 12;
+
     color: #22d3ee;
+
     content-align: right middle;
 }
 
@@ -208,46 +391,68 @@ Screen.chat #landing-main {
 #chat-main {
     width: 100%;
     height: 100%;
+
     layout: vertical;
+
     background: #020408;
 }
 
 #conversation {
     width: 100%;
     height: 1fr;
+
     background: #020408;
+
     color: #d8dee9;
+
     border: none;
+
     padding: 0 1;
 
     scrollbar-size: 1 1;
+
     scrollbar-background: #020408;
+
     scrollbar-color: #1e293b;
+
     scrollbar-color-hover: #334155;
+
     scrollbar-color-active: #22d3ee;
 }
 
 #typing-indicator {
+    width: 100%;
     height: 1;
+
     background: #020408;
+
     color: #64748b;
+
     content-align: left middle;
+
     padding: 0 2;
+
     text-style: dim;
 }
 
 #prompt-chat {
     width: 100%;
     height: 3;
+
     background: #0a0f16;
+
     color: #e0f2fe;
+
     border: solid #1e293b;
+
     padding: 0 1;
 }
 
 #prompt-chat:focus {
     background: #0d1520;
+
     color: #f0f9ff;
+
     border: solid #22d3ee;
 }
 
@@ -262,14 +467,18 @@ Screen.chat #landing-main {
 
 HelpScreen {
     align: center middle;
+
     background: #020408;
 }
 
 #help-box {
     width: 80;
     height: auto;
+
     background: #0b1017;
+
     border: solid #22d3ee;
+
     padding: 1 2;
 }
 
@@ -283,8 +492,11 @@ HelpScreen {
    ═════════════════════════════════════════════════════════════ */
 
 Footer {
+    width: 100%;
     height: 1;
+
     background: #020408;
+
     color: #475569;
 }
 
@@ -307,6 +519,7 @@ RichLog {
 
 .selection {
     background: #164e63;
+
     color: #ecfeff;
 }
 
@@ -317,60 +530,86 @@ RichLog {
 
 AllSessionsScreen {
     align: center middle;
+
     background: rgba(0, 0, 0, 0);
 }
 
 #all-sessions-dialog {
-    width: 72;
-    height: 26;
+    width: 60;
+    height: 22;
+
     background: #0b1017;
+
     border: solid #22d3ee;
+
     padding: 1 2;
 }
 
 #all-sessions-title {
     height: 1;
+
     margin-bottom: 1;
+
     color: #f8fafc;
+
     text-style: bold;
+
     content-align: center middle;
 }
 
 #all-sessions-list {
     width: 100%;
     height: 1fr;
+
     overflow-y: auto;
+
     scrollbar-size: 1 1;
+
     scrollbar-background: #020408;
+
     scrollbar-color: #1e293b;
+
     scrollbar-color-hover: #334155;
+
     scrollbar-color-active: #22d3ee;
 }
 
 .all-session-card {
+    width: 100%;
     height: auto;
-    padding: 1 2;
+
+    padding: 0 1;
+
     margin: 0 0 1 0;
+
     background: #0b1017;
+
     border: solid #1e293b;
+
     content-align: left middle;
 }
 
 .all-session-card:hover {
     background: #111827;
+
     border: solid #334155;
 }
 
 .all-session-card.selected {
     background: #164e63;
+
     border: solid #22d3ee;
 }
 
 #all-sessions-footer {
     height: 1;
+
     margin-top: 1;
+
     color: #475569;
+
     content-align: center middle;
+
     text-style: dim;
 }
 
@@ -382,6 +621,7 @@ AllSessionsScreen {
 PermissionScreen,
 PermissionPrompt {
     align: center middle;
+
     background: rgba(0, 0, 0, 0);
 }
 
@@ -393,34 +633,47 @@ PermissionPrompt {
 #permission-dialog {
     width: 72;
     height: auto;
+
     padding: 1 2;
+
     background: #0b1220;
+
     border: round #334155;
 }
 
 #permission-title {
     height: 1;
+
     margin-bottom: 1;
+
     color: #f8fafc;
+
     text-style: bold;
 }
 
 #permission-subtitle {
     height: 1;
+
     margin-bottom: 1;
+
     color: #64748b;
 }
 
 #permission-options {
     height: auto;
+
     padding: 0 0 1 0;
+
     color: #cbd5e1;
 }
 
 #permission-footer {
     height: 1;
+
     margin-top: 1;
+
     color: #475569;
+
     content-align: center middle;
 }
 
@@ -432,90 +685,206 @@ PermissionPrompt {
 #approval-dialog {
     width: 66;
     height: auto;
+
     padding: 1 2;
+
     background: #0b1220;
+
     border: round #f59e0b;
 }
 
 #approval-title {
     height: 1;
+
     margin-bottom: 1;
+
     color: #f8fafc;
+
     text-style: bold;
 }
 
 #approval-tool {
     height: auto;
+
     padding: 1;
+
     margin-bottom: 1;
+
     background: #111827;
+
     color: #cbd5e1;
 }
 
 #approval-reason {
     height: auto;
+
     margin-bottom: 1;
+
     color: #94a3b8;
 }
 
 #approval-actions {
     width: 100%;
     height: 3;
+
     align: center middle;
 }
 
 #approval-allow {
     width: 20;
     height: 3;
+
     margin-right: 1;
+
     background: #14532d;
+
     color: #dcfce7;
+
     content-align: center middle;
+
     text-style: bold;
 }
 
 #approval-allow:hover,
 #approval-allow:focus {
     background: #166534;
+
     color: #f0fdf4;
 }
 
 #approval-deny {
     width: 20;
     height: 3;
+
     margin-right: 1;
+
     background: #3f1d1d;
+
     color: #fecaca;
+
     content-align: center middle;
+
     text-style: bold;
 }
 
 #approval-deny:hover,
 #approval-deny:focus {
     background: #7f1d1d;
+
     color: #fee2e2;
 }
 
 #approval-full {
     width: 20;
     height: 3;
+
     background: #1e293b;
+
     color: #fde68a;
+
     content-align: center middle;
+
     text-style: bold;
 }
 
 #approval-full:hover,
 #approval-full:focus {
     background: #334155;
+
     color: #fef3c7;
 }
 
 #approval-footer {
     height: 1;
+
     margin-top: 1;
+
     color: #475569;
+
     content-align: center middle;
+}
+
+
+/* ═════════════════════════════════════════════════════════════
+   DELETE CONFIRM DIALOG
+   ═════════════════════════════════════════════════════════════ */
+
+DeleteConfirmScreen {
+    align: center middle;
+
+    background: rgba(0, 0, 0, 0);
+}
+
+#delete-dialog {
+    width: 40;
+    height: auto;
+
+    background: #0b1220;
+
+    border: round #ef4444;
+
+    padding: 1 2;
+}
+
+#delete-title {
+    height: 1;
+
+    margin-bottom: 1;
+
+    color: #f8fafc;
+
+    text-style: bold;
+
+    content-align: center middle;
+}
+
+#delete-actions {
+    width: 100%;
+    height: 3;
+
+    align: center middle;
+}
+
+#delete-confirm {
+    width: 16;
+    height: 3;
+
+    margin-right: 1;
+
+    background: #7f1d1d;
+
+    color: #fee2e2;
+
+    content-align: center middle;
+
+    text-style: bold;
+}
+
+#delete-confirm:hover,
+#delete-confirm:focus {
+    background: #991b1b;
+
+    color: #fef2f2;
+}
+
+#delete-cancel {
+    width: 16;
+    height: 3;
+
+    background: #1e293b;
+
+    color: #cbd5e1;
+
+    content-align: center middle;
+
+    text-style: bold;
+}
+
+#delete-cancel:hover,
+#delete-cancel:focus {
+    background: #334155;
+
+    color: #f1f5f9;
 }
 
 
