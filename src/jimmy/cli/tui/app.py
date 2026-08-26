@@ -469,6 +469,13 @@ class JimmyTUI(App[None]):
     running = reactive(False)
     mode = reactive("landing")
     spinner_index = reactive(0)
+    observability_model = reactive("Jimmy")
+    observability_turns = reactive(0)
+    observability_tools = reactive(0)
+    observability_input_tokens = reactive(0)
+    observability_output_tokens = reactive(0)
+    observability_total_tokens = reactive(0)
+    observability_cost = reactive(0.0)
 
     def __init__(
         self,
@@ -484,6 +491,13 @@ class JimmyTUI(App[None]):
 
         self._agent = agent
         self._initial_task = initial_task
+
+        llm = getattr(agent, "llm", None)
+        self.observability_model = getattr(
+            llm,
+            "model",
+            type(llm).__name__ if llm is not None else "Jimmy",
+        )
         self._version = version
         self._workspace = workspace
         self._show_time = show_time
@@ -520,6 +534,7 @@ class JimmyTUI(App[None]):
         self._history_draft: str = ""
 
     def compose(self) -> ComposeResult:
+        # Fixed header stays visible while chat content scrolls.
         yield Horizontal(
             Static("", id="brand"),
             Static("", id="project"),
@@ -532,6 +547,7 @@ class JimmyTUI(App[None]):
             id="topbar",
         )
 
+        # Landing screen. Hidden automatically in chat mode.
         yield Vertical(
             Static(LOGO, id="logo-large"),
             Static("", id="tagline"),
@@ -544,7 +560,10 @@ class JimmyTUI(App[None]):
             ),
             Center(
                 Vertical(
-                    Static("Recent Sessions", classes="recent-sessions-header"),
+                    Static(
+                        "Recent Sessions",
+                        classes="recent-sessions-header",
+                    ),
                     Vertical(id="recent-sessions-list"),
                     id="recent-sessions-container",
                 ),
@@ -553,6 +572,7 @@ class JimmyTUI(App[None]):
             id="landing-main",
         )
 
+        # Chat area. Observability sits directly under the conversation.
         yield Vertical(
             RichLog(
                 id="conversation",
@@ -561,6 +581,7 @@ class JimmyTUI(App[None]):
                 wrap=True,
                 auto_scroll=True,
             ),
+            Static("", id="observability"),
             Static("", id="typing-indicator"),
             Input(
                 placeholder="Ask Jimmy anything...",
@@ -578,6 +599,7 @@ class JimmyTUI(App[None]):
         self._update_permission_mode()
         self._update_session_indicator()
         self._refresh_landing_sessions()
+        self._update_observability()
 
         self.set_interval(0.08, self._tick_fast)
         self.set_interval(0.5, self._tick_accent)
@@ -723,6 +745,7 @@ class JimmyTUI(App[None]):
             pass
 
         self._update_status_indicator()
+        self._update_observability()
 
         if self.running:
             bar = THINKING_BAR[self._think_idx]
@@ -957,6 +980,7 @@ class JimmyTUI(App[None]):
         self._step_number = 0
         self.elapsed = 0.0
         self._last_error = None
+        self._reset_observability()
         self._current_session_id = None
         self._current_task = None
         self._history_pos = -1
@@ -1239,6 +1263,7 @@ class JimmyTUI(App[None]):
         self.elapsed = 0.0
         self._task_started_at = time.monotonic()
         self._last_error = None
+        self._reset_observability()
         self._step_number = 0
         self._worker_cancelled = False
         self._task_generation += 1
@@ -1453,55 +1478,78 @@ class JimmyTUI(App[None]):
     # AGENT EVENTS
     # ------------------------------------------------------------------
 
-    def _handle_agent_event(self, event: AgentEvent, generation: int) -> None:
+    def _handle_agent_event(
+        self,
+        event: AgentEvent,
+        generation: int,
+    ) -> None:
         if generation != self._current_generation or self._worker_cancelled:
             return
 
         self.turn = event.turn
+        self.observability_turns = event.turn
 
         if event.kind == "turn_start":
             self.status = "thinking"
             self.current_tool = ""
-            self._update_status_indicator()
-            self._agent_header_needed = True
 
         elif event.kind == "turn_end":
             if event.message == "final response":
                 self.status = "finalizing"
             else:
                 self.status = "planning"
-                if event.message:
-                    self._ensure_agent_header()
-                    self._write_agent_text(event.message)
-            self._update_status_indicator()
+
+        elif event.kind == "llm_usage":
+            self.observability_model = event.model_name or event.message or self.observability_model
+            self.observability_input_tokens = event.input_tokens or 0
+            self.observability_output_tokens = event.output_tokens or 0
+            self.observability_total_tokens = event.total_tokens or 0
+            if event.cost_usd is not None:
+                self.observability_cost += event.cost_usd
 
         elif event.kind == "tool_start":
             self.status = "running"
             self.current_tool = event.tool_name or "unknown"
-            detail = self._tool_detail(event.arguments)
-            if detail:
-                self.current_file = detail
-            self._update_status_indicator()
-            self._ensure_agent_header()
-            self._write_tool_start(event.turn, event.tool_name, event.arguments)
+
+            self.observability_tools += 1
+
+            self._write_tool_start(
+                event.turn,
+                event.tool_name,
+                event.arguments,
+            )
 
         elif event.kind == "tool_end":
             self._step_number += 1
-            success = event.message not in {"error", "denied"}
-            self._write_tool_end(event.elapsed or 0.0, success)
+
+            success = event.message not in {
+                "error",
+                "denied",
+            }
+
+            self._write_tool_end(
+                event.elapsed or 0.0,
+                success,
+            )
+
             self.current_tool = ""
-            self.current_file = ""
-            if event.message == "denied":
-                self.status = "planning"
-            else:
-                self.status = "planning" if success else "tool failed"
-            self._update_status_indicator()
 
         elif event.kind == "complete":
-            self._task_finished(event.message or "", event.elapsed, generation)
+            self._task_finished(
+                event.message or "",
+                event.elapsed,
+                generation,
+            )
 
         elif event.kind == "error":
-            self._agent_failed(RuntimeError(event.message or "Jimmy failed."), generation)
+            self._last_error = event.message or "Jimmy failed."
+            self._agent_failed(
+                RuntimeError(self._last_error),
+                generation,
+            )
+
+        self._update_observability()
+        self._update_status_indicator()
 
     # ------------------------------------------------------------------
     # TASK FINISH
@@ -1541,6 +1589,7 @@ class JimmyTUI(App[None]):
             pass
 
         self._enable_input()
+        self._update_observability()
         self._update_status_indicator()
         self._update_session_indicator()
         self._refresh_landing_sessions()
@@ -1569,6 +1618,7 @@ class JimmyTUI(App[None]):
         except Exception:
             pass
 
+        self._update_observability()
         self._enable_input()
         self._update_status_indicator()
         self._update_session_indicator()
@@ -1645,6 +1695,108 @@ class JimmyTUI(App[None]):
         except Exception:
             pass
         return ""
+
+    def _reset_observability(self) -> None:
+        self.observability_model = getattr(
+            getattr(self._agent, "llm", None),
+            "model",
+            self.observability_model or "Jimmy",
+        )
+        self.observability_turns = 0
+        self.observability_tools = 0
+        self.observability_input_tokens = 0
+        self.observability_output_tokens = 0
+        self.observability_total_tokens = 0
+        self.observability_cost = 0.0
+        self._update_observability()
+
+    def _update_observability(self) -> None:
+        try:
+            widget = self.query_one("#observability", Static)
+
+            has_usage = bool(
+                self.observability_input_tokens
+                or self.observability_output_tokens
+                or self.observability_total_tokens
+                or self.observability_cost > 0
+            )
+            has_run = bool(
+                self.running
+                or self.observability_turns
+                or self.observability_tools
+                or self._last_error
+            )
+
+            # Keep old/empty chats clean.
+            if not has_run:
+                widget.update("")
+                return
+
+            text = Text()
+            text.append("⚡ ", style="bold #22d3ee")
+            text.append(
+                self.observability_model or "Jimmy",
+                style="bold white",
+            )
+            text.append(
+                f"  ·  {self.observability_turns} turns",
+                style="dim #94a3b8",
+            )
+            text.append(
+                f"  ·  {self.observability_tools} tools",
+                style="dim #94a3b8",
+            )
+            text.append(
+                f"  ·  {self._fmt_dur(self.elapsed)}",
+                style="dim #94a3b8",
+            )
+
+            if has_usage:
+                text.append("\n🪙 ", style="#fbbf24")
+                if self.observability_input_tokens:
+                    text.append(
+                        f"{self._format_tokens(self.observability_input_tokens)} in",
+                        style="dim #94a3b8",
+                    )
+                if self.observability_output_tokens:
+                    if self.observability_input_tokens:
+                        text.append("  ·  ", style="dim #475569")
+                    text.append(
+                        f"{self._format_tokens(self.observability_output_tokens)} out",
+                        style="dim #94a3b8",
+                    )
+                if self.observability_total_tokens:
+                    if self.observability_input_tokens or self.observability_output_tokens:
+                        text.append("  ·  ", style="dim #475569")
+                    text.append(
+                        f"{self._format_tokens(self.observability_total_tokens)} total",
+                        style="bold white",
+                    )
+                if self.observability_cost > 0:
+                    text.append(
+                        f"  ·  ${self.observability_cost:.2f}",
+                        style="dim #94a3b8",
+                    )
+
+            if self._last_error:
+                text.append(
+                    f"\n✗ {self._last_error.splitlines()[0][:100]}",
+                    style="bold red",
+                )
+
+            widget.update(text)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _format_tokens(tokens: int) -> str:
+        if tokens >= 1_000_000:
+            return f"{tokens / 1_000_000:.1f}M"
+
+        if tokens >= 1_000:
+            return f"{tokens / 1_000:.1f}k"
+
+        return str(tokens)
 
 
 def run_tui(
