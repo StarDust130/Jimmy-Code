@@ -12,6 +12,7 @@ from rich.syntax import Syntax
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Center, Horizontal, Vertical
 from textual.message import Message
 from textual.reactive import reactive
@@ -159,12 +160,65 @@ class ViewAllLink(Static):
         self.post_message(self.ShowAll())
 
 
+class DeleteButton(Static):
+    class Pressed(Message):
+        def __init__(self, session_id: str) -> None:
+            self.session_id = session_id
+            super().__init__()
+
+    def __init__(self, session_id: str, **kwargs: Any) -> None:
+        self.session_id = session_id
+        kwargs.setdefault("classes", "delete-button")
+        super().__init__("×", **kwargs)
+
+    def on_click(self) -> None:
+        self.post_message(self.Pressed(self.session_id))
+
+
+class DeleteConfirmScreen(Screen[bool]):
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("y,enter", "confirm", "", show=False),
+        Binding("n,escape", "cancel", "", show=False),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Center(
+            Vertical(
+                Static("Delete this session?", id="delete-title"),
+                Horizontal(
+                    Button("Delete", id="delete-confirm", variant="error"),
+                    Button("Cancel", id="delete-cancel", variant="primary"),
+                    id="delete-actions",
+                ),
+                id="delete-dialog",
+            )
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "delete-confirm":
+            self.dismiss(True)
+        else:
+            self.dismiss(False)
+
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+    def on_key(self, event: Any) -> None:
+        if event.key in {"y", "enter"}:
+            self.dismiss(True)
+        elif event.key in {"n", "escape"}:
+            self.dismiss(False)
+
+
 class AllSessionsScreen(Screen[str | None]):
-    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("up,k", "select_prev", ""),
-        ("down,j", "select_next", ""),
-        ("enter", "select_open", ""),
-        ("escape", "close_dialog", ""),
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("up,k", "select_prev", "", show=False),
+        Binding("down,j", "select_next", "", show=False),
+        Binding("enter", "select_open", "", show=False),
+        Binding("escape", "close_dialog", "", show=False),
     ]
 
     def __init__(
@@ -231,8 +285,8 @@ class AllSessionsScreen(Screen[str | None]):
 
 
 class HelpScreen(Screen):
-    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("escape,h", "app.pop_screen", "Close"),
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("escape,h", "app.pop_screen", "Close"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -394,13 +448,16 @@ class JimmyTUI(App[None]):
     TITLE = "Jimmy"
     ENABLE_COMMAND_PALETTE = False
 
-    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("ctrl+q", "quit_app", "Quit"),
-        ("ctrl+x", "cancel_task", "Cancel"),
-        ("ctrl+p", "permission_mode", "Permissions"),
-        ("h", "show_help", "Help"),
-        ("ctrl+l", "clear_input", "Clear"),
-        ("ctrl+n", "new_task", "New Task"),
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("ctrl+q", "quit_app", "Quit"),
+        Binding("ctrl+x", "cancel_task", "Cancel"),
+        Binding("ctrl+p", "permission_mode", "Permissions"),
+        Binding("h", "show_help", "Help"),
+        Binding("ctrl+l", "clear_input", "Clear"),
+        Binding("ctrl+n", "new_task", "New Task"),
+        Binding("ctrl+shift+c", "copy_response", "", show=False),
+        Binding("ctrl+shift+u", "copy_prompt", "", show=False),
+        Binding("ctrl+shift+a", "copy_conversation", "", show=False),
     ]
 
     status = reactive("ready")
@@ -452,8 +509,15 @@ class JimmyTUI(App[None]):
 
         self._git_branch = self._detect_git_branch()
 
+        # Session state
         self._current_session_id: str | None = None
         self._current_task: str | None = None
+        self._agent_header_needed = False
+
+        # Input history
+        self._prompt_history: list[str] = []
+        self._history_pos: int = -1
+        self._history_draft: str = ""
 
     def compose(self) -> ComposeResult:
         yield Horizontal(
@@ -525,6 +589,123 @@ class JimmyTUI(App[None]):
             self._submit_task(self._initial_task)
         else:
             self._start_typewriter()
+
+    # ------------------------------------------------------------------
+    # KEYS — input history & copy
+    # ------------------------------------------------------------------
+
+    def on_key(self, event: Any) -> None:
+        if event.key == "up" and isinstance(self.focused, Input):
+            self._history_prev()
+            event.stop()
+        elif event.key == "down" and isinstance(self.focused, Input):
+            self._history_next()
+            event.stop()
+
+    def _history_prev(self) -> None:
+        if not self._prompt_history:
+            return
+        focused = self.focused
+        if not isinstance(focused, Input):
+            return
+        if self._history_pos == -1:
+            self._history_draft = focused.value or ""
+        if self._history_pos < len(self._prompt_history) - 1:
+            self._history_pos += 1
+            value = self._prompt_history[-(self._history_pos + 1)]
+            self._set_input_value(value)
+
+    def _history_next(self) -> None:
+        focused = self.focused
+        if not isinstance(focused, Input):
+            return
+        if self._history_pos <= 0:
+            self._history_pos = -1
+            self._set_input_value(self._history_draft)
+        elif self._history_pos > 0:
+            self._history_pos -= 1
+            value = self._prompt_history[-(self._history_pos + 1)]
+            self._set_input_value(value)
+
+    def _set_input_value(self, value: str) -> None:
+        try:
+            if self.mode == "landing":
+                inp = self.query_one("#prompt-landing", Input)
+            else:
+                inp = self.query_one("#prompt-chat", Input)
+            inp.value = value
+            inp.cursor_position = len(value)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # COPY
+    # ------------------------------------------------------------------
+
+    def action_copy_response(self) -> None:
+        if self._last_response:
+            self._copy_text(self._last_response, "Response copied")
+        else:
+            self._notify("No response to copy", "warning")
+
+    def action_copy_prompt(self) -> None:
+        for msg in reversed(self._conversation_history):
+            if msg.get("role") == "user":
+                self._copy_text(msg.get("content", ""), "Prompt copied")
+                return
+        self._notify("No prompt to copy", "warning")
+
+    def action_copy_conversation(self) -> None:
+        if not self._conversation_history:
+            self._notify("No conversation to copy", "warning")
+            return
+        lines: list[str] = []
+        for msg in self._conversation_history:
+            role = msg.get("role")
+            content = msg.get("content", "")
+            if role == "user":
+                lines.append(f"YOU:\n{content}")
+            elif role == "assistant":
+                lines.append(f"JIMMY:\n{content}")
+            lines.append("")
+        text = "\n".join(lines).strip()
+        if text:
+            self._copy_text(text, "Conversation copied")
+        else:
+            self._notify("No conversation to copy", "warning")
+
+    def _copy_text(self, text: str, success_msg: str) -> None:
+        import platform
+
+        system = platform.system()
+        try:
+            if system == "Windows":
+                subprocess.run(["clip"], input=text, text=True, check=True, timeout=2)
+            elif system == "Darwin":
+                subprocess.run(["pbcopy"], input=text, text=True, check=True, timeout=2)
+            else:
+                try:
+                    subprocess.run(["wl-copy"], input=text, text=True, check=True, timeout=2)
+                except (FileNotFoundError, subprocess.CalledProcessError):
+                    subprocess.run(
+                        ["xclip", "-selection", "clipboard"],
+                        input=text,
+                        text=True,
+                        check=True,
+                        timeout=2,
+                    )
+            self._notify(success_msg, "information")
+        except Exception:
+            self._notify(
+                "Copy failed — select text with Shift+mouse and copy via terminal",
+                "warning",
+            )
+
+    def _notify(self, message: str, severity: str) -> None:
+        try:
+            self.notify(message, severity=severity, timeout=1.5)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # TICKS
@@ -709,6 +890,13 @@ class JimmyTUI(App[None]):
         if not task:
             return
         event.input.value = ""
+
+        # Save to history
+        if not self._prompt_history or self._prompt_history[-1] != task:
+            self._prompt_history.append(task)
+        self._history_pos = -1
+        self._history_draft = ""
+
         self._submit_task(task)
 
     def _focus_input(self) -> None:
@@ -771,6 +959,8 @@ class JimmyTUI(App[None]):
         self._last_error = None
         self._current_session_id = None
         self._current_task = None
+        self._history_pos = -1
+        self._history_draft = ""
         self._update_status_indicator()
         self._update_session_indicator()
         self._start_typewriter()
@@ -895,7 +1085,10 @@ class JimmyTUI(App[None]):
 
         for session in sessions[:3]:
             try:
-                container.mount(SessionCard(session))
+                row = Horizontal(classes="session-row")
+                container.mount(row)
+                row.mount(SessionCard(session))
+                row.mount(DeleteButton(session.get("id", "")))
             except Exception:
                 pass
 
@@ -994,6 +1187,11 @@ class JimmyTUI(App[None]):
         except Exception:
             pass
 
+    def _ensure_agent_header(self) -> None:
+        if self._agent_header_needed:
+            self._render_agent_header()
+            self._agent_header_needed = False
+
     def on_view_all_link_show_all(self, event: ViewAllLink.ShowAll) -> None:
         self._show_all_sessions()
 
@@ -1001,6 +1199,30 @@ class JimmyTUI(App[None]):
         if isinstance(self.screen, AllSessionsScreen):
             return
         self._resume_session(event.session_id)
+
+    def on_delete_button_pressed(self, event: DeleteButton.Pressed) -> None:
+        self._confirm_delete_session(event.session_id)
+
+    def _confirm_delete_session(self, session_id: str) -> None:
+        def handle_confirm(confirmed: bool | None) -> None:
+            if confirmed:
+                self._delete_session(session_id)
+
+        self.push_screen(DeleteConfirmScreen(), handle_confirm)
+
+    def _delete_session(self, session_id: str) -> None:
+        try:
+            store = getattr(self._agent, "session_store", None)
+            if store is not None:
+                store.delete(session_id)
+        except Exception:
+            self._notify("Failed to delete session", "error")
+            return
+
+        if self._current_session_id == session_id:
+            self.action_new_task()
+        else:
+            self._refresh_landing_sessions()
 
     # ------------------------------------------------------------------
     # TASK SUBMISSION
@@ -1082,7 +1304,7 @@ class JimmyTUI(App[None]):
                 code = "\n".join(lines[1:-1])
                 if code:
                     try:
-                        syntax = Syntax(code, lang, theme="monokai", background="default")
+                        syntax = Syntax(code, lang, theme="monokai")
                         log.write(syntax)
                     except Exception:
                         for code_line in code.splitlines():
@@ -1241,7 +1463,7 @@ class JimmyTUI(App[None]):
             self.status = "thinking"
             self.current_tool = ""
             self._update_status_indicator()
-            self._render_agent_header()
+            self._agent_header_needed = True
 
         elif event.kind == "turn_end":
             if event.message == "final response":
@@ -1249,6 +1471,7 @@ class JimmyTUI(App[None]):
             else:
                 self.status = "planning"
                 if event.message:
+                    self._ensure_agent_header()
                     self._write_agent_text(event.message)
             self._update_status_indicator()
 
@@ -1259,6 +1482,7 @@ class JimmyTUI(App[None]):
             if detail:
                 self.current_file = detail
             self._update_status_indicator()
+            self._ensure_agent_header()
             self._write_tool_start(event.turn, event.tool_name, event.arguments)
 
         elif event.kind == "tool_end":
@@ -1309,6 +1533,7 @@ class JimmyTUI(App[None]):
             log.write(Text(f"▎ {self._summary()}", style="dim"))
             if result.strip():
                 log.write("")
+                self._ensure_agent_header()
                 self._render_content(result.strip())
             log.write("")
             self._write_separator()
