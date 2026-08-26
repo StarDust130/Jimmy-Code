@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import subprocess
 import threading
 import time
@@ -8,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
-from rich.syntax import Syntax
+from rich.markdown import Markdown
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
@@ -1310,34 +1309,29 @@ class JimmyTUI(App[None]):
         self._conversation_history.append({"role": "assistant", "content": text})
         self._render_content(text)
 
-    def _render_content(self, text: str) -> None:
+    def _render_content(self, text: str | Text) -> None:
+        """📝 Render Jimmy's response with Rich Markdown."""
         try:
             log = self.query_one("#conversation", RichLog)
+            markdown_text = text.plain if isinstance(text, Text) else text
+
+            if not markdown_text.strip():
+                return
+
+            log.write(
+                Markdown(
+                    markdown_text,
+                    code_theme="monokai",
+                )
+            )
         except Exception:
-            return
-
-        if "```" not in text:
-            for line in text.splitlines():
-                log.write(Text(f"▎ {line}", style="#d8dee9"))
-            return
-
-        parts = re.split(r"(```[\w]*\n[\s\S]*?```)", text)
-        for part in parts:
-            if part.startswith("```"):
-                lines = part.split("\n")
-                lang = lines[0].strip("`").strip() or "text"
-                code = "\n".join(lines[1:-1])
-                if code:
-                    try:
-                        syntax = Syntax(code, lang, theme="monokai")
-                        log.write(syntax)
-                    except Exception:
-                        for code_line in code.splitlines():
-                            log.write(Text(f"▎ {code_line}", style="dim"))
-            else:
-                for line in part.splitlines():
-                    if line.strip():
-                        log.write(Text(f"▎ {line}", style="#d8dee9"))
+            try:
+                log = self.query_one("#conversation", RichLog)
+                markdown_text = text.plain if isinstance(text, Text) else text
+                for line in markdown_text.splitlines():
+                    log.write(Text(f"▎ {line}", style="#d8dee9"))
+            except Exception:
+                pass
 
     def _write_tool_start(
         self,
