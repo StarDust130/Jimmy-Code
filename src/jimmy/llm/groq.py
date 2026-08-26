@@ -100,11 +100,55 @@ class GroqProvider(LLMProvider):
                 for call in message.tool_calls
             ]
 
+        # 📊 Extract Groq usage metadata.
+        api_usage = getattr(
+            response,
+            "usage",
+            None,
+        )
+
+        usage: dict[str, Any] | None = None
+
+        if api_usage is not None:
+            prompt_details = getattr(
+                api_usage,
+                "prompt_tokens_details",
+                None,
+            )
+
+            usage = {
+                "input_tokens": getattr(
+                    api_usage,
+                    "prompt_tokens",
+                    0,
+                ),
+                "output_tokens": getattr(
+                    api_usage,
+                    "completion_tokens",
+                    0,
+                ),
+                "total_tokens": getattr(
+                    api_usage,
+                    "total_tokens",
+                    0,
+                ),
+                "cached_tokens": (
+                    getattr(
+                        prompt_details,
+                        "cached_tokens",
+                        0,
+                    )
+                    if prompt_details is not None
+                    else 0
+                ),
+            }
+
         # 📦 Return Jimmy's normalized response.
         return LLMResponse(
             content=message.content or "",
             tool_calls=tool_calls,
             assistant_message=assistant_message,
+            usage=usage,
         )
 
     @staticmethod
