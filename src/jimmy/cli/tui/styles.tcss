@@ -896,3 +896,18 @@ PermissionScreen > Vertical,
 PermissionPrompt > Vertical {
     height: auto;
 }
+#conversation {
+    width: 100%;
+    height: 1fr;
+
+    background: #020408;
+    color: #d8dee9;
+
+    border: none;
+    padding: 0 1;
+
+    /* 🖱️ Keep normal terminal selection available */
+    text-style: none;
+
+    scrollbar-size: 0 0;
+}
