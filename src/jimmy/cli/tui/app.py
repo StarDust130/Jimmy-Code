@@ -574,6 +574,8 @@ class JimmyTUI(App[None]):
         self._last_error = None
         self._reset_observability()
         self._current_session_id = None
+        if hasattr(self._agent, "current_session_id"):
+            self._agent.current_session_id = None
         self._current_task = None
         self._history_pos = -1
         self._history_draft = ""
@@ -747,6 +749,8 @@ class JimmyTUI(App[None]):
             return
 
         self._current_session_id = session_id
+        if hasattr(self._agent, "current_session_id"):
+            self._agent.current_session_id = session_id
         self._current_task = getattr(state, "task", "Session")
         self._conversation_history = []
         self._files_touched = set()
@@ -758,17 +762,23 @@ class JimmyTUI(App[None]):
 
         for msg in getattr(state, "messages", []):
             role = msg.get("role")
+
             if role == "user":
-                self._conversation_history.append(
-                    {"role": "user", "content": msg.get("content", "")}
-                )
-                self._render_user_message(msg.get("content", ""))
+                content = str(msg.get("content", ""))
+                self._conversation_history.append({"role": "user", "content": content})
+                self._render_user_message(content)
+
             elif role == "assistant":
-                self._conversation_history.append(
-                    {"role": "assistant", "content": msg.get("content", "")}
-                )
+                content = str(msg.get("content", ""))
+                if not content.strip():
+                    continue
+
+                self._conversation_history.append({"role": "assistant", "content": content})
                 self._render_agent_header()
-                self._render_content(msg.get("content", ""))
+                self._render_content(content)
+
+            elif role == "tool":
+                self._render_history_tool(msg)
 
         try:
             log = self.query_one("#conversation", RichLog)
@@ -807,6 +817,32 @@ class JimmyTUI(App[None]):
         if self._agent_header_needed:
             self._render_agent_header()
             self._agent_header_needed = False
+
+    def _render_history_tool(self, message: dict[str, Any]) -> None:
+        """Render persisted tool activity without pretending it was chat text."""
+        try:
+            log = self.query_one("#conversation", RichLog)
+            name = str(message.get("name", "tool"))
+            content = str(message.get("content", "") or "")
+
+            log.write(
+                Text(
+                    f"  ▪ {name}",
+                    style="bold white",
+                )
+            )
+
+            if content:
+                first_line = content.splitlines()[0].strip()
+                if first_line:
+                    log.write(
+                        Text(
+                            f"    {first_line[:120]}",
+                            style="dim",
+                        )
+                    )
+        except Exception:
+            pass
 
     def on_view_all_link_show_all(self, event: ViewAllLink.ShowAll) -> None:
         self._show_all_sessions()
@@ -888,9 +924,14 @@ class JimmyTUI(App[None]):
         self._render_user_message(message)
 
     def _write_agent_text(self, text: str) -> None:
-        self._last_response = text
-        self._conversation_history.append({"role": "assistant", "content": text})
-        self._render_content(text)
+        content = str(text or "")
+        if not content.strip():
+            return
+
+        self._last_response = content
+        self._conversation_history.append({"role": "assistant", "content": content})
+        self._ensure_agent_header()
+        self._render_content(content)
 
     def _render_content(self, text: str | Text) -> None:
         """📝 Render Jimmy's response with Rich Markdown."""
@@ -962,6 +1003,7 @@ class JimmyTUI(App[None]):
         self._conversation_history.clear()
         self._last_response = ""
         self._files_touched.clear()
+        self._agent_header_needed = False
 
     # ------------------------------------------------------------------
     # AGENT WORKER
@@ -970,12 +1012,33 @@ class JimmyTUI(App[None]):
     @work(thread=True, group="agent", exclusive=True, exit_on_error=False)
     def _start_agent(self, task: str) -> None:
         gen = self._current_generation
+
         try:
             self._agent.run(
                 task,
-                lambda event: self._agent_event(event, gen),
-                self._ask_permission,
+                on_event=lambda event: self._agent_event(
+                    event,
+                    gen,
+                ),
+                on_permission=self._ask_permission,
             )
+
+            session_id = getattr(
+                self._agent,
+                "current_session_id",
+                None,
+            )
+
+            if session_id:
+                self.current_session_id = session_id
+
+        except KeyboardInterrupt:
+            if not self._worker_cancelled:
+                self.call_from_thread(
+                    self._agent_failed,
+                    RuntimeError("Jimmy task cancelled."),
+                    gen,
+                )
         except (
             RuntimeError,
             ValueError,
@@ -984,17 +1047,80 @@ class JimmyTUI(App[None]):
             TimeoutError,
             PermissionError,
         ) as exc:
-            self.call_from_thread(self._agent_failed, exc, gen)
+            self.call_from_thread(
+                self._agent_failed,
+                exc,
+                gen,
+            )
+
+    @work(thread=True, group="agent", exclusive=True, exit_on_error=False)
+    def _start_agent_continue(self, task: str) -> None:
+        gen = self._current_generation
+        session_id = self.current_session_id
+
+        if not session_id:
+            self.call_from_thread(
+                self._agent_failed,
+                RuntimeError("No active session to continue."),
+                gen,
+            )
+            return
+
+        try:
+            self._agent.continue_session(
+                session_id=session_id,
+                task=task,
+                on_event=lambda event: self._agent_event(
+                    event,
+                    gen,
+                ),
+                on_permission=self._ask_permission,
+            )
+        except KeyboardInterrupt:
+            if not self._worker_cancelled:
+                self.call_from_thread(
+                    self._agent_failed,
+                    RuntimeError("Jimmy task cancelled."),
+                    gen,
+                )
+        except (
+            RuntimeError,
+            ValueError,
+            TypeError,
+            OSError,
+            TimeoutError,
+            PermissionError,
+        ) as exc:
+            self.call_from_thread(
+                self._agent_failed,
+                exc,
+                gen,
+            )
 
     @work(thread=True, group="agent", exclusive=True, exit_on_error=False)
     def _start_agent_resume(self, session_id: str) -> None:
         gen = self._current_generation
+
         try:
+            self.current_session_id = session_id
+            if hasattr(self._agent, "current_session_id"):
+                self._agent.current_session_id = session_id
+
             self._agent.resume(
                 session_id,
-                lambda event: self._agent_event(event, gen),
-                self._ask_permission,
+                on_event=lambda event: self._agent_event(
+                    event,
+                    gen,
+                ),
+                on_permission=self._ask_permission,
             )
+        except KeyboardInterrupt:
+            if not self._worker_cancelled:
+                self.call_from_thread(
+                    self._agent_failed,
+                    RuntimeError("Jimmy task cancelled."),
+                    gen,
+                )
         except (
             RuntimeError,
             ValueError,
@@ -1003,7 +1129,11 @@ class JimmyTUI(App[None]):
             TimeoutError,
             PermissionError,
         ) as exc:
-            self.call_from_thread(self._agent_failed, exc, gen)
+            self.call_from_thread(
+                self._agent_failed,
+                exc,
+                gen,
+            )
 
     def _agent_event(self, event: AgentEvent, generation: int) -> None:
         self.call_from_thread(self._handle_agent_event, event, generation)
@@ -1158,6 +1288,7 @@ class JimmyTUI(App[None]):
             log.write(Text(f"▎ {self._summary()}", style="dim"))
             if result.strip():
                 log.write("")
+                self._agent_header_needed = True
                 self._ensure_agent_header()
                 self._render_content(result.strip())
             log.write("")
