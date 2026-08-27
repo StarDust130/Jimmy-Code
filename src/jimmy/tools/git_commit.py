@@ -19,8 +19,18 @@ class GitCommitInput(BaseModel):
 
     paths: list[str] | None = Field(
         default=None,
+        description=("Specific files to commit. Required when scope='selected'."),
+    )
+
+    scope: Literal[
+        "selected",
+        "all",
+    ] = Field(
+        default="selected",
         description=(
-            "Specific changed files to commit. When omitted, commit all currently changed files."
+            "Use 'selected' for specific files. "
+            "Use 'all' only when the user explicitly asks "
+            "to commit all current changes."
         ),
     )
 
@@ -71,8 +81,9 @@ class GitCommitTool(Tool):
         return (
             "Commit Git changes. "
             "Always use this tool for Git commits instead of run_shell. "
-            "When paths are provided, commit ONLY those files. "
-            "When paths are omitted, commit all currently changed files. "
+            "Use scope='selected' with explicit paths to commit "
+            "only those files. Use scope='all' only when the user "
+            "explicitly asks to commit all current changes. "
             "Use mode='each' for one commit per file. "
             "Use mode='single' for one commit containing all selected files. "
             "Generated commit messages must be short, meaningful, "
@@ -102,12 +113,23 @@ class GitCommitTool(Tool):
 
         changed_files = self._get_changed_files()
 
-        if args.paths is not None:
+        if args.scope == "selected":
+            if not args.paths:
+                raise ValueError(
+                    "git_commit requires explicit paths when "
+                    "scope='selected'. "
+                    "Do not commit all changes unless the user "
+                    "explicitly requested all current changes."
+                )
+
             selected_files = self._select_requested_files(
                 args.paths,
                 changed_files,
             )
         else:
+            if args.paths is not None:
+                raise ValueError("Do not provide paths with scope='all'.")
+
             selected_files = changed_files
 
         if not selected_files:
