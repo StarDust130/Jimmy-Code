@@ -1,12 +1,11 @@
+from __future__ import annotations
+
 import time
 from typing import Any
 
 from jimmy.agent.events import AgentEvent
 from jimmy.context.context import ContextManager
-from jimmy.llm.base import (
-    LLMProvider,
-    LLMResponse,
-)
+from jimmy.llm.base import LLMProvider, LLMResponse
 from jimmy.llm.errors import LLMProviderError
 from jimmy.observability.metrics import (
     LLMUsage,
@@ -17,7 +16,14 @@ from jimmy.state.session import SessionState
 
 
 class AgentTurn:
-    """Runs one LLM decision."""
+    """Handles one LLM reasoning turn."""
+
+    MAX_RETRIES = 3
+    RETRY_DELAYS = (
+        5.0,
+        10.0,
+        20.0,
+    )
 
     def __init__(
         self,
@@ -51,105 +57,150 @@ class AgentTurn:
             )
         )
 
-        try:
-            context = self.context_manager.prepare(state.messages)
+        context = self.context_manager.prepare(
+            state.messages,
+        )
 
-            response = self.llm.chat(
-                messages=context,
-                tools=tools,
-            )
-
-        except LLMProviderError:
-            elapsed = time.monotonic() - started_at
-
-            emit(
-                AgentEvent(
-                    kind="error",
-                    turn=task_turn,
-                    elapsed=elapsed,
-                    message="LLM request failed.",
+        for attempt in range(self.MAX_RETRIES + 1):
+            try:
+                response = self.llm.chat(
+                    messages=context,
+                    tools=tools,
                 )
-            )
 
-            raise
+                elapsed = time.monotonic() - started_at
 
-        except Exception as exc:
-            elapsed = time.monotonic() - started_at
+                usage = LLMUsage.from_dict(getattr(response, "usage", None))
 
-            message = f"❌ LLM request failed.\n{type(exc).__name__}: {exc}"
-
-            self.observability.record(
-                "error",
-                {
-                    "session_id": session_id,
-                    "task_turn": task_turn,
-                    "session_turn": state.turn_count,
-                    "error": str(exc),
-                    "error_type": type(exc).__name__,
-                },
-            )
-
-            emit(
-                AgentEvent(
-                    kind="error",
-                    turn=task_turn,
-                    elapsed=elapsed,
-                    message=message,
+                model_name = getattr(
+                    self.llm,
+                    "model",
+                    type(self.llm).__name__,
                 )
-            )
 
-            raise RuntimeError(message) from exc
+                metrics.turns = task_turn
 
-        elapsed = time.monotonic() - started_at
+                metrics.add_llm_usage(
+                    model=model_name,
+                    usage=usage,
+                )
 
-        usage = LLMUsage.from_dict(
-            getattr(
-                response,
-                "usage",
-                None,
-            )
-        )
+                self.observability.record(
+                    "llm_call",
+                    {
+                        "session_id": session_id,
+                        "task_turn": task_turn,
+                        "session_turn": state.turn_count,
+                        "attempt": attempt + 1,
+                        "model": model_name,
+                        "input_tokens": usage.input_tokens,
+                        "output_tokens": usage.output_tokens,
+                        "total_tokens": usage.total_tokens,
+                        "cost_usd": usage.cost_usd,
+                        "elapsed_seconds": elapsed,
+                    },
+                )
 
-        model_name = getattr(
-            self.llm,
-            "model",
-            type(self.llm).__name__,
-        )
+                emit(
+                    AgentEvent(
+                        kind="turn_end",
+                        turn=task_turn,
+                        elapsed=elapsed,
+                        message=(
+                            "final response"
+                            if not response.tool_calls
+                            else (f"{len(response.tool_calls)} tool call(s)")
+                        ),
+                    )
+                )
 
-        # Metrics for THIS user task.
-        metrics.turns = task_turn
+                return response
 
-        metrics.add_llm_usage(
-            model=model_name,
-            usage=usage,
-        )
+            except LLMProviderError as exc:
+                retryable = bool(
+                    getattr(
+                        exc,
+                        "retryable",
+                        False,
+                    )
+                )
 
-        self.observability.record(
-            "llm_call",
-            {
-                "session_id": session_id,
-                "task_turn": task_turn,
-                "session_turn": state.turn_count,
-                "model": model_name,
-                "input_tokens": (usage.input_tokens),
-                "output_tokens": (usage.output_tokens),
-                "total_tokens": (usage.total_tokens),
-                "cost_usd": (usage.cost_usd),
-                "elapsed_seconds": elapsed,
-            },
-        )
+                # Do not retry permanent errors.
+                if not retryable or attempt >= self.MAX_RETRIES:
+                    elapsed = time.monotonic() - started_at
 
-        emit(
-            AgentEvent(
-                kind="turn_end",
-                turn=task_turn,
-                elapsed=elapsed,
-                message=(
-                    "final response"
-                    if not response.tool_calls
-                    else (f"{len(response.tool_calls)} tool call(s)")
-                ),
-            )
-        )
+                    self.observability.record(
+                        "llm_error",
+                        {
+                            "session_id": session_id,
+                            "task_turn": task_turn,
+                            "session_turn": state.turn_count,
+                            "attempt": attempt + 1,
+                            "error": str(exc),
+                            "error_type": type(exc).__name__,
+                            "code": getattr(
+                                exc,
+                                "code",
+                                None,
+                            ),
+                        },
+                    )
 
-        return response
+                    emit(
+                        AgentEvent(
+                            kind="error",
+                            turn=task_turn,
+                            elapsed=elapsed,
+                            message=str(exc),
+                        )
+                    )
+
+                    raise
+
+                delay = self.RETRY_DELAYS[attempt]
+
+                self.observability.record(
+                    "llm_retry",
+                    {
+                        "session_id": session_id,
+                        "task_turn": task_turn,
+                        "session_turn": state.turn_count,
+                        "attempt": attempt + 1,
+                        "delay_seconds": delay,
+                        "reason": str(exc),
+                    },
+                )
+
+                # Existing event model has no "status" event.
+                # Keep retry internal; the TUI remains stable.
+                time.sleep(delay)
+
+            except Exception as exc:
+                elapsed = time.monotonic() - started_at
+
+                message = f"❌ LLM request failed.\n{type(exc).__name__}: {exc}"
+
+                self.observability.record(
+                    "llm_error",
+                    {
+                        "session_id": session_id,
+                        "task_turn": task_turn,
+                        "session_turn": state.turn_count,
+                        "attempt": attempt + 1,
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                    },
+                )
+
+                emit(
+                    AgentEvent(
+                        kind="error",
+                        turn=task_turn,
+                        elapsed=elapsed,
+                        message=message,
+                    )
+                )
+
+                raise RuntimeError(message) from exc
+
+        raise RuntimeError("LLM retry loop ended unexpectedly.")
