@@ -953,3 +953,13 @@ PermissionPrompt > Vertical {
     text-style: bold;
 }
 
+/* Native streamed assistant response */
+#streaming-response {
+    display: none;
+    width: 100%;
+    height: auto;
+    margin: 0 1;
+    padding: 0 1;
+    background: transparent;
+    color: #d8dee9;
+}
