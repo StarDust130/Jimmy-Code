@@ -109,6 +109,11 @@ class JimmyTUI(App[None]):
         self._conversation_history: list[dict[str, str]] = []
         self._files_touched: set[str] = set()
 
+        # Live model-output buffer. This is UI-only; the final response
+        # is still stored by the agent/session layer exactly once.
+        self._stream_buffer = ""
+        self._streaming = False
+
         self._accent_idx = 0
         self._typewriter_idx = 0
         self._typewriter_timer: Any = None
@@ -174,6 +179,7 @@ class JimmyTUI(App[None]):
                 wrap=True,
                 auto_scroll=True,
             ),
+            Static("", id="streaming-response"),
             Static("", id="observability"),
             Static("", id="typing-indicator"),
             Horizontal(
@@ -369,12 +375,13 @@ class JimmyTUI(App[None]):
                     )
                 else:
                     bar = THINKING_BAR[self._think_idx]
+                    label = "Jimmy is responding" if self._streaming else "Jimmy is thinking"
                     self.query_one(
                         "#typing-indicator",
                         Static,
                     ).update(
                         Text(
-                            f"{bar}  Jimmy is thinking",
+                            f"{bar}  {label}",
                             style="dim #22d3ee",
                         )
                     )
@@ -797,6 +804,8 @@ class JimmyTUI(App[None]):
         self._last_response = ""
         self._step_number = 0
         self.turn = getattr(state, "turn_count", 0)
+        self._stream_buffer = ""
+        self._streaming = False
 
         self._clear_conversation()
 
@@ -935,6 +944,10 @@ class JimmyTUI(App[None]):
         self._step_number = 0
         self._worker_cancelled = False
         self._permission_waiting = False
+        self._stream_buffer = ""
+        self._streaming = False
+        self._agent_header_needed = True
+        self._hide_streaming_response()
         self._task_generation += 1
         self._current_generation = self._task_generation
 
@@ -1054,6 +1067,9 @@ class JimmyTUI(App[None]):
         self._last_response = ""
         self._files_touched.clear()
         self._agent_header_needed = False
+        self._stream_buffer = ""
+        self._streaming = False
+        self._hide_streaming_response()
 
     # ------------------------------------------------------------------
     # AGENT WORKER
@@ -1071,6 +1087,10 @@ class JimmyTUI(App[None]):
                     gen,
                 ),
                 on_permission=self._ask_permission,
+                on_text_delta=lambda text: self._agent_text_delta(
+                    text,
+                    gen,
+                ),
             )
 
             session_id = getattr(
@@ -1125,6 +1145,10 @@ class JimmyTUI(App[None]):
                     gen,
                 ),
                 on_permission=self._ask_permission,
+                on_text_delta=lambda text: self._agent_text_delta(
+                    text,
+                    gen,
+                ),
             )
         except KeyboardInterrupt:
             if not self._worker_cancelled:
@@ -1163,6 +1187,10 @@ class JimmyTUI(App[None]):
                     gen,
                 ),
                 on_permission=self._ask_permission,
+                on_text_delta=lambda text: self._agent_text_delta(
+                    text,
+                    gen,
+                ),
             )
         except KeyboardInterrupt:
             if not self._worker_cancelled:
@@ -1184,6 +1212,70 @@ class JimmyTUI(App[None]):
                 exc,
                 gen,
             )
+
+    def _agent_text_delta(
+        self,
+        text: str,
+        generation: int,
+    ) -> None:
+        if not text:
+            return
+
+        self.call_from_thread(
+            self._append_stream_text,
+            text,
+            generation,
+        )
+
+    def _append_stream_text(
+        self,
+        text: str,
+        generation: int,
+    ) -> None:
+        if generation != self._current_generation:
+            return
+
+        if self._worker_cancelled:
+            return
+
+        self._streaming = True
+        self._stream_buffer += text
+        self.status = "responding"
+        self._ensure_agent_header()
+
+        try:
+            widget = self.query_one(
+                "#streaming-response",
+                Static,
+            )
+
+            widget.styles.display = "block"
+            widget.update(
+                Text(
+                    self._stream_buffer + "▌",
+                    style="#d8dee9",
+                )
+            )
+
+            self.query_one(
+                "#conversation",
+                RichLog,
+            ).scroll_end()
+        except Exception:
+            pass
+
+        self._update_status_indicator()
+
+    def _hide_streaming_response(self) -> None:
+        try:
+            widget = self.query_one(
+                "#streaming-response",
+                Static,
+            )
+            widget.update("")
+            widget.styles.display = "none"
+        except Exception:
+            pass
 
     def _agent_event(self, event: AgentEvent, generation: int) -> None:
         self.call_from_thread(self._handle_agent_event, event, generation)
@@ -1277,6 +1369,7 @@ class JimmyTUI(App[None]):
 
         elif event.kind == "tool_start":
             self.status = "running"
+            self._ensure_agent_header()
             self.current_tool = event.tool_name or "unknown"
 
             detail = self._tool_detail(event.arguments)
@@ -1342,6 +1435,12 @@ class JimmyTUI(App[None]):
         self.current_file = ""
         self.elapsed = elapsed or (time.monotonic() - self._task_started_at)
 
+        # Replace the live preview with the final persisted response.
+        self._hide_streaming_response()
+        self._stream_buffer = ""
+        self._streaming = False
+        self._agent_header_needed = True
+
         if result.strip():
             self._last_response = result.strip()
             self._conversation_history.append({"role": "assistant", "content": result.strip()})
@@ -1381,6 +1480,9 @@ class JimmyTUI(App[None]):
         self.current_file = ""
         self._last_error = str(exc)
         self.elapsed = time.monotonic() - self._task_started_at
+        self._hide_streaming_response()
+        self._stream_buffer = ""
+        self._streaming = False
 
         try:
             log = self.query_one("#conversation", RichLog)
@@ -1407,6 +1509,9 @@ class JimmyTUI(App[None]):
 
         self._worker_cancelled = True
         self._permission_waiting = False
+        self._hide_streaming_response()
+        self._stream_buffer = ""
+        self._streaming = False
 
         try:
             for worker in self.workers:
