@@ -5,7 +5,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from jimmy.agent.agent_loop import AgentLoop
+from jimmy.agent.main_loop.agent_loop import AgentLoop
 from jimmy.cli.tui import run_tui
 from jimmy.config.settings import Settings
 from jimmy.git.state import GitState
