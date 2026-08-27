@@ -35,10 +35,10 @@ class AgentTurn:
         session_id: str,
         metrics: RunMetrics,
         tools: list[dict[str, Any]],
+        task_turn: int,
         on_event=None,
     ) -> LLMResponse:
         started_at = time.monotonic()
-        turn = state.turn_count
 
         def emit(event: AgentEvent) -> None:
             if on_event is not None:
@@ -47,7 +47,7 @@ class AgentTurn:
         emit(
             AgentEvent(
                 kind="turn_start",
-                turn=turn,
+                turn=task_turn,
             )
         )
 
@@ -65,7 +65,7 @@ class AgentTurn:
             emit(
                 AgentEvent(
                     kind="error",
-                    turn=turn,
+                    turn=task_turn,
                     elapsed=elapsed,
                     message="LLM request failed.",
                 )
@@ -82,7 +82,8 @@ class AgentTurn:
                 "error",
                 {
                     "session_id": session_id,
-                    "turn": turn,
+                    "task_turn": task_turn,
+                    "session_turn": state.turn_count,
                     "error": str(exc),
                     "error_type": type(exc).__name__,
                 },
@@ -91,7 +92,7 @@ class AgentTurn:
             emit(
                 AgentEvent(
                     kind="error",
-                    turn=turn,
+                    turn=task_turn,
                     elapsed=elapsed,
                     message=message,
                 )
@@ -115,7 +116,8 @@ class AgentTurn:
             type(self.llm).__name__,
         )
 
-        metrics.turns = turn
+        # Metrics for THIS user task.
+        metrics.turns = task_turn
 
         metrics.add_llm_usage(
             model=model_name,
@@ -126,12 +128,13 @@ class AgentTurn:
             "llm_call",
             {
                 "session_id": session_id,
-                "turn": turn,
+                "task_turn": task_turn,
+                "session_turn": state.turn_count,
                 "model": model_name,
-                "input_tokens": usage.input_tokens,
-                "output_tokens": usage.output_tokens,
-                "total_tokens": usage.total_tokens,
-                "cost_usd": usage.cost_usd,
+                "input_tokens": (usage.input_tokens),
+                "output_tokens": (usage.output_tokens),
+                "total_tokens": (usage.total_tokens),
+                "cost_usd": (usage.cost_usd),
                 "elapsed_seconds": elapsed,
             },
         )
@@ -139,7 +142,7 @@ class AgentTurn:
         emit(
             AgentEvent(
                 kind="turn_end",
-                turn=turn,
+                turn=task_turn,
                 elapsed=elapsed,
                 message=(
                     "final response"
