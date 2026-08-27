@@ -32,6 +32,11 @@ PermissionHandler = Callable[
     bool,
 ]
 
+TextDeltaHandler = Callable[
+    [str],
+    None,
+]
+
 
 class AgentMainLoop:
     """
@@ -81,19 +86,29 @@ class AgentMainLoop:
         metrics: RunMetrics,
         on_event: EventHandler | None = None,
         on_permission: PermissionHandler | None = None,
+        on_text_delta: TextDeltaHandler | None = None,
     ) -> str:
+        """
+        Run one user task.
+
+        The task turn budget is local to this invocation.
+        The session turn counter remains persistent.
+        """
+
         tool_schemas = self.tools.schemas()
 
         # IMPORTANT:
-        # This budget belongs to THIS task invocation,
-        # not the lifetime of the session.
+        # This is a NEW task budget.
+        # It must not use the lifetime session turn_count.
         task_turn = 0
 
+        # Prevent useless repeated tool calls.
         progress = AgentProgress()
 
         while task_turn < max_turns:
             task_turn += 1
 
+            # Persistent session counter.
             state.next_turn()
 
             self.session_store.save(
@@ -102,6 +117,10 @@ class AgentMainLoop:
                 status="running",
             )
 
+            # --------------------------------------------------
+            # LLM DECISION
+            # --------------------------------------------------
+
             response = self.turn.run(
                 state=state,
                 session_id=session_id,
@@ -109,7 +128,12 @@ class AgentMainLoop:
                 tools=tool_schemas,
                 task_turn=task_turn,
                 on_event=on_event,
+                on_text_delta=on_text_delta,
             )
+
+            # --------------------------------------------------
+            # SAVE ASSISTANT MESSAGE
+            # --------------------------------------------------
 
             if response.assistant_message:
                 state.add_message(response.assistant_message)
@@ -120,7 +144,10 @@ class AgentMainLoop:
                     status="running",
                 )
 
-            # No tool calls = actual final answer.
+            # --------------------------------------------------
+            # FINAL RESPONSE
+            # --------------------------------------------------
+
             if not response.tool_calls:
                 result = response.content or ""
 
@@ -137,7 +164,10 @@ class AgentMainLoop:
 
                 return result
 
-            # Execute every requested tool call.
+            # --------------------------------------------------
+            # TOOL EXECUTION
+            # --------------------------------------------------
+
             for tool_call in response.tool_calls:
                 completed = self.tool_runner.run(
                     state=state,
@@ -156,6 +186,7 @@ class AgentMainLoop:
                     status="running",
                 )
 
+                # A tool may explicitly mark the task complete.
                 if completed:
                     result = self._last_tool_result(state)
 
@@ -171,6 +202,10 @@ class AgentMainLoop:
                     )
 
                     return result
+
+        # ------------------------------------------------------
+        # TASK TURN LIMIT
+        # ------------------------------------------------------
 
         message = f"❌ Jimmy stopped because this task reached the maximum of {max_turns} turns."
 
@@ -204,6 +239,10 @@ class AgentMainLoop:
     def _last_tool_result(
         state: SessionState,
     ) -> str:
+        """
+        Return the newest tool result.
+        """
+
         for message in reversed(state.messages):
             if message.get("role") != "tool":
                 continue
