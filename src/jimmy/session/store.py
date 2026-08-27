@@ -1,43 +1,33 @@
-from typing import Protocol
+from typing import Any, Protocol
 
 from jimmy.state.session import SessionState
 
 
 class SessionStore(Protocol):
-    """Storage contract for Jimmy sessions."""
+    """Storage interface for Jimmy sessions."""
 
     def create(
         self,
         state: SessionState,
-    ) -> str:
-        """Create a session and return its ID."""
-        ...
+    ) -> str: ...
 
     def save(
         self,
         session_id: str,
         state: SessionState,
         status: str,
-    ) -> None:
-        """Persist the current session state."""
-        ...
+    ) -> None: ...
 
     def load(
         self,
         session_id: str,
-    ) -> SessionState:
-        """Load a session."""
-        ...
+    ) -> SessionState: ...
 
     def list(
         self,
-    ) -> list[dict]:
-        """List saved sessions."""
-        ...
+    ) -> list[dict[str, Any]]: ...
 
     def delete(
         self,
         session_id: str,
-    ) -> None:
-        """Delete a session."""
-        ...
+    ) -> bool: ...
