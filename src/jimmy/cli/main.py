@@ -24,7 +24,7 @@ app = typer.Typer(
     no_args_is_help=False,
 )
 
-permission_manager = PermissionManager()
+permission_manager = PermissionManager()  # Manages user permission prompts
 
 
 @app.command()
@@ -53,13 +53,13 @@ def main(
 ) -> None:
     """Start Jimmy."""
 
-    if version_flag:
+    if version_flag:  # Check version flag 🏷️
         console.print(f"Jimmy {__version__}")
         raise typer.Exit(code=0)
 
-    settings = Settings()  # pyright: ignore[reportCallIssue]
+    settings = Settings()  # pyright: ignore[reportCallIssue]  # Load user settings ⚙️
 
-    project_root = Path.cwd().resolve()
+    project_root = Path.cwd().resolve()  # Get project root directory 📂
 
     # groq = GroqProvider(
     #     api_key=settings.groq_api_key,
