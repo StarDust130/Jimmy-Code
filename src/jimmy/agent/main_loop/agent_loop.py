@@ -61,14 +61,17 @@ PermissionHandler = Callable[
 
 class AgentLoop:
     """
-    Public lifecycle entry point.
+    Public Jimmy agent interface.
 
-    This class only:
-    - creates/resumes sessions
-    - creates supporting services
-    - starts the main loop
+    This class owns session lifecycle and service wiring.
 
-    It does not decide which tool to use.
+    It does NOT:
+    - automatically plan
+    - automatically explore
+    - automatically inspect Git
+    - choose tools
+s
+    The main agent loop handles those decisions when needed.
     """
 
     def __init__(
@@ -92,18 +95,25 @@ class AgentLoop:
         self.workspace = workspace
         self.max_turns = max_turns
 
-        # Available internal capabilities.
-        # They are NOT automatically executed.
         self.planner = planner or Planner(llm)
-        self.explorer = explorer or CodebaseExplorer(workspace)
 
         self.executor = executor or ToolExecutor(tools)
+
         self.observer = observer or Observer()
+
         self.recovery = recovery or RecoveryManager()
+
+        self.explorer = explorer or CodebaseExplorer(workspace)
 
         self.permissions = permission_manager or PermissionManager()
 
-        self.git_state = git_state if git_state is not None else GitState(workspace)
+        # IMPORTANT:
+        # Do not create GitState automatically.
+        #
+        # Some workspaces are not Git repositories.
+        # GitState is optional and should only exist when
+        # the caller explicitly provides it.
+        self.git_state = git_state
 
         self.session_store = session_store or JsonSessionStore(Path.home())
 
@@ -125,6 +135,12 @@ class AgentLoop:
             observability=self.observability,
         )
 
+        self.current_session_id: str | None = None
+
+    # ============================================================
+    # NEW SESSION
+    # ============================================================
+
     def run(
         self,
         task: str,
@@ -135,8 +151,6 @@ class AgentLoop:
 
         if not task:
             raise ValueError("Task cannot be empty.")
-
-        started_at = time.monotonic()
 
         state = SessionState(
             task=task,
@@ -154,65 +168,54 @@ class AgentLoop:
 
         session_id = self.session_store.create(state)
 
-        metrics = self.observability.start_run(
-            task=task,
+        self.current_session_id = session_id
+
+        return self._run_session(
+            state=state,
             session_id=session_id,
+            on_event=on_event,
+            on_permission=on_permission,
         )
 
-        try:
-            return self.main_loop.run(
-                state=state,
-                session_id=session_id,
-                max_turns=self.max_turns,
-                started_at=started_at,
-                metrics=metrics,
-                on_event=on_event,
-                on_permission=on_permission,
-            )
+    # ============================================================
+    # CONTINUE CURRENT SESSION
+    # ============================================================
 
-        except KeyboardInterrupt:
-            self.session_store.save(
-                session_id=session_id,
-                state=state,
-                status="interrupted",
-            )
+    def continue_session(
+        self,
+        session_id: str,
+        task: str,
+        on_event: EventHandler | None = None,
+        on_permission: PermissionHandler | None = None,
+    ) -> str:
+        task = task.strip()
 
-            metrics.finish(time.monotonic() - started_at)
+        if not task:
+            raise ValueError("Task cannot be empty.")
 
-            self.observability.record_run(
-                metrics,
-                status="interrupted",
-            )
+        state = self.session_store.load(session_id)
 
-            raise
+        self.current_session_id = session_id
 
-        except Exception as exc:
-            metrics.failures += 1
+        # IMPORTANT:
+        # Keep the entire previous conversation.
+        state.add_message(
+            {
+                "role": "user",
+                "content": task,
+            }
+        )
 
-            self.observability.record(
-                "error",
-                {
-                    "session_id": session_id,
-                    "turn": state.turn_count,
-                    "error": str(exc),
-                    "error_type": type(exc).__name__,
-                },
-            )
+        return self._run_session(
+            state=state,
+            session_id=session_id,
+            on_event=on_event,
+            on_permission=on_permission,
+        )
 
-            metrics.finish(time.monotonic() - started_at)
-
-            self.observability.record_run(
-                metrics,
-                status="failed",
-            )
-
-            self.session_store.save(
-                session_id=session_id,
-                state=state,
-                status="failed",
-            )
-
-            raise
+    # ============================================================
+    # RESUME SAVED SESSION
+    # ============================================================
 
     def resume(
         self,
@@ -222,6 +225,26 @@ class AgentLoop:
     ) -> str:
         state = self.session_store.load(session_id)
 
+        self.current_session_id = session_id
+
+        return self._run_session(
+            state=state,
+            session_id=session_id,
+            on_event=on_event,
+            on_permission=on_permission,
+        )
+
+    # ============================================================
+    # COMMON EXECUTION
+    # ============================================================
+
+    def _run_session(
+        self,
+        state: SessionState,
+        session_id: str,
+        on_event: EventHandler | None,
+        on_permission: PermissionHandler | None,
+    ) -> str:
         started_at = time.monotonic()
 
         self.session_store.save(
@@ -247,16 +270,18 @@ class AgentLoop:
             )
 
         except KeyboardInterrupt:
-            self.session_store.save(
-                session_id=session_id,
-                state=state,
-                status="interrupted",
-            )
+            elapsed = time.monotonic() - started_at
 
-            metrics.finish(time.monotonic() - started_at)
+            metrics.finish(elapsed)
 
             self.observability.record_run(
                 metrics,
+                status="interrupted",
+            )
+
+            self.session_store.save(
+                session_id=session_id,
+                state=state,
                 status="interrupted",
             )
 
@@ -264,6 +289,8 @@ class AgentLoop:
 
         except Exception as exc:
             metrics.failures += 1
+
+            elapsed = time.monotonic() - started_at
 
             self.observability.record(
                 "error",
@@ -275,7 +302,7 @@ class AgentLoop:
                 },
             )
 
-            metrics.finish(time.monotonic() - started_at)
+            metrics.finish(elapsed)
 
             self.observability.record_run(
                 metrics,
