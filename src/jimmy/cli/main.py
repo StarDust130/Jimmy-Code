@@ -13,7 +13,7 @@ from jimmy.llm.gemini import GeminiProvider
 from jimmy.permissions.manager import PermissionManager
 from jimmy.tools.defaults import create_default_registry
 
-# Main entry point for the Jimmy CLI application
+# Main entry point for the Jimmy CLI application 🚀✨
 __version__ = version("jimmy")
 
 console = Console()
