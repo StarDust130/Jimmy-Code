@@ -1,4 +1,5 @@
 import time
+from typing import Any
 
 from jimmy.agent.events import AgentEvent
 from jimmy.agent.executor import ToolExecutor
@@ -19,7 +20,13 @@ from jimmy.utils.limits import truncate_output
 
 
 class AgentToolRunner:
-    """Handles permission checks, tool execution and observation."""
+    """
+    Executes one model-selected tool.
+
+    Responsibilities:
+
+    permission → execute → observe → save result
+    """
 
     def __init__(
         self,
@@ -42,17 +49,11 @@ class AgentToolRunner:
         state: SessionState,
         session_id: str,
         metrics: RunMetrics,
-        tool_call,
+        tool_call: Any,
         on_event=None,
         on_permission=None,
     ) -> bool:
-        """
-        Execute one model-requested tool.
-
-        Returns:
-            True  -> tool completed successfully
-            False -> tool failed or was denied
-        """
+        """Execute one tool call and return task_complete."""
 
         started_at = time.monotonic()
         turn = state.turn_count
@@ -70,11 +71,15 @@ class AgentToolRunner:
             )
         )
 
+        # --------------------------------------------
+        # Find tool
+        # --------------------------------------------
+
         tool = self.tools.get(tool_call.name)
 
-        # ----------------------------------------
+        # --------------------------------------------
         # Permission
-        # ----------------------------------------
+        # --------------------------------------------
 
         permission = self.permissions.check(tool)
 
@@ -82,12 +87,25 @@ class AgentToolRunner:
             elapsed = time.monotonic() - started_at
 
             metrics.failures += 1
+
             metrics.add_tool_time(
                 tool_name=tool_call.name,
                 elapsed=elapsed,
             )
 
             message = f"❌ Permission denied for '{tool_call.name}'.\n{permission.reason}"
+
+            self.observability.record(
+                "tool_call",
+                {
+                    "session_id": session_id,
+                    "turn": turn,
+                    "tool": tool_call.name,
+                    "success": False,
+                    "elapsed_seconds": elapsed,
+                    "reason": "permission_denied",
+                },
+            )
 
             emit(
                 AgentEvent(
@@ -156,9 +174,9 @@ class AgentToolRunner:
 
                 return False
 
-        # ----------------------------------------
+        # --------------------------------------------
         # Execute
-        # ----------------------------------------
+        # --------------------------------------------
 
         try:
             tool_result = self.executor.execute(
@@ -170,6 +188,7 @@ class AgentToolRunner:
             elapsed = time.monotonic() - started_at
 
             metrics.failures += 1
+
             metrics.add_tool_time(
                 tool_name=tool_call.name,
                 elapsed=elapsed,
@@ -212,9 +231,9 @@ class AgentToolRunner:
 
             return False
 
-        # ----------------------------------------
-        # Observe
-        # ----------------------------------------
+        # --------------------------------------------
+        # Normalize result
+        # --------------------------------------------
 
         result = truncate_output(
             tool_result.output
@@ -246,6 +265,10 @@ class AgentToolRunner:
             },
         )
 
+        # --------------------------------------------
+        # Observe
+        # --------------------------------------------
+
         if tool_result.success:
             observation = self.observer.observe_success(
                 tool_name=tool_call.name,
@@ -267,6 +290,10 @@ class AgentToolRunner:
             )
         )
 
+        # --------------------------------------------
+        # Failed tool
+        # --------------------------------------------
+
         if not tool_result.success:
             metrics.failures += 1
 
@@ -277,6 +304,10 @@ class AgentToolRunner:
             if not recovery.should_continue:
                 raise RuntimeError(recovery.message)
 
+        # --------------------------------------------
+        # Save result for next LLM decision
+        # --------------------------------------------
+
         state.add_message(
             {
                 "role": "tool",
@@ -286,11 +317,14 @@ class AgentToolRunner:
             }
         )
 
-        task_complete = tool_result.success and bool(
-            (tool_result.metadata or {}).get(
+        # --------------------------------------------
+        # Generic completion flag
+        # --------------------------------------------
+
+        return bool(
+            tool_result.success
+            and (tool_result.metadata or {}).get(
                 "task_complete",
                 False,
             )
         )
-
-        return task_complete
