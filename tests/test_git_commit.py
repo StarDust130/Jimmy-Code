@@ -285,10 +285,7 @@ class GitCommitTool(Tool):
             path = line[3:].strip()
 
             if " -> " in path:
-                path = path.split(
-                    " -> ",
-                    1,
-                )[1]
+                path = path.split(" -> ", 1)[1]
 
             if path:
                 files.append(path.replace("\\", "/"))
@@ -415,7 +412,7 @@ class GitCommitTool(Tool):
         commit_hash = result.stdout.strip()
 
         if not commit_hash:
-            raise RuntimeError("Commit succeeded but Git returned no hash.")
+            raise RuntimeError("Git commit succeeded but no commit hash was returned.")
 
         return commit_hash
 
@@ -436,7 +433,6 @@ class GitCommitTool(Tool):
 
         if result.returncode != 0:
             error = result.stderr.strip() or result.stdout.strip() or "Git command failed."
-
             raise RuntimeError(error)
 
         return result
