@@ -116,7 +116,7 @@ class JimmyTUI(App[None]):
         self._git_branch = self._detect_git_branch()
 
         # Session state
-        self._current_session_id: str | None = None
+        self.current_session_id: str | None = None
         self._current_task: str | None = None
         self._agent_header_needed = False
 
@@ -870,24 +870,14 @@ class JimmyTUI(App[None]):
         self._current_task = task
         self.mode = "chat"
 
-        if self._current_session_id:
-            try:
-                store = getattr(self._agent, "session_store", None)
-                if store is not None:
-                    state = store.load(self._current_session_id)
-                    state.add_message({"role": "user", "content": task})
-                    store.save(self._current_session_id, state, "running")
-            except Exception:
-                pass
-            self._write_user_message(task)
-            self._update_status_indicator()
-            self._disable_input()
-            self._start_agent_resume(self._current_session_id)
-        else:
-            self._write_user_message(task)
-            self._update_status_indicator()
-            self._disable_input()
+        self._write_user_message(task)
+        self._update_status_indicator()
+        self._disable_input()
+
+        if self.current_session_id is None:
             self._start_agent(task)
+        else:
+            self._start_agent_continue(task)
 
     # ------------------------------------------------------------------
     # CONVERSATION
