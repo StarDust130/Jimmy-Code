@@ -13,7 +13,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Center, Horizontal, Vertical
 from textual.reactive import reactive
-from textual.widgets import Footer, Input, RichLog, Static
+from textual.widgets import Button, Footer, Input, RichLog, Static
 
 from jimmy.agent.events import AgentEvent
 from jimmy.permissions.manager import PermissionMode
@@ -101,6 +101,7 @@ class JimmyTUI(App[None]):
         self._last_error: str | None = None
         self._step_number = 0
         self._worker_cancelled = False
+        self._permission_waiting = False
         self._task_generation = 0
         self._current_generation = 0
 
@@ -175,6 +176,14 @@ class JimmyTUI(App[None]):
             ),
             Static("", id="observability"),
             Static("", id="typing-indicator"),
+            Horizontal(
+                Button(
+                    "⧉ Copy",
+                    id="copy-conversation",
+                    variant="default",
+                ),
+                id="chat-actions",
+            ),
             Input(
                 placeholder="Ask Jimmy anything...",
                 id="prompt-chat",
@@ -215,6 +224,10 @@ class JimmyTUI(App[None]):
         elif event.key == "down" and isinstance(self.focused, Input):
             self._history_next()
             event.stop()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "copy-conversation":
+            self.action_copy_conversation()
 
     def _history_prev(self) -> None:
         if not self._prompt_history:
@@ -327,8 +340,11 @@ class JimmyTUI(App[None]):
 
     def _tick_fast(self) -> None:
         if self.running:
-            self.elapsed = time.monotonic() - self._task_started_at
+            if not self._permission_waiting:
+                self.elapsed = time.monotonic() - self._task_started_at
+
             self.spinner_index = (self.spinner_index + 1) % len(SPINNER_FRAMES)
+
             self._think_idx = (self._think_idx + 1) % len(THINKING_BAR)
 
         try:
@@ -340,11 +356,28 @@ class JimmyTUI(App[None]):
         self._update_observability()
 
         if self.running:
-            bar = THINKING_BAR[self._think_idx]
             try:
-                self.query_one("#typing-indicator", Static).update(
-                    Text(f"{bar}  Jimmy is thinking", style="dim #22d3ee")
-                )
+                if self._permission_waiting:
+                    self.query_one(
+                        "#typing-indicator",
+                        Static,
+                    ).update(
+                        Text(
+                            "🔐  Waiting for permission",
+                            style="bold #fbbf24",
+                        )
+                    )
+                else:
+                    bar = THINKING_BAR[self._think_idx]
+                    self.query_one(
+                        "#typing-indicator",
+                        Static,
+                    ).update(
+                        Text(
+                            f"{bar}  Jimmy is thinking",
+                            style="dim #22d3ee",
+                        )
+                    )
             except Exception:
                 pass
         else:
@@ -653,9 +686,16 @@ class JimmyTUI(App[None]):
     def _status_text(self) -> Text:
         text = Text()
         if self.running:
-            frame = SPINNER_FRAMES[self.spinner_index]
-            text.append(f"{frame} ", style="cyan")
-            text.append(self.status, style="bold white")
+            if self._permission_waiting:
+                text.append("🔐 ", style="bold #fbbf24")
+                text.append(
+                    "waiting for approval",
+                    style="bold #fbbf24",
+                )
+            else:
+                frame = SPINNER_FRAMES[self.spinner_index]
+                text.append(f"{frame} ", style="cyan")
+                text.append(self.status, style="bold white")
         elif self.status == "error":
             text.append("× ", style="bold red")
             text.append("error", style="bold red")
@@ -894,6 +934,7 @@ class JimmyTUI(App[None]):
         self._reset_observability()
         self._step_number = 0
         self._worker_cancelled = False
+        self._permission_waiting = False
         self._task_generation += 1
         self._current_generation = self._task_generation
 
@@ -959,20 +1000,29 @@ class JimmyTUI(App[None]):
 
     def _write_tool_start(
         self,
-        turn: int,
         tool_name: str | None,
-        arguments: dict[str, Any] | None,
     ) -> None:
         try:
-            log = self.query_one("#conversation", RichLog)
-            icon = TOOL_ICONS.get(tool_name or "", "▪")
-            detail = self._tool_detail(arguments)
+            log = self.query_one(
+                "#conversation",
+                RichLog,
+            )
+
+            icon = TOOL_ICONS.get(
+                tool_name or "",
+                "▪",
+            )
+
             t = Text()
-            t.append(f"  {icon} ", style="cyan")
-            t.append(tool_name or "unknown", style="bold white")
-            if detail:
-                t.append(f"  {detail}", style="dim")
-                self._files_touched.add(detail)
+            t.append(
+                f"  {icon} ",
+                style="cyan",
+            )
+            t.append(
+                tool_name or "unknown",
+                style="bold white",
+            )
+
             log.write(t)
         except Exception:
             pass
@@ -1177,8 +1227,19 @@ class JimmyTUI(App[None]):
                 handle_result,
             )
 
+        self._permission_waiting = True
+        self.status = "waiting"
+        self._update_status_indicator()
         self.call_from_thread(show_prompt)
-        finished.wait()
+
+        try:
+            finished.wait()
+        finally:
+            self._permission_waiting = False
+            if self.running and self.status == "waiting":
+                self.status = "running"
+            self._update_status_indicator()
+
         return decision["approved"]
 
     # ------------------------------------------------------------------
@@ -1218,12 +1279,16 @@ class JimmyTUI(App[None]):
             self.status = "running"
             self.current_tool = event.tool_name or "unknown"
 
+            detail = self._tool_detail(event.arguments)
+            if detail:
+                self.current_file = detail
+                if "/" in detail or "\\" in detail or "." in Path(detail).name:
+                    self._files_touched.add(detail)
+
             self.observability_tools += 1
 
             self._write_tool_start(
-                event.turn,
                 event.tool_name,
-                event.arguments,
             )
 
         elif event.kind == "tool_end":
@@ -1341,6 +1406,7 @@ class JimmyTUI(App[None]):
             return
 
         self._worker_cancelled = True
+        self._permission_waiting = False
 
         try:
             for worker in self.workers:
