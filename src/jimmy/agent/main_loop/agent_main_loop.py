@@ -4,9 +4,7 @@ from typing import Any
 
 from jimmy.agent.events import AgentEvent
 from jimmy.agent.executor import ToolExecutor
-from jimmy.agent.main_loop.agent_tool_runner import (
-    AgentToolRunner,
-)
+from jimmy.agent.main_loop.agent_tool_runner import AgentToolRunner
 from jimmy.agent.main_loop.agent_turn import AgentTurn
 from jimmy.agent.observer import Observer
 from jimmy.agent.recovery import RecoveryManager
@@ -34,14 +32,15 @@ PermissionHandler = Callable[
 
 class AgentMainLoop:
     """
-    Core Jimmy decision loop.
+    Core Jimmy execution loop.
 
-    One cycle:
+    A SESSION may contain many user tasks.
 
-        ask → execute → observe → decide
+    Each invocation of run() gets its own task-turn budget.
 
-    The LLM is responsible for choosing the next action.
-    Runtime code is responsible for enforcing correctness.
+    Flow:
+
+        ask → act → observe → decide → finish
     """
 
     def __init__(
@@ -87,7 +86,14 @@ class AgentMainLoop:
     ) -> str:
         tool_schemas = self.tools.schemas()
 
-        while state.turn_count < max_turns:
+        # IMPORTANT:
+        # Fresh budget for THIS user task.
+        task_turn = 0
+
+        while task_turn < max_turns:
+            task_turn += 1
+
+            # state.turn_count is the total session turn count.
             state.next_turn()
 
             self.session_store.save(
@@ -96,21 +102,35 @@ class AgentMainLoop:
                 status="running",
             )
 
+            # --------------------------------------------
+            # Ask the model
+            # --------------------------------------------
+
             response = self.turn.run(
                 state=state,
                 session_id=session_id,
                 metrics=metrics,
                 tools=tool_schemas,
+                task_turn=task_turn,
                 on_event=on_event,
             )
 
-            # Save exactly what the model returned.
+            # --------------------------------------------
+            # Save assistant response
+            # --------------------------------------------
+
             if response.assistant_message:
                 state.add_message(response.assistant_message)
 
-            # ------------------------------------------------
-            # Final text response
-            # ------------------------------------------------
+                self.session_store.save(
+                    session_id=session_id,
+                    state=state,
+                    status="running",
+                )
+
+            # --------------------------------------------
+            # Final text
+            # --------------------------------------------
 
             if not response.tool_calls:
                 result = response.content or ""
@@ -122,14 +142,15 @@ class AgentMainLoop:
                     started_at=started_at,
                     status="completed",
                     on_event=on_event,
+                    task_turn=task_turn,
                     message=result,
                 )
 
                 return result
 
-            # ------------------------------------------------
-            # Execute tool calls requested by the model
-            # ------------------------------------------------
+            # --------------------------------------------
+            # Execute tools
+            # --------------------------------------------
 
             for tool_call in response.tool_calls:
                 completed = self.tool_runner.run(
@@ -137,24 +158,10 @@ class AgentMainLoop:
                     session_id=session_id,
                     metrics=metrics,
                     tool_call=tool_call,
+                    task_turn=task_turn,
                     on_event=on_event,
                     on_permission=on_permission,
                 )
-
-                if completed:
-                    result = self._last_tool_result(state)
-
-                    self._finish(
-                        state=state,
-                        session_id=session_id,
-                        metrics=metrics,
-                        started_at=started_at,
-                        status="completed",
-                        on_event=on_event,
-                        message=result,
-                    )
-
-                    return result
 
                 self.session_store.save(
                     session_id=session_id,
@@ -162,8 +169,7 @@ class AgentMainLoop:
                     status="running",
                 )
 
-                # Generic completion:
-                # ANY tool can end the task.
+                # Any tool can explicitly finish the task.
                 if completed:
                     result = self._last_tool_result(state)
 
@@ -174,12 +180,17 @@ class AgentMainLoop:
                         started_at=started_at,
                         status="completed",
                         on_event=on_event,
+                        task_turn=task_turn,
                         message=result,
                     )
 
                     return result
 
-        message = f"❌ Jimmy stopped because the maximum of {max_turns} turns was reached."
+        # --------------------------------------------
+        # Current TASK reached its budget
+        # --------------------------------------------
+
+        message = f"❌ Jimmy stopped because this task reached the maximum of {max_turns} turns."
 
         metrics.failures += 1
 
@@ -187,9 +198,10 @@ class AgentMainLoop:
             "error",
             {
                 "session_id": session_id,
-                "turn": state.turn_count,
+                "task_turn": task_turn,
+                "session_turn": state.turn_count,
                 "error": message,
-                "error_type": "MaxTurnsExceeded",
+                "error_type": "MaxTaskTurnsExceeded",
             },
         )
 
@@ -200,6 +212,7 @@ class AgentMainLoop:
             started_at=started_at,
             status="failed",
             on_event=on_event,
+            task_turn=task_turn,
             message=message,
         )
 
@@ -234,6 +247,7 @@ class AgentMainLoop:
         started_at: float,
         status: str,
         on_event: EventHandler | None,
+        task_turn: int,
         message: str,
     ) -> None:
         elapsed = time.monotonic() - started_at
@@ -255,7 +269,7 @@ class AgentMainLoop:
             on_event(
                 AgentEvent(
                     kind=("complete" if status == "completed" else "error"),
-                    turn=state.turn_count,
+                    turn=task_turn,
                     elapsed=elapsed,
                     message=message,
                 )
