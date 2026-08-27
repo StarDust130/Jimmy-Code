@@ -63,15 +63,9 @@ class AgentLoop:
     """
     Public Jimmy agent interface.
 
-    This class owns session lifecycle and service wiring.
+    A session contains the full conversation.
 
-    It does NOT:
-    - automatically plan
-    - automatically explore
-    - automatically inspect Git
-    - choose tools
-s
-    The main agent loop handles those decisions when needed.
+    Each user request inside that session is a separate task.
     """
 
     def __init__(
@@ -95,24 +89,19 @@ s
         self.workspace = workspace
         self.max_turns = max_turns
 
+        # Available internal capabilities.
+        # They are not automatically executed.
         self.planner = planner or Planner(llm)
 
         self.executor = executor or ToolExecutor(tools)
-
         self.observer = observer or Observer()
-
         self.recovery = recovery or RecoveryManager()
 
         self.explorer = explorer or CodebaseExplorer(workspace)
 
         self.permissions = permission_manager or PermissionManager()
 
-        # IMPORTANT:
-        # Do not create GitState automatically.
-        #
-        # Some workspaces are not Git repositories.
-        # GitState is optional and should only exist when
-        # the caller explicitly provides it.
+        # Git is optional.
         self.git_state = git_state
 
         self.session_store = session_store or JsonSessionStore(Path.home())
@@ -147,6 +136,8 @@ s
         on_event: EventHandler | None = None,
         on_permission: PermissionHandler | None = None,
     ) -> str:
+        """Start a brand-new session and task."""
+
         task = task.strip()
 
         if not task:
@@ -178,7 +169,7 @@ s
         )
 
     # ============================================================
-    # CONTINUE CURRENT SESSION
+    # CONTINUE SAME SESSION WITH A NEW TASK
     # ============================================================
 
     def continue_session(
@@ -188,6 +179,18 @@ s
         on_event: EventHandler | None = None,
         on_permission: PermissionHandler | None = None,
     ) -> str:
+        """
+        Continue the same chat with a NEW user task.
+
+        The previous conversation remains available for references
+        such as:
+
+            "commit that file"
+            "change the same function"
+
+        But previous task instructions must not remain active.
+        """
+
         task = task.strip()
 
         if not task:
@@ -197,8 +200,37 @@ s
 
         self.current_session_id = session_id
 
-        # IMPORTANT:
-        # Keep the entire previous conversation.
+        # --------------------------------------------------------
+        # TASK BOUNDARY
+        # --------------------------------------------------------
+        #
+        # Keep conversation history, but explicitly tell the model
+        # that a NEW task has started.
+        #
+        # This prevents old instructions such as:
+        #
+        # "commit it"
+        #
+        # from leaking into a later unrelated request.
+        #
+        state.add_message(
+            {
+                "role": "system",
+                "content": (
+                    "NEW TASK STARTED.\n"
+                    "The previous user task is no longer active.\n"
+                    "Work only on the new user request below.\n"
+                    "You may use previous conversation history only "
+                    "to understand explicit references such as "
+                    "'that file', 'it', 'the same function', or "
+                    "'those changes'.\n"
+                    "Do not continue, repeat, commit, test, revert, "
+                    "or modify anything from the previous task unless "
+                    "the new request explicitly asks for it."
+                ),
+            }
+        )
+
         state.add_message(
             {
                 "role": "user",
@@ -214,7 +246,7 @@ s
         )
 
     # ============================================================
-    # RESUME SAVED SESSION
+    # RESUME INTERRUPTED SESSION
     # ============================================================
 
     def resume(
@@ -223,6 +255,12 @@ s
         on_event: EventHandler | None = None,
         on_permission: PermissionHandler | None = None,
     ) -> str:
+        """
+        Resume the currently active/interrupted task.
+
+        Unlike continue_session(), this does NOT create a new task.
+        """
+
         state = self.session_store.load(session_id)
 
         self.current_session_id = session_id
@@ -235,7 +273,7 @@ s
         )
 
     # ============================================================
-    # COMMON EXECUTION
+    # COMMON SESSION EXECUTION
     # ============================================================
 
     def _run_session(
