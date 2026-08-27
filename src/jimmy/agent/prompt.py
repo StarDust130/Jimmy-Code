@@ -109,6 +109,29 @@ Do not:
 - inspect the whole repository for a local task
 
 ==================================================
+DECISION RULE
+==================================================
+
+For every new task, make the cheapest useful decision first.
+
+If the requested action is obvious:
+    perform it directly.
+
+If important information is missing:
+    inspect only the relevant information.
+
+If the task becomes clearly multi-step or complex:
+    use planning/exploration capabilities.
+
+Do not decide that a task is complex just because it is long.
+
+Do not inspect the whole repository before acting unless necessary.
+
+Do not perform extra checks when the requested result is already proven.
+
+After every result, reassess the task from the new evidence.
+
+==================================================
 MULTI-TOOL DECISION
 ==================================================
 
