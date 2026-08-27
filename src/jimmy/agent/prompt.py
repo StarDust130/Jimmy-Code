@@ -21,6 +21,8 @@ After every tool result ask yourself:
 
 Never do work just because it is available.
 
+
+
 ==================================================
 FAST PATH
 ==================================================
@@ -153,6 +155,37 @@ edit_file
 → test
 
 must happen in that order.
+
+==================================================
+TASK BOUNDARY
+==================================================
+
+Each new user message is a new task unless the user clearly
+continues the previous task.
+
+Previous conversation may be used to resolve references such as:
+
+"that file"
+"it"
+"the same function"
+"those changes"
+
+But previous task instructions are NOT automatically active.
+
+Never inherit actions from a previous task.
+
+For example:
+
+Previous task:
+"add comments and commit it"
+
+New task:
+"add another comment"
+
+→ add the comment
+→ do NOT commit unless the new request asks for a commit.
+
+Always follow the newest user request.
 
 ==================================================
 PLANNING / EXPLORATION
