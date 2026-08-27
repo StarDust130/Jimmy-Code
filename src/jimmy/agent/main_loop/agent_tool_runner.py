@@ -20,13 +20,7 @@ from jimmy.utils.limits import truncate_output
 
 
 class AgentToolRunner:
-    """
-    Execute one model-selected tool.
-
-    This class does not choose tools.
-    It only validates permission, executes, observes,
-    and returns whether the tool completed the task.
-    """
+    """Execute one model-selected tool."""
 
     def __init__(
         self,
@@ -69,22 +63,40 @@ class AgentToolRunner:
             )
         )
 
-        # --------------------------------------------
-        # Resolve tool
-        # --------------------------------------------
-
         tool = self.tools.get(tool_call.name)
 
-        # --------------------------------------------
+        # ----------------------------------------
         # Permission
-        # --------------------------------------------
+        # ----------------------------------------
 
         decision = self.permissions.check(tool)
 
         if decision.action == PermissionAction.DENY:
-            raise PermissionError(
-                f"❌ Permission denied for '{tool_call.name}'.\n{decision.reason}"
+            elapsed = time.monotonic() - started_at
+
+            metrics.failures += 1
+            metrics.add_tool_time(
+                tool_name=tool_call.name,
+                elapsed=elapsed,
             )
+
+            message = (
+                f"❌ Permission denied for "
+                f"'{tool_call.name}'.\n"
+                f"{decision.reason}"
+            )
+
+            emit(
+                AgentEvent(
+                    kind="tool_end",
+                    turn=turn,
+                    tool_name=tool_call.name,
+                    elapsed=elapsed,
+                    message="denied",
+                )
+            )
+
+            raise PermissionError(message)
 
         if decision.action == PermissionAction.ASK:
             if on_permission is None:
@@ -108,7 +120,9 @@ class AgentToolRunner:
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "name": tool_call.name,
-                        "content": ("Permission denied by the user. Do not retry this action."),
+                        "content": (
+                            "Permission denied by the user."
+                        ),
                     }
                 )
 
@@ -129,25 +143,19 @@ class AgentToolRunner:
 
                 return False
 
-        # --------------------------------------------
+        # ----------------------------------------
         # Execute
-        # --------------------------------------------
+        # ----------------------------------------
 
         try:
-            result = self.executor.execute(
+            tool_result = self.executor.execute(
                 tool_name=tool_call.name,
                 arguments=tool_call.arguments,
             )
-
         except Exception as exc:
             elapsed = time.monotonic() - started_at
 
             metrics.failures += 1
-
-            metrics.add_tool_time(
-                tool_name=tool_call.name,
-                elapsed=elapsed,
-            )
 
             self.observability.record(
                 "tool_call",
@@ -171,33 +179,44 @@ class AgentToolRunner:
                 )
             )
 
-            recovery = self.recovery.recover(RuntimeError(str(exc)))
+            # Let the recovery system decide whether another
+            # attempt is meaningful.
+            recovery = self.recovery.recover(
+                RuntimeError(str(exc))
+            )
 
             if not recovery.should_continue:
-                raise RuntimeError(recovery.message) from exc
+                raise RuntimeError(
+                    recovery.message
+                ) from exc
 
             state.add_message(
                 {
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "name": tool_call.name,
-                    "content": (f"Tool failed: {exc}"),
+                    "content": (
+                        f"Tool failed: {exc}"
+                    ),
                 }
             )
 
+            # IMPORTANT:
+            # The action did not succeed.
+            # Never report task completion.
             return False
 
-        # --------------------------------------------
-        # Normalize result
-        # --------------------------------------------
+        # ----------------------------------------
+        # Build output
+        # ----------------------------------------
 
         output = truncate_output(
-            result.output
-            if result.success
+            tool_result.output
+            if tool_result.success
             else (
                 f"Tool '{tool_call.name}' failed.\n"
-                f"Error type: {result.error_type}\n"
-                f"Error: {result.error}"
+                f"Error type: {tool_result.error_type}\n"
+                f"Error: {tool_result.error}"
             )
         )
 
@@ -214,24 +233,31 @@ class AgentToolRunner:
                 "session_id": session_id,
                 "turn": turn,
                 "tool": tool_call.name,
-                "success": result.success,
+                "success": tool_result.success,
                 "elapsed_seconds": elapsed,
             },
         )
 
-        # --------------------------------------------
-        # Observation
-        # --------------------------------------------
+        # ----------------------------------------
+        # Observe
+        # ----------------------------------------
 
-        if result.success:
-            observation = self.observer.observe_success(
-                tool_name=tool_call.name,
-                result=output,
+        if tool_result.success:
+            observation = (
+                self.observer.observe_success(
+                    tool_name=tool_call.name,
+                    result=output,
+                )
             )
         else:
-            observation = self.observer.observe_failure(
-                tool_name=tool_call.name,
-                error=RuntimeError(result.error or "Unknown tool error."),
+            observation = (
+                self.observer.observe_failure(
+                    tool_name=tool_call.name,
+                    error=RuntimeError(
+                        tool_result.error
+                        or "Unknown tool error."
+                    ),
+                )
             )
 
         emit(
@@ -240,25 +266,36 @@ class AgentToolRunner:
                 turn=turn,
                 tool_name=tool_call.name,
                 elapsed=elapsed,
-                message=("ok" if result.success else "error"),
+                message=(
+                    "ok"
+                    if tool_result.success
+                    else "error"
+                ),
             )
         )
 
-        # --------------------------------------------
+        # ----------------------------------------
         # Tool failure
-        # --------------------------------------------
+        # ----------------------------------------
 
-        if not result.success:
+        if not tool_result.success:
             metrics.failures += 1
 
-            recovery = self.recovery.recover(RuntimeError(result.error or "Unknown tool error."))
+            recovery = self.recovery.recover(
+                RuntimeError(
+                    tool_result.error
+                    or "Unknown tool error."
+                )
+            )
 
             if not recovery.should_continue:
-                raise RuntimeError(recovery.message)
+                raise RuntimeError(
+                    recovery.message
+                )
 
-        # --------------------------------------------
+        # ----------------------------------------
         # Save result
-        # --------------------------------------------
+        # ----------------------------------------
 
         state.add_message(
             {
@@ -269,13 +306,16 @@ class AgentToolRunner:
             }
         )
 
-        # --------------------------------------------
-        # Generic completion
-        # --------------------------------------------
+        # ----------------------------------------
+        # Completion
+        # ----------------------------------------
 
         return bool(
-            result.success
-            and (result.metadata or {}).get(
+            tool_result.success
+            and (
+                tool_result.metadata
+                or {}
+            ).get(
                 "task_complete",
                 False,
             )
