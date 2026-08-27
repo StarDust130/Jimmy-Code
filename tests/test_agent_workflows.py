@@ -2,7 +2,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from jimmy.agent.agent_loop import AgentLoop
+from jimmy.agent.main_loop.agent_loop import AgentLoop
 from jimmy.git.state import GitState
 from jimmy.llm.base import (
     LLMProvider,
