@@ -8,6 +8,24 @@
 🔐 Permission → before protected action
 """
 
+"""
+USER
+ ↓
+AgentMainLoop
+ ↓
+AgentTurn
+ ↓
+LLM decides
+ ↓
+AgentToolRunner
+ ↓
+tool
+ ↓
+observation
+ ↓
+LLM decides again
+"""
+
 import time
 from collections.abc import Callable
 from pathlib import Path
