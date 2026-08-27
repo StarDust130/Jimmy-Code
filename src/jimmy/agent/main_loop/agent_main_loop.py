@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import time
 from collections.abc import Callable
 from typing import Any
 
 from jimmy.agent.events import AgentEvent
 from jimmy.agent.executor import ToolExecutor
+from jimmy.agent.main_loop.agent_progress import AgentProgress
 from jimmy.agent.main_loop.agent_tool_runner import AgentToolRunner
 from jimmy.agent.main_loop.agent_turn import AgentTurn
 from jimmy.agent.observer import Observer
@@ -32,15 +35,9 @@ PermissionHandler = Callable[
 
 class AgentMainLoop:
     """
-    Core Jimmy execution loop.
+    Core Jimmy loop.
 
-    A SESSION may contain many user tasks.
-
-    Each invocation of run() gets its own task-turn budget.
-
-    Flow:
-
-        ask → act → observe → decide → finish
+    ask → act → observe → decide → finish
     """
 
     def __init__(
@@ -57,7 +54,6 @@ class AgentMainLoop:
     ) -> None:
         self.tools = tools
         self.session_store = session_store
-        self.observability = observability
 
         self.turn = AgentTurn(
             llm=llm,
@@ -74,6 +70,8 @@ class AgentMainLoop:
             observability=observability,
         )
 
+        self.observability = observability
+
     def run(
         self,
         state: SessionState,
@@ -87,13 +85,15 @@ class AgentMainLoop:
         tool_schemas = self.tools.schemas()
 
         # IMPORTANT:
-        # Fresh budget for THIS user task.
+        # This budget belongs to THIS task invocation,
+        # not the lifetime of the session.
         task_turn = 0
+
+        progress = AgentProgress()
 
         while task_turn < max_turns:
             task_turn += 1
 
-            # state.turn_count is the total session turn count.
             state.next_turn()
 
             self.session_store.save(
@@ -101,10 +101,6 @@ class AgentMainLoop:
                 state=state,
                 status="running",
             )
-
-            # --------------------------------------------
-            # Ask the model
-            # --------------------------------------------
 
             response = self.turn.run(
                 state=state,
@@ -115,10 +111,6 @@ class AgentMainLoop:
                 on_event=on_event,
             )
 
-            # --------------------------------------------
-            # Save assistant response
-            # --------------------------------------------
-
             if response.assistant_message:
                 state.add_message(response.assistant_message)
 
@@ -128,10 +120,7 @@ class AgentMainLoop:
                     status="running",
                 )
 
-            # --------------------------------------------
-            # Final text
-            # --------------------------------------------
-
+            # No tool calls = actual final answer.
             if not response.tool_calls:
                 result = response.content or ""
 
@@ -140,24 +129,22 @@ class AgentMainLoop:
                     session_id=session_id,
                     metrics=metrics,
                     started_at=started_at,
-                    status="completed",
-                    on_event=on_event,
                     task_turn=task_turn,
+                    status="completed",
                     message=result,
+                    on_event=on_event,
                 )
 
                 return result
 
-            # --------------------------------------------
-            # Execute tools
-            # --------------------------------------------
-
+            # Execute every requested tool call.
             for tool_call in response.tool_calls:
                 completed = self.tool_runner.run(
                     state=state,
                     session_id=session_id,
                     metrics=metrics,
                     tool_call=tool_call,
+                    progress=progress,
                     task_turn=task_turn,
                     on_event=on_event,
                     on_permission=on_permission,
@@ -169,7 +156,6 @@ class AgentMainLoop:
                     status="running",
                 )
 
-                # Any tool can explicitly finish the task.
                 if completed:
                     result = self._last_tool_result(state)
 
@@ -178,21 +164,15 @@ class AgentMainLoop:
                         session_id=session_id,
                         metrics=metrics,
                         started_at=started_at,
-                        status="completed",
-                        on_event=on_event,
                         task_turn=task_turn,
+                        status="completed",
                         message=result,
+                        on_event=on_event,
                     )
 
                     return result
 
-        # --------------------------------------------
-        # Current TASK reached its budget
-        # --------------------------------------------
-
         message = f"❌ Jimmy stopped because this task reached the maximum of {max_turns} turns."
-
-        metrics.failures += 1
 
         self.observability.record(
             "error",
@@ -205,15 +185,17 @@ class AgentMainLoop:
             },
         )
 
+        metrics.failures += 1
+
         self._finish(
             state=state,
             session_id=session_id,
             metrics=metrics,
             started_at=started_at,
-            status="failed",
-            on_event=on_event,
             task_turn=task_turn,
+            status="failed",
             message=message,
+            on_event=on_event,
         )
 
         raise RuntimeError(message)
@@ -245,10 +227,10 @@ class AgentMainLoop:
         session_id: str,
         metrics: RunMetrics,
         started_at: float,
-        status: str,
-        on_event: EventHandler | None,
         task_turn: int,
+        status: str,
         message: str,
+        on_event: EventHandler | None,
     ) -> None:
         elapsed = time.monotonic() - started_at
 
