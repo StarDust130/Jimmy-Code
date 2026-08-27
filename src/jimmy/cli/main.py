@@ -16,6 +16,7 @@ from jimmy.tools.defaults import create_default_registry
 # Main entry point for the Jimmy CLI application 🚀✨
 # Added comment for Thor
 # Adding another comment as requested
+# hello Thor
 __version__ = version("jimmy")
 
 console = Console()
