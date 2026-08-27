@@ -17,7 +17,7 @@ from jimmy.state.session import SessionState
 
 
 class AgentTurn:
-    """Runs exactly one LLM decision."""
+    """Runs one LLM decision."""
 
     def __init__(
         self,
@@ -52,7 +52,6 @@ class AgentTurn:
         )
 
         try:
-            # ContextManager is allowed to compress only when needed.
             context = self.context_manager.prepare(state.messages)
 
             response = self.llm.chat(
@@ -60,27 +59,15 @@ class AgentTurn:
                 tools=tools,
             )
 
-        except LLMProviderError as exc:
+        except LLMProviderError:
             elapsed = time.monotonic() - started_at
-
-            metrics.failures += 1
-
-            self.observability.record(
-                "error",
-                {
-                    "session_id": session_id,
-                    "turn": turn,
-                    "error": str(exc),
-                    "error_type": type(exc).__name__,
-                },
-            )
 
             emit(
                 AgentEvent(
                     kind="error",
                     turn=turn,
                     elapsed=elapsed,
-                    message=str(exc),
+                    message="LLM request failed.",
                 )
             )
 
@@ -88,8 +75,6 @@ class AgentTurn:
 
         except Exception as exc:
             elapsed = time.monotonic() - started_at
-
-            metrics.failures += 1
 
             message = f"❌ LLM request failed.\n{type(exc).__name__}: {exc}"
 
@@ -113,10 +98,6 @@ class AgentTurn:
             )
 
             raise RuntimeError(message) from exc
-
-        # --------------------------------------------
-        # Usage / observability
-        # --------------------------------------------
 
         elapsed = time.monotonic() - started_at
 
@@ -147,10 +128,10 @@ class AgentTurn:
                 "session_id": session_id,
                 "turn": turn,
                 "model": model_name,
-                "input_tokens": (usage.input_tokens),
-                "output_tokens": (usage.output_tokens),
-                "total_tokens": (usage.total_tokens),
-                "cost_usd": (usage.cost_usd),
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "total_tokens": usage.total_tokens,
+                "cost_usd": usage.cost_usd,
                 "elapsed_seconds": elapsed,
             },
         )

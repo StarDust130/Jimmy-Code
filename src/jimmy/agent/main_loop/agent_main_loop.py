@@ -4,6 +4,10 @@ from typing import Any
 
 from jimmy.agent.events import AgentEvent
 from jimmy.agent.executor import ToolExecutor
+from jimmy.agent.main_loop.agent_tool_runner import (
+    AgentToolRunner,
+)
+from jimmy.agent.main_loop.agent_turn import AgentTurn
 from jimmy.agent.observer import Observer
 from jimmy.agent.recovery import RecoveryManager
 from jimmy.context.context import ContextManager
@@ -16,9 +20,6 @@ from jimmy.permissions.manager import PermissionManager
 from jimmy.session.store import SessionStore
 from jimmy.state.session import SessionState
 from jimmy.tools.registry import ToolRegistry
-
-from .agent_tool_runner import AgentToolRunner
-from .agent_turn import AgentTurn
 
 EventHandler = Callable[
     [AgentEvent],
@@ -33,13 +34,14 @@ PermissionHandler = Callable[
 
 class AgentMainLoop:
     """
-    Jimmy's core execution loop.
+    Core Jimmy decision loop.
 
-    The model is the decision maker.
+    One cycle:
 
-    Flow:
+        ask → execute → observe → decide
 
-        ask → act → observe → decide → finish
+    The LLM is responsible for choosing the next action.
+    Runtime code is responsible for enforcing correctness.
     """
 
     def __init__(
@@ -54,7 +56,9 @@ class AgentMainLoop:
         session_store: SessionStore,
         observability: Observability,
     ) -> None:
+        self.tools = tools
         self.session_store = session_store
+        self.observability = observability
 
         self.turn = AgentTurn(
             llm=llm,
@@ -71,9 +75,6 @@ class AgentMainLoop:
             observability=observability,
         )
 
-        self.tools = tools
-        self.observability = observability
-
     def run(
         self,
         state: SessionState,
@@ -84,21 +85,9 @@ class AgentMainLoop:
         on_event: EventHandler | None = None,
         on_permission: PermissionHandler | None = None,
     ) -> str:
-        """
-        Run the agent until the user's task is complete
-        or the maximum number of turns is reached.
-        """
-
-        # Build tool schemas once.
-        #
-        # Do not rebuild them on every turn.
         tool_schemas = self.tools.schemas()
 
         while state.turn_count < max_turns:
-            # --------------------------------------------
-            # Start next reasoning turn
-            # --------------------------------------------
-
             state.next_turn()
 
             self.session_store.save(
@@ -106,10 +95,6 @@ class AgentMainLoop:
                 state=state,
                 status="running",
             )
-
-            # --------------------------------------------
-            # Ask the model what to do
-            # --------------------------------------------
 
             response = self.turn.run(
                 state=state,
@@ -119,22 +104,13 @@ class AgentMainLoop:
                 on_event=on_event,
             )
 
-            # --------------------------------------------
-            # Save model response
-            # --------------------------------------------
-
+            # Save exactly what the model returned.
             if response.assistant_message:
                 state.add_message(response.assistant_message)
 
-                self.session_store.save(
-                    session_id=session_id,
-                    state=state,
-                    status="running",
-                )
-
-            # --------------------------------------------
-            # No tool call = final answer
-            # --------------------------------------------
+            # ------------------------------------------------
+            # Final text response
+            # ------------------------------------------------
 
             if not response.tool_calls:
                 result = response.content or ""
@@ -151,9 +127,9 @@ class AgentMainLoop:
 
                 return result
 
-            # --------------------------------------------
-            # Execute requested tools
-            # --------------------------------------------
+            # ------------------------------------------------
+            # Execute tool calls requested by the model
+            # ------------------------------------------------
 
             for tool_call in response.tool_calls:
                 completed = self.tool_runner.run(
@@ -171,9 +147,10 @@ class AgentMainLoop:
                     status="running",
                 )
 
-                # Any tool may explicitly report completion.
+                # Generic completion:
+                # ANY tool can end the task.
                 if completed:
-                    result = self._completion_message(state)
+                    result = self._last_tool_result(state)
 
                     self._finish(
                         state=state,
@@ -186,10 +163,6 @@ class AgentMainLoop:
                     )
 
                     return result
-
-        # --------------------------------------------
-        # Maximum turns
-        # --------------------------------------------
 
         message = f"❌ Jimmy stopped because the maximum of {max_turns} turns was reached."
 
@@ -217,28 +190,24 @@ class AgentMainLoop:
 
         raise RuntimeError(message)
 
-    def _completion_message(
-        self,
+    @staticmethod
+    def _last_tool_result(
         state: SessionState,
     ) -> str:
-        """
-        Return the most recent useful tool result.
-
-        Tool messages are the source of truth for tool completion.
-        """
-
         for message in reversed(state.messages):
-            if message.get("role") == "tool":
-                content = str(
-                    message.get(
-                        "content",
-                        "",
-                    )
-                    or ""
-                ).strip()
+            if message.get("role") != "tool":
+                continue
 
-                if content:
-                    return content
+            content = str(
+                message.get(
+                    "content",
+                    "",
+                )
+                or ""
+            ).strip()
+
+            if content:
+                return content
 
         return "Task completed."
 
@@ -252,7 +221,9 @@ class AgentMainLoop:
         on_event: EventHandler | None,
         message: str,
     ) -> None:
-        metrics.finish(time.monotonic() - started_at)
+        elapsed = time.monotonic() - started_at
+
+        metrics.finish(elapsed)
 
         self.observability.record_run(
             metrics,
@@ -270,7 +241,7 @@ class AgentMainLoop:
                 AgentEvent(
                     kind=("complete" if status == "completed" else "error"),
                     turn=state.turn_count,
-                    elapsed=(time.monotonic() - started_at),
+                    elapsed=elapsed,
                     message=message,
                 )
             )

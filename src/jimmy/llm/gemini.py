@@ -21,11 +21,15 @@ class GeminiProvider(LLMProvider):
         self,
         api_key: str,
         model: str = "gemini-3.5-flash-lite",
+        timeout_ms: int = 30_000, # 30 seconds
     ) -> None:
         self.model = model
 
         self.client = genai.Client(
             api_key=api_key,
+            http_options=types.HttpOptions(
+                timeout=timeout_ms,
+            ),
         )
 
     def chat(

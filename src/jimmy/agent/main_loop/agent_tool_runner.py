@@ -21,11 +21,11 @@ from jimmy.utils.limits import truncate_output
 
 class AgentToolRunner:
     """
-    Executes one model-selected tool.
+    Execute one model-selected tool.
 
-    Responsibilities:
-
-    permission → execute → observe → save result
+    This class does not choose tools.
+    It only validates permission, executes, observes,
+    and returns whether the tool completed the task.
     """
 
     def __init__(
@@ -53,8 +53,6 @@ class AgentToolRunner:
         on_event=None,
         on_permission=None,
     ) -> bool:
-        """Execute one tool call and return task_complete."""
-
         started_at = time.monotonic()
         turn = state.turn_count
 
@@ -72,7 +70,7 @@ class AgentToolRunner:
         )
 
         # --------------------------------------------
-        # Find tool
+        # Resolve tool
         # --------------------------------------------
 
         tool = self.tools.get(tool_call.name)
@@ -81,77 +79,29 @@ class AgentToolRunner:
         # Permission
         # --------------------------------------------
 
-        permission = self.permissions.check(tool)
+        decision = self.permissions.check(tool)
 
-        if permission.action == PermissionAction.DENY:
-            elapsed = time.monotonic() - started_at
-
-            metrics.failures += 1
-
-            metrics.add_tool_time(
-                tool_name=tool_call.name,
-                elapsed=elapsed,
+        if decision.action == PermissionAction.DENY:
+            raise PermissionError(
+                f"❌ Permission denied for '{tool_call.name}'.\n{decision.reason}"
             )
 
-            message = f"❌ Permission denied for '{tool_call.name}'.\n{permission.reason}"
-
-            self.observability.record(
-                "tool_call",
-                {
-                    "session_id": session_id,
-                    "turn": turn,
-                    "tool": tool_call.name,
-                    "success": False,
-                    "elapsed_seconds": elapsed,
-                    "reason": "permission_denied",
-                },
-            )
-
-            emit(
-                AgentEvent(
-                    kind="tool_end",
-                    turn=turn,
-                    tool_name=tool_call.name,
-                    elapsed=elapsed,
-                    message="denied",
-                )
-            )
-
-            raise PermissionError(message)
-
-        if permission.action == PermissionAction.ASK:
+        if decision.action == PermissionAction.ASK:
             if on_permission is None:
                 raise PermissionRequired(
                     tool_name=tool_call.name,
-                    reason=permission.reason,
+                    reason=decision.reason,
                     arguments=tool_call.arguments,
                 )
 
             approved = on_permission(
                 tool_call.name,
-                permission.reason,
+                decision.reason,
                 tool_call.arguments,
             )
 
             if not approved:
                 elapsed = time.monotonic() - started_at
-
-                metrics.add_tool_time(
-                    tool_name=tool_call.name,
-                    elapsed=elapsed,
-                )
-
-                self.observability.record(
-                    "tool_call",
-                    {
-                        "session_id": session_id,
-                        "turn": turn,
-                        "tool": tool_call.name,
-                        "success": False,
-                        "elapsed_seconds": elapsed,
-                        "reason": "permission_denied",
-                    },
-                )
 
                 state.add_message(
                     {
@@ -160,6 +110,11 @@ class AgentToolRunner:
                         "name": tool_call.name,
                         "content": ("Permission denied by the user. Do not retry this action."),
                     }
+                )
+
+                metrics.add_tool_time(
+                    tool_name=tool_call.name,
+                    elapsed=elapsed,
                 )
 
                 emit(
@@ -179,7 +134,7 @@ class AgentToolRunner:
         # --------------------------------------------
 
         try:
-            tool_result = self.executor.execute(
+            result = self.executor.execute(
                 tool_name=tool_call.name,
                 arguments=tool_call.arguments,
             )
@@ -202,6 +157,7 @@ class AgentToolRunner:
                     "tool": tool_call.name,
                     "success": False,
                     "elapsed_seconds": elapsed,
+                    "error": str(exc),
                 },
             )
 
@@ -235,15 +191,13 @@ class AgentToolRunner:
         # Normalize result
         # --------------------------------------------
 
-        result = truncate_output(
-            tool_result.output
-            if tool_result.success
+        output = truncate_output(
+            result.output
+            if result.success
             else (
                 f"Tool '{tool_call.name}' failed.\n"
-                f"Error type: "
-                f"{tool_result.error_type}\n"
-                f"Error: "
-                f"{tool_result.error}"
+                f"Error type: {result.error_type}\n"
+                f"Error: {result.error}"
             )
         )
 
@@ -260,24 +214,24 @@ class AgentToolRunner:
                 "session_id": session_id,
                 "turn": turn,
                 "tool": tool_call.name,
-                "success": tool_result.success,
+                "success": result.success,
                 "elapsed_seconds": elapsed,
             },
         )
 
         # --------------------------------------------
-        # Observe
+        # Observation
         # --------------------------------------------
 
-        if tool_result.success:
+        if result.success:
             observation = self.observer.observe_success(
                 tool_name=tool_call.name,
-                result=result,
+                result=output,
             )
         else:
             observation = self.observer.observe_failure(
                 tool_name=tool_call.name,
-                error=RuntimeError(tool_result.error or "Unknown tool error."),
+                error=RuntimeError(result.error or "Unknown tool error."),
             )
 
         emit(
@@ -286,26 +240,24 @@ class AgentToolRunner:
                 turn=turn,
                 tool_name=tool_call.name,
                 elapsed=elapsed,
-                message=("ok" if tool_result.success else "error"),
+                message=("ok" if result.success else "error"),
             )
         )
 
         # --------------------------------------------
-        # Failed tool
+        # Tool failure
         # --------------------------------------------
 
-        if not tool_result.success:
+        if not result.success:
             metrics.failures += 1
 
-            recovery = self.recovery.recover(
-                RuntimeError(tool_result.error or "Unknown tool error.")
-            )
+            recovery = self.recovery.recover(RuntimeError(result.error or "Unknown tool error."))
 
             if not recovery.should_continue:
                 raise RuntimeError(recovery.message)
 
         # --------------------------------------------
-        # Save result for next LLM decision
+        # Save result
         # --------------------------------------------
 
         state.add_message(
@@ -318,12 +270,12 @@ class AgentToolRunner:
         )
 
         # --------------------------------------------
-        # Generic completion flag
+        # Generic completion
         # --------------------------------------------
 
         return bool(
-            tool_result.success
-            and (tool_result.metadata or {}).get(
+            result.success
+            and (result.metadata or {}).get(
                 "task_complete",
                 False,
             )

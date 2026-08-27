@@ -33,7 +33,7 @@ from typing import Any
 
 from jimmy.agent.events import AgentEvent
 from jimmy.agent.executor import ToolExecutor
-from jimmy.agent.main_loop import AgentMainLoop
+from jimmy.agent.main_loop.agent_main_loop import AgentMainLoop
 from jimmy.agent.observer import Observer
 from jimmy.agent.planner import Planner
 from jimmy.agent.recovery import RecoveryManager
@@ -51,23 +51,24 @@ from jimmy.tools.registry import ToolRegistry
 
 from ..prompt import SYSTEM_PROMPT
 
-EventHandler = Callable[
-    [AgentEvent],
-    None,
-]
+EventHandler = Callable[[AgentEvent], None]
 
 PermissionHandler = Callable[
     [str, str, dict[str, Any]],
     bool,
 ]
 
+
 class AgentLoop:
     """
-    Public entry point for Jimmy.
+    Public lifecycle entry point.
 
-    This class owns lifecycle and dependency wiring.
+    This class only:
+    - creates/resumes sessions
+    - creates supporting services
+    - starts the main loop
 
-    The actual agent decision loop lives in AgentMainLoop.
+    It does not decide which tool to use.
     """
 
     def __init__(
@@ -91,23 +92,19 @@ class AgentLoop:
         self.workspace = workspace
         self.max_turns = max_turns
 
-        # These are available to the agent system but are NOT
-        # automatically executed for every task.
+        # Available internal capabilities.
+        # They are NOT automatically executed.
         self.planner = planner or Planner(llm)
         self.explorer = explorer or CodebaseExplorer(workspace)
 
         self.executor = executor or ToolExecutor(tools)
-
         self.observer = observer or Observer()
-
         self.recovery = recovery or RecoveryManager()
 
         self.permissions = permission_manager or PermissionManager()
 
         self.git_state = git_state if git_state is not None else GitState(workspace)
 
-        # Session data lives outside the project so it never
-        # becomes an accidental Git change.
         self.session_store = session_store or JsonSessionStore(Path.home())
 
         self.observability = observability or Observability()
@@ -117,8 +114,8 @@ class AgentLoop:
         )
 
         self.main_loop = AgentMainLoop(
-            llm=self.llm,
-            tools=self.tools,
+            llm=llm,
+            tools=tools,
             executor=self.executor,
             observer=self.observer,
             recovery=self.recovery,
@@ -134,7 +131,10 @@ class AgentLoop:
         on_event: EventHandler | None = None,
         on_permission: PermissionHandler | None = None,
     ) -> str:
-        """Start a new Jimmy session."""
+        task = task.strip()
+
+        if not task:
+            raise ValueError("Task cannot be empty.")
 
         started_at = time.monotonic()
 
@@ -171,16 +171,16 @@ class AgentLoop:
             )
 
         except KeyboardInterrupt:
+            self.session_store.save(
+                session_id=session_id,
+                state=state,
+                status="interrupted",
+            )
+
             metrics.finish(time.monotonic() - started_at)
 
             self.observability.record_run(
                 metrics,
-                status="interrupted",
-            )
-
-            self.session_store.save(
-                session_id=session_id,
-                state=state,
                 status="interrupted",
             )
 
@@ -220,8 +220,6 @@ class AgentLoop:
         on_event: EventHandler | None = None,
         on_permission: PermissionHandler | None = None,
     ) -> str:
-        """Resume an existing saved session."""
-
         state = self.session_store.load(session_id)
 
         started_at = time.monotonic()
@@ -249,16 +247,16 @@ class AgentLoop:
             )
 
         except KeyboardInterrupt:
+            self.session_store.save(
+                session_id=session_id,
+                state=state,
+                status="interrupted",
+            )
+
             metrics.finish(time.monotonic() - started_at)
 
             self.observability.record_run(
                 metrics,
-                status="interrupted",
-            )
-
-            self.session_store.save(
-                session_id=session_id,
-                state=state,
                 status="interrupted",
             )
 
