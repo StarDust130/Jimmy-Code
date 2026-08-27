@@ -141,6 +141,21 @@ class AgentMainLoop:
                     on_permission=on_permission,
                 )
 
+                if completed:
+                    result = self._last_tool_result(state)
+
+                    self._finish(
+                        state=state,
+                        session_id=session_id,
+                        metrics=metrics,
+                        started_at=started_at,
+                        status="completed",
+                        on_event=on_event,
+                        message=result,
+                    )
+
+                    return result
+
                 self.session_store.save(
                     session_id=session_id,
                     state=state,
