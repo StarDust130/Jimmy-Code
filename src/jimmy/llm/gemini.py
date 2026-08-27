@@ -1,6 +1,7 @@
 import base64
 import binascii
 import json
+from collections.abc import Iterator
 from typing import Any
 
 from google import genai
@@ -21,7 +22,7 @@ class GeminiProvider(LLMProvider):
         self,
         api_key: str,
         model: str = "gemini-3.5-flash-lite",
-        timeout_ms: int = 30_000, # 30 seconds
+        timeout_ms: int = 30_000,  # 30 seconds
     ) -> None:
         self.model = model
 
@@ -31,6 +32,227 @@ class GeminiProvider(LLMProvider):
                 timeout=timeout_ms,
             ),
         )
+
+    def stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> Iterator[str | LLMResponse]:
+        """
+        Stream Gemini output as real provider chunks.
+
+        Contract used by AgentTurn:
+          * yield text deltas as plain strings immediately
+          * yield one final LLMResponse after the stream finishes
+
+        Tool calls are collected during streaming and returned only in the
+        final LLMResponse. This prevents partial tool arguments from being
+        executed and keeps the normal agent/tool loop unchanged.
+        """
+        system_instruction, contents = self._convert_messages(messages)
+
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            tools=self._convert_tools(tools) or None,
+        )
+
+        text_parts: list[str] = []
+        tool_records: dict[tuple[str, int], dict[str, Any]] = {}
+        usage: dict[str, Any] | None = None
+
+        try:
+            stream = self.client.models.generate_content_stream(
+                model=self.model,
+                contents=contents,
+                config=config,
+            )
+
+            for chunk in stream:
+                text = getattr(chunk, "text", None)
+                if isinstance(text, str) and text:
+                    text_parts.append(text)
+                    yield text
+
+                usage_metadata = getattr(
+                    chunk,
+                    "usage_metadata",
+                    None,
+                )
+                if usage_metadata is not None:
+                    usage = self._usage_from_metadata(usage_metadata)
+
+                candidates = (
+                    getattr(
+                        chunk,
+                        "candidates",
+                        None,
+                    )
+                    or []
+                )
+
+                for candidate in candidates:
+                    candidate_content = getattr(
+                        candidate,
+                        "content",
+                        None,
+                    )
+                    if candidate_content is None:
+                        continue
+
+                    parts = (
+                        getattr(
+                            candidate_content,
+                            "parts",
+                            None,
+                        )
+                        or []
+                    )
+
+                    for index, part in enumerate(parts):
+                        function_call = getattr(
+                            part,
+                            "function_call",
+                            None,
+                        )
+
+                        if function_call is None:
+                            continue
+
+                        name = getattr(
+                            function_call,
+                            "name",
+                            None,
+                        )
+
+                        if not isinstance(name, str) or not name:
+                            continue
+
+                        record_key = (name, index)
+                        record = tool_records.setdefault(
+                            record_key,
+                            {
+                                "name": name,
+                                "id": None,
+                                "arguments": {},
+                                "thought_signature": None,
+                            },
+                        )
+
+                        function_call_id = getattr(
+                            function_call,
+                            "id",
+                            None,
+                        )
+                        if isinstance(function_call_id, str) and function_call_id:
+                            record["id"] = function_call_id
+
+                        arguments = dict(
+                            getattr(
+                                function_call,
+                                "args",
+                                None,
+                            )
+                            or {}
+                        )
+
+                        # Merge arguments across streamed chunks. Most Gemini
+                        # responses provide the complete object in one chunk,
+                        # but merging also handles incremental providers safely.
+                        record["arguments"].update(arguments)
+
+                        raw_signature = getattr(
+                            part,
+                            "thought_signature",
+                            None,
+                        )
+                        if raw_signature is not None:
+                            encoded_signature = self._signature_for_storage(raw_signature)
+                            if encoded_signature is not None:
+                                record["thought_signature"] = encoded_signature
+
+        except errors.APIError as exc:
+            raise self._normalize_error(exc) from exc
+        except Exception as exc:
+            raise LLMProviderError(
+                message=(f"❌ Gemini streaming request failed.\n{exc}"),
+                code="provider_error",
+            ) from exc
+
+        content = "".join(text_parts)
+
+        tool_calls: list[ToolCall] = []
+        serialized_tool_calls: list[dict[str, Any]] = []
+
+        for index, record in enumerate(tool_records.values()):
+            tool_call_id = record["id"] or f"gemini-call-{index}"
+            arguments = dict(record["arguments"] or {})
+
+            call = ToolCall(
+                id=tool_call_id,
+                name=record["name"],
+                arguments=arguments,
+            )
+            tool_calls.append(call)
+
+            serialized_call: dict[str, Any] = {
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": record["name"],
+                    "arguments": json.dumps(arguments),
+                },
+            }
+
+            signature = record.get("thought_signature")
+            if signature is not None:
+                serialized_call["thought_signature"] = signature
+
+            serialized_tool_calls.append(serialized_call)
+
+        assistant_message: dict[str, Any] = {
+            "role": "assistant",
+            "content": content,
+        }
+
+        if serialized_tool_calls:
+            assistant_message["tool_calls"] = serialized_tool_calls
+
+        yield LLMResponse(
+            content=content,
+            tool_calls=tool_calls,
+            assistant_message=assistant_message,
+            usage=usage,
+        )
+
+    @staticmethod
+    def _usage_from_metadata(usage_metadata: Any) -> dict[str, Any]:
+        return {
+            "input_tokens": getattr(
+                usage_metadata,
+                "prompt_token_count",
+                0,
+            ),
+            "output_tokens": getattr(
+                usage_metadata,
+                "candidates_token_count",
+                0,
+            ),
+            "total_tokens": getattr(
+                usage_metadata,
+                "total_token_count",
+                0,
+            ),
+            "cached_tokens": getattr(
+                usage_metadata,
+                "cached_content_token_count",
+                0,
+            ),
+            "reasoning_tokens": getattr(
+                usage_metadata,
+                "thoughts_token_count",
+                0,
+            ),
+        }
 
     def chat(
         self,
@@ -303,36 +525,9 @@ class GeminiProvider(LLMProvider):
             None,
         )
 
-        usage: dict[str, Any] | None = None
-
-        if usage_metadata is not None:
-            usage = {
-                "input_tokens": getattr(
-                    usage_metadata,
-                    "prompt_token_count",
-                    0,
-                ),
-                "output_tokens": getattr(
-                    usage_metadata,
-                    "candidates_token_count",
-                    0,
-                ),
-                "total_tokens": getattr(
-                    usage_metadata,
-                    "total_token_count",
-                    0,
-                ),
-                "cached_tokens": getattr(
-                    usage_metadata,
-                    "cached_content_token_count",
-                    0,
-                ),
-                "reasoning_tokens": getattr(
-                    usage_metadata,
-                    "thoughts_token_count",
-                    0,
-                ),
-            }
+        usage: dict[str, Any] | None = (
+            cls._usage_from_metadata(usage_metadata) if usage_metadata is not None else None
+        )
 
         candidates = getattr(
             response,
