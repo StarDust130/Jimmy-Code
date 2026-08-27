@@ -3,7 +3,10 @@ from typing import Any
 
 from jimmy.agent.events import AgentEvent
 from jimmy.context.context import ContextManager
-from jimmy.llm.base import LLMProvider, LLMResponse
+from jimmy.llm.base import (
+    LLMProvider,
+    LLMResponse,
+)
 from jimmy.llm.errors import LLMProviderError
 from jimmy.observability.metrics import (
     LLMUsage,
@@ -14,7 +17,7 @@ from jimmy.state.session import SessionState
 
 
 class AgentTurn:
-    """Handles one LLM reasoning turn."""
+    """Runs exactly one LLM decision."""
 
     def __init__(
         self,
@@ -49,9 +52,8 @@ class AgentTurn:
         )
 
         try:
-            context = self.context_manager.prepare(
-                state.messages,
-            )
+            # ContextManager is allowed to compress only when needed.
+            context = self.context_manager.prepare(state.messages)
 
             response = self.llm.chat(
                 messages=context,
@@ -112,6 +114,10 @@ class AgentTurn:
 
             raise RuntimeError(message) from exc
 
+        # --------------------------------------------
+        # Usage / observability
+        # --------------------------------------------
+
         elapsed = time.monotonic() - started_at
 
         usage = LLMUsage.from_dict(
@@ -128,7 +134,7 @@ class AgentTurn:
             type(self.llm).__name__,
         )
 
-        metrics.turns = state.turn_count
+        metrics.turns = turn
 
         metrics.add_llm_usage(
             model=model_name,
@@ -141,10 +147,10 @@ class AgentTurn:
                 "session_id": session_id,
                 "turn": turn,
                 "model": model_name,
-                "input_tokens": usage.input_tokens,
-                "output_tokens": usage.output_tokens,
-                "total_tokens": usage.total_tokens,
-                "cost_usd": usage.cost_usd,
+                "input_tokens": (usage.input_tokens),
+                "output_tokens": (usage.output_tokens),
+                "total_tokens": (usage.total_tokens),
+                "cost_usd": (usage.cost_usd),
                 "elapsed_seconds": elapsed,
             },
         )
