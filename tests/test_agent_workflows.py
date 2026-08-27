@@ -1,4 +1,3 @@
-import json
 import subprocess
 from pathlib import Path
 
@@ -17,7 +16,7 @@ from jimmy.tools.defaults import create_default_registry
 
 
 class FakeLLM(LLMProvider):
-    """Deterministic LLM used to test the full agent loop."""
+    """Deterministic LLM used for agent workflow tests."""
 
     def __init__(
         self,
@@ -40,22 +39,11 @@ class FakeLLM(LLMProvider):
         return response
 
 
-def init_git_repo(path: Path) -> None:
+def init_git_repo(
+    path: Path,
+) -> None:
     subprocess.run(
         ["git", "init"],
-        cwd=path,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    subprocess.run(
-        [
-            "git",
-            "config",
-            "user.email",
-            "test@example.com",
-        ],
         cwd=path,
         capture_output=True,
         text=True,
@@ -75,10 +63,29 @@ def init_git_repo(path: Path) -> None:
         check=True,
     )
 
-
-def create_initial_commit(path: Path) -> None:
     subprocess.run(
-        ["git", "add", "."],
+        [
+            "git",
+            "config",
+            "user.email",
+            "jimmy@example.com",
+        ],
+        cwd=path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
+def create_initial_commit(
+    path: Path,
+) -> None:
+    subprocess.run(
+        [
+            "git",
+            "add",
+            ".",
+        ],
         cwd=path,
         capture_output=True,
         text=True,
@@ -138,24 +145,32 @@ def git_commit_tool_call(
     call_id: str = "commit-1",
     *,
     paths: list[str] | None = None,
-    all_changes: bool = False,
     mode: str = "each",
+    message: str | None = None,
 ) -> LLMResponse:
+    arguments: dict[str, object] = {
+        "paths": paths,
+        "mode": mode,
+    }
+
+    if message is not None:
+        arguments["message"] = message
+
     call = ToolCall(
         id=call_id,
         name="git_commit",
-        arguments={
-            "paths": paths,
-            "all_changes": all_changes,
-            "mode": mode,
-        },
+        arguments=arguments,
     )
 
-    arguments = {
-        "paths": paths,
-        "all_changes": all_changes,
-        "mode": mode,
-    }
+    if paths is None:
+        paths_json = "null"
+    else:
+        quoted = ",".join(f'"{path}"' for path in paths)
+        paths_json = f"[{quoted}]"
+
+    message_json = "null" if message is None else f'"{message}"'
+
+    arguments_json = f'{{"paths":{paths_json},"mode":"{mode}","message":{message_json}}}'
 
     return LLMResponse(
         content="",
@@ -169,7 +184,7 @@ def git_commit_tool_call(
                     "type": "function",
                     "function": {
                         "name": "git_commit",
-                        "arguments": json.dumps(arguments),
+                        "arguments": arguments_json,
                     },
                 }
             ],
@@ -190,13 +205,14 @@ def final_response(
     )
 
 
-def git_log(path: Path) -> str:
+def git_status(
+    path: Path,
+) -> str:
     result = subprocess.run(
         [
             "git",
-            "log",
-            "--oneline",
-            "-1",
+            "status",
+            "--short",
         ],
         cwd=path,
         capture_output=True,
@@ -208,12 +224,15 @@ def git_log(path: Path) -> str:
     return result.stdout.strip()
 
 
-def git_status(path: Path) -> str:
+def git_log(
+    path: Path,
+) -> str:
     result = subprocess.run(
         [
             "git",
-            "status",
-            "--short",
+            "log",
+            "-1",
+            "--format=%s",
         ],
         cwd=path,
         capture_output=True,
@@ -243,12 +262,14 @@ def test_edit_then_commit(
 
     llm = FakeLLM(
         [
+            # 1. Edit the file.
             edit_tool_call(),
+            # 2. Commit the edited file.
+            # git_commit finishes the task itself.
             git_commit_tool_call(
                 paths=["example.txt"],
                 mode="each",
             ),
-            final_response("Done. Edited and committed example.txt."),
         ]
     )
 
@@ -273,6 +294,7 @@ def test_edit_then_commit(
 
     result = agent.run("Edit example.txt and commit it.")
 
+    # The file was really edited.
     assert (
         file.read_text(
             encoding="utf-8",
@@ -280,43 +302,62 @@ def test_edit_then_commit(
         == "hello Jimmy\n"
     )
 
-    assert result == "Done. Edited and committed example.txt."
+    # The commit tool should have completed the task,
+    # so the final result comes directly from the tool.
+    assert "Created 1 commit(s):" in result
 
-    log = git_log(tmp_path)
+    # Exactly two LLM responses were needed:
+    # edit_file -> git_commit -> done.
+    assert llm.index == 2
 
-    assert log
+    # A real commit exists.
+    latest_commit = git_log(tmp_path)
 
+    assert latest_commit
+    assert latest_commit != "initial"
+
+    # The edited file is clean.
     assert git_status(tmp_path) == ""
 
 
-def test_commit_then_continue(
+def test_commit_only_requested_file(
     tmp_path: Path,
 ) -> None:
     init_git_repo(tmp_path)
 
-    file = tmp_path / "example.txt"
+    main_file = tmp_path / "main.py"
+    other_file = tmp_path / "other.py"
 
-    file.write_text(
-        "hello\n",
+    main_file.write_text(
+        "print('main')\n",
+        encoding="utf-8",
+    )
+
+    other_file.write_text(
+        "print('other')\n",
         encoding="utf-8",
     )
 
     create_initial_commit(tmp_path)
 
-    git_state = GitState(tmp_path)
-
-    file.write_text(
-        "hello Jimmy\n",
+    main_file.write_text(
+        "print('changed main')\n",
         encoding="utf-8",
     )
+
+    other_file.write_text(
+        "print('changed other')\n",
+        encoding="utf-8",
+    )
+
+    git_state = GitState(tmp_path)
 
     llm = FakeLLM(
         [
             git_commit_tool_call(
-                all_changes=True,
+                paths=["main.py"],
                 mode="each",
             ),
-            final_response("Done. The changes were committed and I continued."),
         ]
     )
 
@@ -339,12 +380,109 @@ def test_commit_then_continue(
         permission_manager=permissions,
     )
 
-    result = agent.run("Commit my changes, then continue.")
+    result = agent.run("Commit main.py.")
 
-    assert result == "Done. The changes were committed and I continued."
+    assert "Created 1 commit(s):" in result
 
-    assert llm.index == 2
+    assert llm.index == 1
 
-    assert git_log(tmp_path)
+    # main.py was committed.
+    main_status = subprocess.run(
+        [
+            "git",
+            "status",
+            "--short",
+            "--",
+            "main.py",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
 
-    assert git_status(tmp_path) == ""
+    assert main_status.stdout.strip() == ""
+
+    # other.py must remain uncommitted.
+    other_status = subprocess.run(
+        [
+            "git",
+            "status",
+            "--short",
+            "--",
+            "other.py",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    assert other_status.stdout.strip() == "M other.py"
+
+    # The commit must contain main.py.
+    show = subprocess.run(
+        [
+            "git",
+            "show",
+            "--stat",
+            "--oneline",
+            "HEAD",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    assert "main.py" in show.stdout
+    assert "other.py" not in show.stdout
+
+
+def test_new_session_does_not_reuse_previous_chat(
+    tmp_path: Path,
+) -> None:
+    llm = FakeLLM(
+        [
+            final_response("first"),
+            final_response("second"),
+        ]
+    )
+
+    tools = create_default_registry(
+        root=tmp_path,
+        llm=None,
+    )
+
+    from jimmy.session.json_store import JsonSessionStore
+
+    store = JsonSessionStore(tmp_path)
+
+    agent = AgentLoop(
+        llm=llm,
+        tools=tools,
+        workspace=tmp_path,
+        session_store=store,
+        max_turns=5,
+    )
+
+    first = agent.run("First task.")
+
+    assert first == "first"
+
+    first_session = agent.current_session_id
+
+    assert first_session is not None
+
+    second = agent.run("Second task.")
+
+    assert second == "second"
+
+    second_session = agent.current_session_id
+
+    assert second_session is not None
+
+    assert first_session != second_session
