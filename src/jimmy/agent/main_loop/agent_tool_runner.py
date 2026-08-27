@@ -44,11 +44,11 @@ class AgentToolRunner:
         session_id: str,
         metrics: RunMetrics,
         tool_call: Any,
+        task_turn: int,
         on_event=None,
         on_permission=None,
     ) -> bool:
         started_at = time.monotonic()
-        turn = state.turn_count
 
         def emit(event: AgentEvent) -> None:
             if on_event is not None:
@@ -57,7 +57,7 @@ class AgentToolRunner:
         emit(
             AgentEvent(
                 kind="tool_start",
-                turn=turn,
+                turn=task_turn,
                 tool_name=tool_call.name,
                 arguments=tool_call.arguments,
             )
@@ -80,16 +80,25 @@ class AgentToolRunner:
                 elapsed=elapsed,
             )
 
-            message = (
-                f"❌ Permission denied for "
-                f"'{tool_call.name}'.\n"
-                f"{decision.reason}"
+            message = f"❌ Permission denied for '{tool_call.name}'.\n{decision.reason}"
+
+            self.observability.record(
+                "tool_call",
+                {
+                    "session_id": session_id,
+                    "task_turn": task_turn,
+                    "session_turn": state.turn_count,
+                    "tool": tool_call.name,
+                    "success": False,
+                    "elapsed_seconds": elapsed,
+                    "error": message,
+                },
             )
 
             emit(
                 AgentEvent(
                     kind="tool_end",
-                    turn=turn,
+                    turn=task_turn,
                     tool_name=tool_call.name,
                     elapsed=elapsed,
                     message="denied",
@@ -120,9 +129,7 @@ class AgentToolRunner:
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "name": tool_call.name,
-                        "content": (
-                            "Permission denied by the user."
-                        ),
+                        "content": ("Permission denied by the user."),
                     }
                 )
 
@@ -131,10 +138,23 @@ class AgentToolRunner:
                     elapsed=elapsed,
                 )
 
+                self.observability.record(
+                    "tool_call",
+                    {
+                        "session_id": session_id,
+                        "task_turn": task_turn,
+                        "session_turn": state.turn_count,
+                        "tool": tool_call.name,
+                        "success": False,
+                        "elapsed_seconds": elapsed,
+                        "error": "Permission denied by the user.",
+                    },
+                )
+
                 emit(
                     AgentEvent(
                         kind="tool_end",
-                        turn=turn,
+                        turn=task_turn,
                         tool_name=tool_call.name,
                         elapsed=elapsed,
                         message="denied",
@@ -161,7 +181,8 @@ class AgentToolRunner:
                 "tool_call",
                 {
                     "session_id": session_id,
-                    "turn": turn,
+                    "task_turn": task_turn,
+                    "session_turn": state.turn_count,
                     "tool": tool_call.name,
                     "success": False,
                     "elapsed_seconds": elapsed,
@@ -172,7 +193,7 @@ class AgentToolRunner:
             emit(
                 AgentEvent(
                     kind="tool_end",
-                    turn=turn,
+                    turn=task_turn,
                     tool_name=tool_call.name,
                     elapsed=elapsed,
                     message="error",
@@ -181,23 +202,17 @@ class AgentToolRunner:
 
             # Let the recovery system decide whether another
             # attempt is meaningful.
-            recovery = self.recovery.recover(
-                RuntimeError(str(exc))
-            )
+            recovery = self.recovery.recover(RuntimeError(str(exc)))
 
             if not recovery.should_continue:
-                raise RuntimeError(
-                    recovery.message
-                ) from exc
+                raise RuntimeError(recovery.message) from exc
 
             state.add_message(
                 {
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "name": tool_call.name,
-                    "content": (
-                        f"Tool failed: {exc}"
-                    ),
+                    "content": f"Tool failed: {exc}",
                 }
             )
 
@@ -231,7 +246,8 @@ class AgentToolRunner:
             "tool_call",
             {
                 "session_id": session_id,
-                "turn": turn,
+                "task_turn": task_turn,
+                "session_turn": state.turn_count,
                 "tool": tool_call.name,
                 "success": tool_result.success,
                 "elapsed_seconds": elapsed,
@@ -243,34 +259,23 @@ class AgentToolRunner:
         # ----------------------------------------
 
         if tool_result.success:
-            observation = (
-                self.observer.observe_success(
-                    tool_name=tool_call.name,
-                    result=output,
-                )
+            observation = self.observer.observe_success(
+                tool_name=tool_call.name,
+                result=output,
             )
         else:
-            observation = (
-                self.observer.observe_failure(
-                    tool_name=tool_call.name,
-                    error=RuntimeError(
-                        tool_result.error
-                        or "Unknown tool error."
-                    ),
-                )
+            observation = self.observer.observe_failure(
+                tool_name=tool_call.name,
+                error=RuntimeError(tool_result.error or "Unknown tool error."),
             )
 
         emit(
             AgentEvent(
                 kind="tool_end",
-                turn=turn,
+                turn=task_turn,
                 tool_name=tool_call.name,
                 elapsed=elapsed,
-                message=(
-                    "ok"
-                    if tool_result.success
-                    else "error"
-                ),
+                message=("ok" if tool_result.success else "error"),
             )
         )
 
@@ -282,16 +287,11 @@ class AgentToolRunner:
             metrics.failures += 1
 
             recovery = self.recovery.recover(
-                RuntimeError(
-                    tool_result.error
-                    or "Unknown tool error."
-                )
+                RuntimeError(tool_result.error or "Unknown tool error.")
             )
 
             if not recovery.should_continue:
-                raise RuntimeError(
-                    recovery.message
-                )
+                raise RuntimeError(recovery.message)
 
         # ----------------------------------------
         # Save result
@@ -312,10 +312,7 @@ class AgentToolRunner:
 
         return bool(
             tool_result.success
-            and (
-                tool_result.metadata
-                or {}
-            ).get(
+            and (tool_result.metadata or {}).get(
                 "task_complete",
                 False,
             )
