@@ -61,12 +61,13 @@ PermissionHandler = Callable[
     bool,
 ]
 
-
 class AgentLoop:
     """
-    Public Jimmy agent interface.
+    Public entry point for Jimmy.
 
-    Handles lifecycle and service wiring.
+    This class owns lifecycle and dependency wiring.
+
+    The actual agent decision loop lives in AgentMainLoop.
     """
 
     def __init__(
@@ -90,6 +91,8 @@ class AgentLoop:
         self.workspace = workspace
         self.max_turns = max_turns
 
+        # These are available to the agent system but are NOT
+        # automatically executed for every task.
         self.planner = planner or Planner(llm)
         self.explorer = explorer or CodebaseExplorer(workspace)
 
@@ -103,6 +106,8 @@ class AgentLoop:
 
         self.git_state = git_state if git_state is not None else GitState(workspace)
 
+        # Session data lives outside the project so it never
+        # becomes an accidental Git change.
         self.session_store = session_store or JsonSessionStore(Path.home())
 
         self.observability = observability or Observability()
@@ -112,8 +117,8 @@ class AgentLoop:
         )
 
         self.main_loop = AgentMainLoop(
-            llm=llm,
-            tools=tools,
+            llm=self.llm,
+            tools=self.tools,
             executor=self.executor,
             observer=self.observer,
             recovery=self.recovery,
@@ -129,6 +134,8 @@ class AgentLoop:
         on_event: EventHandler | None = None,
         on_permission: PermissionHandler | None = None,
     ) -> str:
+        """Start a new Jimmy session."""
+
         started_at = time.monotonic()
 
         state = SessionState(
@@ -182,8 +189,6 @@ class AgentLoop:
         except Exception as exc:
             metrics.failures += 1
 
-            metrics.finish(time.monotonic() - started_at)
-
             self.observability.record(
                 "error",
                 {
@@ -193,6 +198,8 @@ class AgentLoop:
                     "error_type": type(exc).__name__,
                 },
             )
+
+            metrics.finish(time.monotonic() - started_at)
 
             self.observability.record_run(
                 metrics,
@@ -213,19 +220,21 @@ class AgentLoop:
         on_event: EventHandler | None = None,
         on_permission: PermissionHandler | None = None,
     ) -> str:
+        """Resume an existing saved session."""
+
         state = self.session_store.load(session_id)
 
         started_at = time.monotonic()
-
-        metrics = self.observability.start_run(
-            task=state.task,
-            session_id=session_id,
-        )
 
         self.session_store.save(
             session_id=session_id,
             state=state,
             status="running",
+        )
+
+        metrics = self.observability.start_run(
+            task=state.task,
+            session_id=session_id,
         )
 
         try:
@@ -258,8 +267,6 @@ class AgentLoop:
         except Exception as exc:
             metrics.failures += 1
 
-            metrics.finish(time.monotonic() - started_at)
-
             self.observability.record(
                 "error",
                 {
@@ -269,6 +276,8 @@ class AgentLoop:
                     "error_type": type(exc).__name__,
                 },
             )
+
+            metrics.finish(time.monotonic() - started_at)
 
             self.observability.record_run(
                 metrics,
