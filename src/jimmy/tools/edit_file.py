@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, ConfigDict
 
 from jimmy.tools.base import Tool
@@ -14,9 +16,12 @@ class EditFileInput(BaseModel):
 
 
 class EditFileTool(Tool):
-    """Replace one exact text block in a text file."""
+    """Safely replace one exact text block in an existing text file."""
 
-    def __init__(self, filesystem: Filesystem) -> None:
+    def __init__(
+        self,
+        filesystem: Filesystem,
+    ) -> None:
         self.filesystem = filesystem
 
     @property
@@ -26,7 +31,11 @@ class EditFileTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Replace one exact text block in a text file. The target text must exist exactly once."
+            "Edit an existing text file by replacing one exact text block. "
+            "The file must already exist. "
+            "old_text must match exactly once. "
+            "Use create_files for new files. "
+            "Never use this tool as a substitute for arbitrary shell commands."
         )
 
     @property
@@ -48,18 +57,27 @@ class EditFileTool(Tool):
     ) -> ToolResult:
         args = EditFileInput.model_validate(arguments)
 
-        file_path = self.filesystem.resolve_path(args.path)
+        path = self.filesystem.resolve_path(args.path)
 
-        if not file_path.exists():
-            raise FileNotFoundError(f"File not found: {args.path}")
+        if not path.exists():
+            raise FileNotFoundError(
+                f"File not found: {args.path}. Use create_files to create a new file."
+            )
 
-        if not file_path.is_file():
+        if not path.is_file():
             raise ValueError(f"Path is not a file: {args.path}")
 
         try:
-            original = file_path.read_text(encoding="utf-8")
+            original = path.read_text(
+                encoding="utf-8",
+            )
         except UnicodeDecodeError as exc:
             raise ValueError(f"File is not valid UTF-8 text: {args.path}") from exc
+        except OSError as exc:
+            raise OSError(f"Failed to read file '{args.path}': {exc}") from exc
+
+        if not args.old_text:
+            raise ValueError("'old_text' must not be empty.")
 
         match_count = original.count(args.old_text)
 
@@ -68,8 +86,7 @@ class EditFileTool(Tool):
 
         if match_count > 1:
             raise ValueError(
-                f"The exact old_text matched "
-                f"{match_count} times. "
+                f"The exact old_text matched {match_count} times. "
                 "Refusing to guess which occurrence to edit."
             )
 
@@ -82,10 +99,13 @@ class EditFileTool(Tool):
         if updated == original:
             raise ValueError("Edit produced no changes.")
 
-        file_path.write_text(
-            updated,
-            encoding="utf-8",
-        )
+        try:
+            path.write_text(
+                updated,
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            raise OSError(f"Failed to write file '{args.path}': {exc}") from exc
 
         return ToolResult.ok(
             output=f"Edited {args.path} successfully.",
@@ -93,5 +113,6 @@ class EditFileTool(Tool):
                 "path": args.path,
                 "characters_before": len(original),
                 "characters_after": len(updated),
+                "changed": True,
             },
         )
