@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -14,10 +14,6 @@ from textual.widgets import Button, Static
 from jimmy.permissions.manager import PermissionMode
 
 from .constants import HELP_TEXT
-
-# ═════════════════════════════════════════════════════════════
-# SESSION WIDGETS
-# ═════════════════════════════════════════════════════════════
 
 
 class SessionCard(Static):
@@ -165,11 +161,14 @@ class AllSessionsScreen(Screen[str | None]):
             yield Static("All Sessions", id="all-sessions-title")
             with Vertical(id="all-sessions-list"):
                 for session in self.sessions:
-                    yield SessionCard(session, classes="all-session-card")
-            yield Static(
-                "↑↓ select · Enter open · Esc close",
-                id="all-sessions-footer",
-            )
+                    with Horizontal(classes="session-row"):
+                        yield SessionCard(session, classes="all-session-card")
+                        yield DeleteButton(session.get("id", ""))
+            footer_text = Text()
+            footer_text.append("↑↓ select · Enter open · ", style="dim")
+            footer_text.append("Esc", style="red")
+            footer_text.append(" close", style="dim")
+            yield Static(footer_text, id="all-sessions-footer")
 
     def on_mount(self) -> None:
         self._update_selection()
@@ -202,10 +201,54 @@ class AllSessionsScreen(Screen[str | None]):
         self.dismiss(event.session_id)
         event.stop()
 
+    def on_delete_button_pressed(self, event: DeleteButton.Pressed) -> None:
+        session_id = event.session_id
 
-# ═════════════════════════════════════════════════════════════
-# HELP & PERMISSION SCREENS
-# ═════════════════════════════════════════════════════════════
+        def handle_confirm(confirmed: bool | None) -> None:
+            if confirmed:
+                self._delete_session(session_id)
+
+        self.app.push_screen(DeleteConfirmScreen(), handle_confirm)
+
+    def _delete_session(self, session_id: str) -> None:
+        # Call app's deletion method (handles storage & notification)
+        app = cast(Any, self.app)
+        app._delete_session(session_id)
+
+        # Remove from local list
+        self.sessions = [s for s in self.sessions if s.get("id") != session_id]
+
+        # Refresh the UI immediately
+        self._refresh_list()
+
+        # If no sessions left, close the dialog
+        if not self.sessions:
+            self.dismiss(None)
+        else:
+            # Ensure the screen is properly refreshed
+            self.refresh()
+
+    def _refresh_list(self) -> None:
+        """Rebuild the session list widget."""
+        list_container = self.query_one("#all-sessions-list", Vertical)
+        # Clear all existing children
+        list_container.remove_children()
+
+        # Re-add each session row
+        for session in self.sessions:
+            row = Horizontal(classes="session-row")
+            card = SessionCard(session, classes="all-session-card")
+            delete_btn = DeleteButton(session.get("id", ""))
+            row.mount(card, delete_btn)
+            list_container.mount(row)
+
+        # Reapply selection
+        if self.sessions:
+            self.selected_index = min(self.selected_index, len(self.sessions) - 1)
+            self._update_selection()
+        else:
+            # No sessions – nothing to select
+            pass
 
 
 class HelpScreen(Screen):
@@ -255,6 +298,11 @@ class PermissionScreen(Screen[PermissionMode | None]):
         )
 
     def compose(self) -> ComposeResult:
+        footer_text = Text()
+        footer_text.append("↑↓ select · Enter confirm · ", style="dim")
+        footer_text.append("Esc", style="red")
+        footer_text.append(" close", style="dim")
+
         yield Center(
             Vertical(
                 Static("🔐  Permission Mode", id="permission-title"),
@@ -263,10 +311,7 @@ class PermissionScreen(Screen[PermissionMode | None]):
                     id="permission-subtitle",
                 ),
                 Static("", id="permission-options"),
-                Static(
-                    "↑↓ select   Enter confirm   Esc close",
-                    id="permission-footer",
-                ),
+                Static(footer_text, id="permission-footer"),
                 id="permission-dialog",
             )
         )
@@ -313,6 +358,11 @@ class PermissionPrompt(Screen[str]):
         self.arguments = arguments
 
     def compose(self) -> ComposeResult:
+        footer_text = Text()
+        footer_text.append("Y Allow · N Deny · F Full Access · ", style="dim")
+        footer_text.append("Esc", style="red")
+        footer_text.append(" to deny", style="dim")
+
         yield Center(
             Vertical(
                 Static("⚠  Permission Required", id="approval-title"),
@@ -324,10 +374,7 @@ class PermissionPrompt(Screen[str]):
                     Button("⚡ Full Access", id="approval-full"),
                     id="approval-actions",
                 ),
-                Static(
-                    "Y Allow   N Deny   F Full Access",
-                    id="approval-footer",
-                ),
+                Static(footer_text, id="approval-footer"),
                 id="approval-dialog",
             )
         )
