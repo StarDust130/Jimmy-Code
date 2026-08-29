@@ -3,8 +3,9 @@ from __future__ import annotations
 import subprocess
 import threading
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from rich.markdown import Markdown
 from rich.text import Text
@@ -30,9 +31,24 @@ from .screens import (
     ViewAllLink,
 )
 
-# ═════════════════════════════════════════════════════════════
-# MAIN APP
-# ═════════════════════════════════════════════════════════════
+
+class JimmyFooter(Footer):
+    """Custom footer: hides Ctrl+N on landing, colours Esc in red."""
+
+    def get_bindings(self) -> list[Binding]:
+        app = cast(JimmyTUI, self.app)
+        if app.mode == "landing":
+            return [b for b in Footer.get_bindings(self) if b.action != "new_task"]
+        return Footer.get_bindings(self)
+
+    def _make_key_text(self, binding: Binding) -> Text:
+        text = Footer._make_key_text(self, binding)
+        if binding.key in ("escape", "esc"):
+            parts = text.split(" ")
+            if parts:
+                parts[0] = Text(parts[0].plain, style="red")
+                text = Text(" ").join(parts)
+        return text
 
 
 class JimmyTUI(App[None]):
@@ -107,10 +123,9 @@ class JimmyTUI(App[None]):
 
         self._last_response: str = ""
         self._conversation_history: list[dict[str, str]] = []
+        self._full_transcript: list[dict[str, str]] = []
         self._files_touched: set[str] = set()
 
-        # Live model-output buffer. This is UI-only; the final response
-        # is still stored by the agent/session layer exactly once.
         self._stream_buffer = ""
         self._streaming = False
 
@@ -121,18 +136,15 @@ class JimmyTUI(App[None]):
 
         self._git_branch = self._detect_git_branch()
 
-        # Session state
         self.current_session_id: str | None = None
         self._current_task: str | None = None
         self._agent_header_needed = False
 
-        # Input history
         self._prompt_history: list[str] = []
         self._history_pos: int = -1
         self._history_draft: str = ""
 
     def compose(self) -> ComposeResult:
-        # Fixed header stays visible while chat content scrolls.
         yield Horizontal(
             Static("", id="brand"),
             Static("", id="project"),
@@ -145,7 +157,6 @@ class JimmyTUI(App[None]):
             id="topbar",
         )
 
-        # Landing screen. Hidden automatically in chat mode.
         yield Vertical(
             Static(LOGO, id="logo-large"),
             Static("", id="tagline"),
@@ -157,20 +168,12 @@ class JimmyTUI(App[None]):
                 id="input-wrapper",
             ),
             Center(
-                Vertical(
-                    Static(
-                        "Recent Sessions",
-                        classes="recent-sessions-header",
-                    ),
-                    Vertical(id="recent-sessions-list"),
-                    id="recent-sessions-container",
-                ),
+                ViewAllLink(),
                 id="recent-sessions-wrapper",
             ),
             id="landing-main",
         )
 
-        # Chat area. Observability sits directly under the conversation.
         yield Vertical(
             RichLog(
                 id="conversation",
@@ -197,7 +200,7 @@ class JimmyTUI(App[None]):
             id="chat-main",
         )
 
-        yield Footer()
+        yield JimmyFooter()
 
     def on_mount(self) -> None:
         self._apply_mode(self.mode)
@@ -205,7 +208,6 @@ class JimmyTUI(App[None]):
         self._update_project()
         self._update_permission_mode()
         self._update_session_indicator()
-        self._refresh_landing_sessions()
         self._update_observability()
 
         self.set_interval(0.08, self._tick_fast)
@@ -289,17 +291,21 @@ class JimmyTUI(App[None]):
         self._notify("No prompt to copy", "warning")
 
     def action_copy_conversation(self) -> None:
-        if not self._conversation_history:
+        if not self._full_transcript:
             self._notify("No conversation to copy", "warning")
             return
         lines: list[str] = []
-        for msg in self._conversation_history:
+        for msg in self._full_transcript:
             role = msg.get("role")
             content = msg.get("content", "")
             if role == "user":
                 lines.append(f"YOU:\n{content}")
             elif role == "assistant":
                 lines.append(f"JIMMY:\n{content}")
+            elif role == "tool_start":
+                lines.append(f"TOOL: {content}")
+            elif role == "tool_end":
+                lines.append(f"   {content}")
             lines.append("")
         text = "\n".join(lines).strip()
         if text:
@@ -308,6 +314,21 @@ class JimmyTUI(App[None]):
             self._notify("No conversation to copy", "warning")
 
     def _copy_text(self, text: str, success_msg: str) -> None:
+        if not text:
+            self._notify("Nothing to copy", "warning")
+            return
+
+        # Try pyperclip first if available
+        try:
+            import pyperclip
+
+            pyperclip.copy(text)
+            self._notify(success_msg, "information")
+            return
+        except Exception:
+            pass
+
+        # Fallback to platform-specific commands
         import platform
 
         system = platform.system()
@@ -317,6 +338,7 @@ class JimmyTUI(App[None]):
             elif system == "Darwin":
                 subprocess.run(["pbcopy"], input=text, text=True, check=True, timeout=2)
             else:
+                # Try wl-copy (Wayland) then xclip (X11)
                 try:
                     subprocess.run(["wl-copy"], input=text, text=True, check=True, timeout=2)
                 except (FileNotFoundError, subprocess.CalledProcessError):
@@ -329,10 +351,12 @@ class JimmyTUI(App[None]):
                     )
             self._notify(success_msg, "information")
         except Exception:
+            # Final fallback: print to console for manual copy
             self._notify(
-                "Copy failed — select text with Shift+mouse and copy via terminal",
+                "Copy failed — text printed to console for manual copy.",
                 "warning",
             )
+            print(text)
 
     def _notify(self, message: str, severity: str) -> None:
         try:
@@ -456,7 +480,7 @@ class JimmyTUI(App[None]):
     def _update_session_indicator(self) -> None:
         try:
             widget = self.query_one("#session-indicator", Static)
-            if self._current_session_id and self._current_task:
+            if self.current_session_id and self._current_task:
                 title = self._current_task
                 if len(title) > 25:
                     title = title[:22] + "…"
@@ -500,8 +524,10 @@ class JimmyTUI(App[None]):
     def watch_mode(self, mode: str) -> None:
         self._apply_mode(mode)
         self._focus_input()
-        if mode == "landing":
-            self._refresh_landing_sessions()
+        try:
+            self.query_one(JimmyFooter).refresh()
+        except Exception:
+            pass
 
     def _apply_mode(self, mode: str) -> None:
         try:
@@ -546,7 +572,6 @@ class JimmyTUI(App[None]):
             return
         event.input.value = ""
 
-        # Save to history
         if not self._prompt_history or self._prompt_history[-1] != task:
             self._prompt_history.append(task)
         self._history_pos = -1
@@ -613,7 +638,7 @@ class JimmyTUI(App[None]):
         self.elapsed = 0.0
         self._last_error = None
         self._reset_observability()
-        self._current_session_id = None
+        self.current_session_id = None
         if hasattr(self._agent, "current_session_id"):
             self._agent.current_session_id = None
         self._current_task = None
@@ -623,7 +648,6 @@ class JimmyTUI(App[None]):
         self._update_session_indicator()
         self._start_typewriter()
         self._focus_input()
-        self._refresh_landing_sessions()
 
     def action_clear_input(self) -> None:
         if self.mode == "landing":
@@ -721,57 +745,37 @@ class JimmyTUI(App[None]):
     # SESSIONS
     # ------------------------------------------------------------------
 
-    def _refresh_landing_sessions(self) -> None:
+    def _get_sessions(self, clean_old: bool = True) -> list[dict]:
+        store = getattr(self._agent, "session_store", None)
+        if store is None:
+            return []
         try:
-            container = self.query_one("#recent-sessions-list", Vertical)
-            for child in list(container.children):
-                child.remove()
+            all_sessions = store.list()
         except Exception:
-            return
+            return []
 
-        try:
-            wrapper = self.query_one("#recent-sessions-wrapper", Center)
-        except Exception:
-            return
+        if not clean_old:
+            return all_sessions
 
-        sessions: list[dict] = []
-        try:
-            store = getattr(self._agent, "session_store", None)
-            if store is not None:
-                sessions = store.list()
-        except Exception:
-            pass
-
-        if not sessions:
-            wrapper.styles.display = "none"
-            return
-
-        wrapper.styles.display = "block"
-
-        for session in sessions[:3]:
+        now = datetime.now(UTC)
+        cutoff = now - timedelta(days=15)
+        kept = []
+        for sess in all_sessions:
+            updated_at_str = sess.get("updated_at", "")
             try:
-                row = Horizontal(classes="session-row")
-                container.mount(row)
-                row.mount(SessionCard(session))
-                row.mount(DeleteButton(session.get("id", "")))
+                dt = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
+                if dt < cutoff:
+                    store.delete(sess.get("id", ""))
+                    continue
             except Exception:
                 pass
-
-        if len(sessions) > 3:
-            try:
-                container.mount(ViewAllLink())
-            except Exception:
-                pass
+            kept.append(sess)
+        return kept
 
     def _show_all_sessions(self) -> None:
-        sessions: list[dict] = []
-        try:
-            store = getattr(self._agent, "session_store", None)
-            if store is not None:
-                sessions = store.list()
-        except Exception:
-            pass
+        sessions = self._get_sessions(clean_old=True)
         if not sessions:
+            self._notify("No sessions found", "warning")
             return
 
         def handle_selection(result: str | None) -> None:
@@ -779,7 +783,7 @@ class JimmyTUI(App[None]):
                 self._resume_session(result)
 
         self.push_screen(
-            AllSessionsScreen(sessions, self._current_session_id),
+            AllSessionsScreen(sessions, self.current_session_id),
             handle_selection,
         )
 
@@ -795,11 +799,12 @@ class JimmyTUI(App[None]):
         except Exception:
             return
 
-        self._current_session_id = session_id
+        self.current_session_id = session_id
         if hasattr(self._agent, "current_session_id"):
             self._agent.current_session_id = session_id
         self._current_task = getattr(state, "task", "Session")
         self._conversation_history = []
+        self._full_transcript = []
         self._files_touched = set()
         self._last_response = ""
         self._step_number = 0
@@ -815,6 +820,7 @@ class JimmyTUI(App[None]):
             if role == "user":
                 content = str(msg.get("content", ""))
                 self._conversation_history.append({"role": "user", "content": content})
+                self._full_transcript.append({"role": "user", "content": content})
                 self._render_user_message(content)
 
             elif role == "assistant":
@@ -823,11 +829,18 @@ class JimmyTUI(App[None]):
                     continue
 
                 self._conversation_history.append({"role": "assistant", "content": content})
+                self._full_transcript.append({"role": "assistant", "content": content})
                 self._render_agent_header()
                 self._render_content(content)
 
             elif role == "tool":
                 self._render_history_tool(msg)
+                self._full_transcript.append(
+                    {
+                        "role": "tool_start",
+                        "content": f"{msg.get('name', 'tool')} {msg.get('content', '')}",
+                    }
+                )
 
         try:
             log = self.query_one("#conversation", RichLog)
@@ -868,7 +881,6 @@ class JimmyTUI(App[None]):
             self._agent_header_needed = False
 
     def _render_history_tool(self, message: dict[str, Any]) -> None:
-        """Render persisted tool activity without pretending it was chat text."""
         try:
             log = self.query_one("#conversation", RichLog)
             name = str(message.get("name", "tool"))
@@ -916,14 +928,25 @@ class JimmyTUI(App[None]):
             store = getattr(self._agent, "session_store", None)
             if store is not None:
                 store.delete(session_id)
+                self._notify("Session deleted", "information")
+            else:
+                self._notify("Failed to delete session", "error")
+                return
         except Exception:
             self._notify("Failed to delete session", "error")
             return
 
-        if self._current_session_id == session_id:
-            self.action_new_task()
+        if self.current_session_id == session_id:
+            if not isinstance(self.screen, AllSessionsScreen):
+                self.action_new_task()
+            else:
+                self.current_session_id = None
+                self._current_task = None
+                if hasattr(self._agent, "current_session_id"):
+                    self._agent.current_session_id = None
+                self._update_session_indicator()
         else:
-            self._refresh_landing_sessions()
+            self._update_session_indicator()
 
     # ------------------------------------------------------------------
     # TASK SUBMISSION
@@ -975,6 +998,7 @@ class JimmyTUI(App[None]):
 
     def _write_user_message(self, message: str) -> None:
         self._conversation_history.append({"role": "user", "content": message})
+        self._full_transcript.append({"role": "user", "content": message})
         self._render_user_message(message)
 
     def _write_agent_text(self, text: str) -> None:
@@ -984,11 +1008,11 @@ class JimmyTUI(App[None]):
 
         self._last_response = content
         self._conversation_history.append({"role": "assistant", "content": content})
+        self._full_transcript.append({"role": "assistant", "content": content})
         self._ensure_agent_header()
         self._render_content(content)
 
     def _render_content(self, text: str | Text) -> None:
-        """📝 Render Jimmy's response with Rich Markdown."""
         try:
             log = self.query_one("#conversation", RichLog)
             markdown_text = text.plain if isinstance(text, Text) else text
@@ -1012,42 +1036,49 @@ class JimmyTUI(App[None]):
                 pass
 
     def _write_tool_start(
-        self,
-        tool_name: str | None,
+        self, tool_name: str | None, arguments: dict[str, Any] | None = None
     ) -> None:
+        """Display the start of a tool call with name and a short target."""
         try:
-            log = self.query_one(
-                "#conversation",
-                RichLog,
-            )
-
-            icon = TOOL_ICONS.get(
-                tool_name or "",
-                "▪",
-            )
+            log = self.query_one("#conversation", RichLog)
+            icon = TOOL_ICONS.get(tool_name or "", "▪")
+            name = tool_name or "unknown"
 
             t = Text()
-            t.append(
-                f"  {icon} ",
-                style="cyan",
-            )
-            t.append(
-                tool_name or "unknown",
-                style="bold white",
-            )
+            t.append(f"  {icon} ", style="cyan")
+            t.append(name, style="bold white")
+
+            detail = self._tool_detail(arguments or {})
+            if detail:
+                t.append("  →  ", style="dim")
+                t.append(detail, style="italic #94a3b8")
 
             log.write(t)
+            self._full_transcript.append(
+                {"role": "tool_start", "content": f"{name} → {detail}" if detail else name}
+            )
         except Exception:
             pass
 
-    def _write_tool_end(self, elapsed: float, success: bool) -> None:
+    def _write_tool_end(self, elapsed: float, success: bool, result_preview: str = "") -> None:
+        """Display the end of a tool call with status and elapsed time."""
         try:
             log = self.query_one("#conversation", RichLog)
             t = Text()
             t.append("    ")
             t.append("✓ " if success else "× ", style=("green" if success else "red"))
             t.append(self._fmt_dur(elapsed), style="dim")
+            if result_preview:
+                t.append("  ", style="dim")
+                t.append(result_preview[:80], style="italic #64748b")
             log.write(t)
+
+            self._full_transcript.append(
+                {
+                    "role": "tool_end",
+                    "content": f"{'✓' if success else '×'} {self._fmt_dur(elapsed)} {result_preview[:80]}",
+                }
+            )
         except Exception:
             pass
 
@@ -1064,6 +1095,7 @@ class JimmyTUI(App[None]):
         except Exception:
             pass
         self._conversation_history.clear()
+        self._full_transcript.clear()
         self._last_response = ""
         self._files_touched.clear()
         self._agent_header_needed = False
@@ -1380,9 +1412,7 @@ class JimmyTUI(App[None]):
 
             self.observability_tools += 1
 
-            self._write_tool_start(
-                event.tool_name,
-            )
+            self._write_tool_start(event.tool_name, event.arguments)
 
         elif event.kind == "tool_end":
             self._step_number += 1
@@ -1395,6 +1425,7 @@ class JimmyTUI(App[None]):
             self._write_tool_end(
                 event.elapsed or 0.0,
                 success,
+                getattr(event, "message", "") or "",
             )
 
             self.current_tool = ""
@@ -1435,7 +1466,6 @@ class JimmyTUI(App[None]):
         self.current_file = ""
         self.elapsed = elapsed or (time.monotonic() - self._task_started_at)
 
-        # Replace the live preview with the final persisted response.
         self._hide_streaming_response()
         self._stream_buffer = ""
         self._streaming = False
@@ -1444,6 +1474,7 @@ class JimmyTUI(App[None]):
         if result.strip():
             self._last_response = result.strip()
             self._conversation_history.append({"role": "assistant", "content": result.strip()})
+            self._full_transcript.append({"role": "assistant", "content": result.strip()})
 
         try:
             log = self.query_one("#conversation", RichLog)
@@ -1464,7 +1495,6 @@ class JimmyTUI(App[None]):
         self._update_observability()
         self._update_status_indicator()
         self._update_session_indicator()
-        self._refresh_landing_sessions()
 
     # ------------------------------------------------------------------
     # ERROR
@@ -1497,7 +1527,6 @@ class JimmyTUI(App[None]):
         self._enable_input()
         self._update_status_indicator()
         self._update_session_indicator()
-        self._refresh_landing_sessions()
 
     # ------------------------------------------------------------------
     # CANCEL
@@ -1606,7 +1635,6 @@ class JimmyTUI(App[None]):
                 or self._last_error
             )
 
-            # Keep old/empty chats clean.
             if not has_run:
                 widget.update("")
                 return
