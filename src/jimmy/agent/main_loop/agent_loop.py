@@ -1,31 +1,4 @@
-"""
-🧭 Explorer   → when understanding is needed
-📋 Planner    → when task proves complex
-✂️ Context    → when context gets large
-🔄 Recovery   → when something fails
-💾 Session    → always save state
-📊 Metrics    → always record
-🔐 Permission → before protected action
-"""
-
-"""
-USER
- ↓
-AgentMainLoop
- ↓
-AgentTurn
- ↓
-LLM decides
- ↓
-AgentToolRunner
- ↓
-tool
- ↓
-observation
- ↓
-LLM decides again
-"""
-
+from __future__ import annotations
 
 import time
 from collections.abc import Callable
@@ -35,6 +8,7 @@ from typing import Any
 from jimmy.agent.events import AgentEvent
 from jimmy.agent.executor import ToolExecutor
 from jimmy.agent.main_loop.agent_main_loop import AgentMainLoop
+from jimmy.agent.main_loop.agent_progress import AgentProgress
 from jimmy.agent.observer import Observer
 from jimmy.agent.planner import Planner
 from jimmy.agent.recovery import RecoveryManager
@@ -72,9 +46,10 @@ class AgentLoop:
     """
     Public Jimmy agent interface.
 
-    A session contains the full conversation.
+    A session contains the conversation.
 
-    Each user request inside that session is a separate task.
+    Each call to run() starts a new task/session.
+    continue_session() continues an existing conversation.
     """
 
     def __init__(
@@ -95,11 +70,9 @@ class AgentLoop:
     ) -> None:
         self.llm = llm
         self.tools = tools
-        self.workspace = workspace
+        self.workspace = workspace.resolve()
         self.max_turns = max_turns
 
-        # Available capabilities.
-        # They are available to Jimmy when needed.
         self.planner = planner if planner is not None else Planner(llm)
 
         self.executor = executor if executor is not None else ToolExecutor(tools)
@@ -108,19 +81,28 @@ class AgentLoop:
 
         self.recovery = recovery if recovery is not None else RecoveryManager()
 
-        self.explorer = explorer if explorer is not None else CodebaseExplorer(workspace)
+        self.explorer = (
+            explorer
+            if explorer is not None
+            else CodebaseExplorer(
+                self.workspace,
+            )
+        )
 
         self.permissions = (
             permission_manager if permission_manager is not None else PermissionManager()
         )
 
-        # Git is optional.
-        # Do not construct GitState automatically because
-        # some workspaces/tests are not Git repositories.
+        # Git is optional because some tests/workspaces are not
+        # Git repositories.
         self.git_state = git_state
 
         self.session_store = (
-            session_store if session_store is not None else JsonSessionStore(Path.home())
+            session_store
+            if session_store is not None
+            else JsonSessionStore(
+                Path.home(),
+            )
         )
 
         self.observability = observability if observability is not None else Observability()
@@ -145,7 +127,7 @@ class AgentLoop:
         self.current_session_id: str | None = None
 
     # ============================================================
-    # NEW SESSION
+    # NEW TASK
     # ============================================================
 
     def run(
@@ -156,13 +138,18 @@ class AgentLoop:
         on_text_delta: TextDeltaHandler | None = None,
     ) -> str:
         """
-        Start a brand-new session and task.
+        Start a completely new task.
+
+        A new session is created, so previous conversation messages
+        are not reused.
         """
 
         task = task.strip()
 
         if not task:
-            raise ValueError("Task cannot be empty.")
+            raise ValueError(
+                "Task cannot be empty.",
+            )
 
         state = SessionState(
             task=task,
@@ -178,7 +165,9 @@ class AgentLoop:
             ],
         )
 
-        session_id = self.session_store.create(state)
+        session_id = self.session_store.create(
+            state,
+        )
 
         self.current_session_id = session_id
 
@@ -191,7 +180,7 @@ class AgentLoop:
         )
 
     # ============================================================
-    # CONTINUE SAME SESSION
+    # CONTINUE EXISTING SESSION
     # ============================================================
 
     def continue_session(
@@ -203,49 +192,47 @@ class AgentLoop:
         on_text_delta: TextDeltaHandler | None = None,
     ) -> str:
         """
-        Continue the same conversation with a new user task.
+        Continue an existing conversation with a new user request.
 
-        Previous conversation remains available for context and
-        explicit references such as:
+        Previous messages remain available for references such as
+        "that file" or "the previous change".
 
-            "commit that file"
-            "change the same function"
-
-        Previous task instructions are not automatically active.
+        The previous task is not automatically treated as active.
         """
 
         task = task.strip()
 
         if not task:
-            raise ValueError("Task cannot be empty.")
+            raise ValueError(
+                "Task cannot be empty.",
+            )
 
-        state = self.session_store.load(session_id)
+        state = self.session_store.load(
+            session_id,
+        )
 
         self.current_session_id = session_id
 
-        # Explicit boundary between tasks inside one session.
+        # Explicitly mark a new task boundary.
         state.add_message(
             {
                 "role": "system",
                 "content": (
-                    "NEW TASK STARTED.\n"
-                    "The previous user task is no longer active.\n"
-                    "Work only on the new user request below.\n"
-                    "Use previous conversation only to resolve "
-                    "explicit references such as 'that file', "
-                    "'it', 'the same function', or 'those changes'.\n"
-                    "Do not continue, repeat, commit, test, revert, "
-                    "or modify anything from the previous task unless "
-                    "the new request explicitly asks for it."
+                    "<task_boundary>\n"
+                    "A new user task has started.\n"
+                    "The previous task is no longer active.\n"
+                    "Use previous conversation only when needed "
+                    "to resolve explicit references in the new task.\n"
+                    "</task_boundary>"
                 ),
-            }
+            },
         )
 
         state.add_message(
             {
                 "role": "user",
                 "content": task,
-            }
+            },
         )
 
         return self._run_session(
@@ -257,7 +244,7 @@ class AgentLoop:
         )
 
     # ============================================================
-    # RESUME SESSION
+    # RESUME
     # ============================================================
 
     def resume(
@@ -268,12 +255,12 @@ class AgentLoop:
         on_text_delta: TextDeltaHandler | None = None,
     ) -> str:
         """
-        Resume a saved/interrupted session.
-
-        This does not create a new task.
+        Resume an existing saved session/task.
         """
 
-        state = self.session_store.load(session_id)
+        state = self.session_store.load(
+            session_id,
+        )
 
         self.current_session_id = session_id
 
@@ -286,7 +273,7 @@ class AgentLoop:
         )
 
     # ============================================================
-    # COMMON EXECUTION
+    # RUN SESSION
     # ============================================================
 
     def _run_session(
@@ -299,7 +286,8 @@ class AgentLoop:
     ) -> str:
         started_at = time.monotonic()
 
-        self.current_session_id = session_id
+        # Fresh progress state for this task execution.
+        progress = AgentProgress()
 
         self.session_store.save(
             session_id=session_id,
@@ -307,12 +295,27 @@ class AgentLoop:
             status="running",
         )
 
-        metrics = self.observability.start_run(
-            task=state.task,
+        metrics = self._start_metrics(
+            state=state,
             session_id=session_id,
         )
 
         try:
+            return self.main_loop.run(
+                state=state,
+                session_id=session_id,
+                max_turns=self.max_turns,
+                started_at=started_at,
+                metrics=metrics,
+                progress=progress,
+                on_event=on_event,
+                on_permission=on_permission,
+                on_text_delta=on_text_delta,
+            )
+
+        except TypeError:
+            # Compatibility with an AgentMainLoop version that
+            # does not yet accept progress explicitly.
             return self.main_loop.run(
                 state=state,
                 session_id=session_id,
@@ -327,7 +330,9 @@ class AgentLoop:
         except KeyboardInterrupt:
             elapsed = time.monotonic() - started_at
 
-            metrics.finish(elapsed)
+            metrics.finish(
+                elapsed,
+            )
 
             self.observability.record_run(
                 metrics,
@@ -357,7 +362,9 @@ class AgentLoop:
                 },
             )
 
-            metrics.finish(elapsed)
+            metrics.finish(
+                elapsed,
+            )
 
             self.observability.record_run(
                 metrics,
@@ -371,3 +378,23 @@ class AgentLoop:
             )
 
             raise
+
+    # ============================================================
+    # METRICS
+    # ============================================================
+
+    def _start_metrics(
+        self,
+        state: SessionState,
+        session_id: str,
+    ) -> Any:
+        """
+        Start run metrics using the current observability API.
+
+        Keeps this isolated so the public AgentLoop remains simple.
+        """
+
+        return self.observability.start_run(
+            task=state.task,
+            session_id=session_id,
+        )
