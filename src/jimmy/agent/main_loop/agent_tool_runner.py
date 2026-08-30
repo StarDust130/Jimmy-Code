@@ -37,23 +37,23 @@ PermissionHandler = Callable[
 
 class AgentToolRunner:
     """
-    Runtime for one model-requested tool call.
+    Execute one model-requested tool call.
 
     Flow:
 
-        hard guard
-            ↓
+        hard policy
+        ↓
         progress guard
-            ↓
+        ↓
         resolve tool
-            ↓
+        ↓
         permission
-            ↓
+        ↓
         execute
-            ↓
+        ↓
         observe
-            ↓
-        record progress
+        ↓
+        record real result
     """
 
     def __init__(
@@ -110,12 +110,12 @@ class AgentToolRunner:
                 turn=task_turn,
                 tool_name=tool_name,
                 arguments=arguments,
-            )
+            ),
         )
 
-        # =====================================================
+        # ======================================================
         # 1. HARD TOOL POLICY
-        # =====================================================
+        # ======================================================
 
         guard = self.guard.check(
             tool_name=tool_name,
@@ -134,28 +134,17 @@ class AgentToolRunner:
                     "content": (
                         f"Tool rejected by runtime.\n{reason}\nChoose a valid tool/action."
                     ),
-                }
+                },
             )
 
             self.observability.record(
-                "tool_guard_rejection",
+                "tool_policy_rejection",
                 {
                     "session_id": session_id,
                     "task_turn": task_turn,
                     "tool": tool_name,
                     "reason": reason,
                 },
-            )
-
-            # IMPORTANT:
-            # This did not execute.
-            # We track it as BLOCKED, not as a tool failure.
-            progress.record(
-                tool_name,
-                arguments,
-                success=False,
-                changed_workspace=False,
-                blocked=True,
             )
 
             emit(
@@ -165,14 +154,20 @@ class AgentToolRunner:
                     tool_name=tool_name,
                     elapsed=0.0,
                     message="blocked",
-                )
+                ),
             )
 
+            # IMPORTANT:
+            #
+            # The tool did not execute.
+            #
+            # Therefore this is NOT an execution failure and
+            # must NOT be recorded by AgentProgress.
             return False
 
-        # =====================================================
+        # ======================================================
         # 2. ANTI-LOOP / PROGRESS
-        # =====================================================
+        # ======================================================
 
         allowed, reason = progress.can_run(
             tool_name,
@@ -192,7 +187,7 @@ class AgentToolRunner:
                         f"{message}\n"
                         "Choose a different approach."
                     ),
-                }
+                },
             )
 
             self.observability.record(
@@ -212,18 +207,18 @@ class AgentToolRunner:
                     tool_name=tool_name,
                     elapsed=0.0,
                     message="blocked",
-                )
+                ),
             )
 
-            # Escalate to the main loop rather than quietly
-            # burning the remaining task-turn budget.
+            # The model has already repeated the same bad action.
+            # Stop the task instead of burning the remaining turns.
             raise RuntimeError(
                 message,
             )
 
-        # =====================================================
+        # ======================================================
         # 3. RESOLVE TOOL
-        # =====================================================
+        # ======================================================
 
         try:
             tool = self.tools.get(
@@ -244,16 +239,16 @@ class AgentToolRunner:
                     tool_name=tool_name,
                     elapsed=(time.monotonic() - started_at),
                     message="error",
-                )
+                ),
             )
 
             raise RuntimeError(
                 f"Unknown tool '{tool_name}'.",
             ) from exc
 
-        # =====================================================
+        # ======================================================
         # 4. PERMISSION
-        # =====================================================
+        # ======================================================
 
         permission = self.permissions.check(
             tool,
@@ -270,15 +265,7 @@ class AgentToolRunner:
                     "tool_call_id": tool_call.id,
                     "name": tool_name,
                     "content": message,
-                }
-            )
-
-            progress.record(
-                tool_name,
-                arguments,
-                success=False,
-                changed_workspace=False,
-                blocked=True,
+                },
             )
 
             emit(
@@ -288,9 +275,10 @@ class AgentToolRunner:
                     tool_name=tool_name,
                     elapsed=elapsed,
                     message="denied",
-                )
+                ),
             )
 
+            # Permission rejection is not an execution failure.
             return False
 
         if permission.action == PermissionAction.ASK:
@@ -320,15 +308,7 @@ class AgentToolRunner:
                             "Do not retry unless the user "
                             "explicitly asks again."
                         ),
-                    }
-                )
-
-                progress.record(
-                    tool_name,
-                    arguments,
-                    success=False,
-                    changed_workspace=False,
-                    blocked=True,
+                    },
                 )
 
                 emit(
@@ -338,14 +318,14 @@ class AgentToolRunner:
                         tool_name=tool_name,
                         elapsed=elapsed,
                         message="denied",
-                    )
+                    ),
                 )
 
                 return False
 
-        # =====================================================
+        # ======================================================
         # 5. EXECUTE
-        # =====================================================
+        # ======================================================
 
         try:
             tool_result = self.executor.execute(
@@ -357,15 +337,6 @@ class AgentToolRunner:
             elapsed = time.monotonic() - started_at
 
             metrics.failures += 1
-
-            state.add_message(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": tool_name,
-                    "content": (f"Tool '{tool_name}' failed.\n{type(exc).__name__}: {exc}"),
-                }
-            )
 
             self.observability.record(
                 "tool_call",
@@ -380,6 +351,16 @@ class AgentToolRunner:
                 },
             )
 
+            state.add_message(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": tool_name,
+                    "content": (f"Tool '{tool_name}' failed.\n{type(exc).__name__}: {exc}"),
+                },
+            )
+
+            # ONE and only ONE progress record for this execution.
             progress.record(
                 tool_name,
                 arguments,
@@ -394,7 +375,7 @@ class AgentToolRunner:
                     tool_name=tool_name,
                     elapsed=elapsed,
                     message="error",
-                )
+                ),
             )
 
             recovery = self.recovery.recover(
@@ -410,9 +391,9 @@ class AgentToolRunner:
 
             return False
 
-        # =====================================================
-        # 6. NORMALIZE OUTPUT
-        # =====================================================
+        # ======================================================
+        # 6. NORMALIZE RESULT
+        # ======================================================
 
         if tool_result.success:
             output = truncate_output(
@@ -423,7 +404,8 @@ class AgentToolRunner:
                 (
                     f"Tool '{tool_name}' failed.\n"
                     f"Error type: {tool_result.error_type}\n"
-                    f"Error: {tool_result.error or 'Unknown error'}"
+                    f"Error: "
+                    f"{tool_result.error or 'Unknown error'}"
                 ),
             )
 
@@ -446,9 +428,9 @@ class AgentToolRunner:
             },
         )
 
-        # =====================================================
-        # 7. OBSERVATION
-        # =====================================================
+        # ======================================================
+        # 7. OBSERVE
+        # ======================================================
 
         if tool_result.success:
             observation = self.observer.observe_success(
@@ -469,7 +451,7 @@ class AgentToolRunner:
                 "tool_call_id": tool_call.id,
                 "name": tool_name,
                 "content": observation.result,
-            }
+            },
         )
 
         emit(
@@ -479,16 +461,17 @@ class AgentToolRunner:
                 tool_name=tool_name,
                 elapsed=elapsed,
                 message=("ok" if tool_result.success else "error"),
-            )
+            ),
         )
 
-        # =====================================================
+        # ======================================================
         # 8. FAILURE / RECOVERY
-        # =====================================================
+        # ======================================================
 
         if not tool_result.success:
             metrics.failures += 1
 
+            # ONE progress record for this execution.
             progress.record(
                 tool_name,
                 arguments,
@@ -509,9 +492,9 @@ class AgentToolRunner:
 
             return False
 
-        # =====================================================
+        # ======================================================
         # 9. SUCCESS / PROGRESS
-        # =====================================================
+        # ======================================================
 
         changed_workspace = not tool.metadata.read_only
 
@@ -522,9 +505,9 @@ class AgentToolRunner:
             changed_workspace=changed_workspace,
         )
 
-        # =====================================================
+        # ======================================================
         # 10. EXPLICIT COMPLETION
-        # =====================================================
+        # ======================================================
 
         return bool(
             (tool_result.metadata or {}).get(
