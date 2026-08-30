@@ -164,11 +164,21 @@ TASKS: tuple[EvalTask, ...] = (
         "E19",
         "Run the tests, and if they fail fix the failure then run them again.",
         {
-            "math.py": "def add(a, b):\n    return a + b\n",
-            "test_math.py": "from math import add\n\ndef test_add():\n    assert add(1, 1) == 2\n",
+            "math_utils.py": ("def add(a, b):\n    return a - b\n"),
+            "test_math.py": (
+                "from math_utils import add\n\n\ndef test_add():\n    assert add(1, 1) == 2\n"
+            ),
         },
-        expected_tools=("run_shell",),
-        forbidden_tools=("git_commit",),
+        expected_tools=(
+            "run_shell",
+            "read_file",
+            "edit_file",
+        ),
+        forbidden_tools=(
+            "git_commit",
+            "create_files",
+        ),
+        expected_changed_files=("math_utils.py",),
     ),
     EvalTask(
         "E20",
