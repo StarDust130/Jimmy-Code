@@ -47,7 +47,7 @@ class GitCommitInput(BaseModel):
         default=None,
         description=(
             "Optional explicit commit message. "
-            "When omitted, generate a concise message "
+            "When omitted, generate concise messages "
             "from the actual Git diff."
         ),
     )
@@ -55,20 +55,27 @@ class GitCommitInput(BaseModel):
     finish: bool = Field(
         default=True,
         description=(
-            "Set true when committing should finish the "
-            "current task. Set false when more work follows."
+            "Set true when this commit operation completes "
+            "the current task. Set false when more work follows."
         ),
     )
 
 
 class GitCommitTool(Tool):
     """
-    Create Git commits within the exact requested scope.
+    Create Git commits inside the exact requested scope.
 
-    The tool is authoritative about Git state.
+    The model decides the requested scope through structured
+    arguments. This tool is the authority that enforces it.
 
-    It never relies on natural-language parsing to determine
-    which files are committed.
+    Guarantees:
+
+    - only requested changed files are selected
+    - paths must stay inside the workspace
+    - only selected files are staged
+    - only selected files are committed
+    - unrelated staged changes are not included
+    - selected files must be clean after commit
     """
 
     def __init__(
@@ -88,10 +95,10 @@ class GitCommitTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Create Git commits. Use this instead of "
-            "run_shell for git add or git commit. "
+            "Create Git commits. Use this instead of run_shell "
+            "for git add or git commit. "
             "Set paths to commit specific changed files; "
-            "omit paths to commit all current changes. "
+            "omit paths to commit all currently changed files. "
             "Use mode='each' for one commit per file or "
             "mode='single' for one commit containing all "
             "selected files. "
@@ -108,10 +115,12 @@ class GitCommitTool(Tool):
         )
 
     @property
-    def input_model(
-        self,
-    ) -> type[BaseModel]:
+    def input_model(self) -> type[BaseModel]:
         return GitCommitInput
+
+    # =========================================================
+    # EXECUTE
+    # =========================================================
 
     def execute(
         self,
@@ -123,23 +132,10 @@ class GitCommitTool(Tool):
 
         changed_files = self._get_changed_files()
 
-        # -----------------------------------------------------
-        # Select scope from structured arguments only.
-        # -----------------------------------------------------
-
-        if args.paths is None:
-            selected_files = list(
-                changed_files,
-            )
-        else:
-            selected_files = self._select_requested_files(
-                requested=args.paths,
-                changed_files=changed_files,
-            )
-
-        # -----------------------------------------------------
-        # Nothing to commit.
-        # -----------------------------------------------------
+        selected_files = self._resolve_scope(
+            paths=args.paths,
+            changed_files=changed_files,
+        )
 
         if not selected_files:
             return ToolResult.ok(
@@ -152,27 +148,10 @@ class GitCommitTool(Tool):
                 },
             )
 
-        # -----------------------------------------------------
-        # Prepare diffs for optional message generation.
-        # -----------------------------------------------------
+        # Capture the status before touching staging.
+        before_status = self._status_map()
 
-        changes = [
-            CommitChange(
-                path=path,
-                diff=self._get_diff(path),
-            )
-            for path in selected_files
-        ]
-
-        del changes
-        # The message generator below creates its own
-        # CommitChange collection. Keeping this line-free
-        # makes the actual commit flow easier to follow.
-
-        # -----------------------------------------------------
-        # Execute requested commit mode.
-        # -----------------------------------------------------
-
+        # Generate messages from real diffs.
         if args.mode == "single":
             result = self._commit_single(
                 files=selected_files,
@@ -184,9 +163,103 @@ class GitCommitTool(Tool):
                 message=args.message,
             )
 
+        # The tool itself owns the final scope check.
+        self._verify_scope(
+            requested_files=selected_files,
+            before_status=before_status,
+        )
+
         result.metadata["task_complete"] = args.finish
+        result.metadata["requested_files"] = list(
+            selected_files,
+        )
 
         return result
+
+    # =========================================================
+    # SCOPE
+    # =========================================================
+
+    def _resolve_scope(
+        self,
+        paths: list[str] | None,
+        changed_files: list[str],
+    ) -> list[str]:
+        """
+        Resolve the exact commit scope.
+
+        None:
+            all currently changed files
+
+        list[str]:
+            exactly those changed files
+        """
+
+        normalized_changed = {self._normalize_git_path(path) for path in changed_files}
+
+        if paths is None:
+            return sorted(
+                normalized_changed,
+            )
+
+        selected: list[str] = []
+
+        for raw_path in paths:
+            relative = self._normalize_requested_path(
+                raw_path,
+            )
+
+            if relative not in normalized_changed:
+                raise ValueError(
+                    f"File is not currently changed: {relative}",
+                )
+
+            selected.append(
+                relative,
+            )
+
+        # Preserve caller order while removing duplicates.
+        return list(
+            dict.fromkeys(selected),
+        )
+
+    def _normalize_requested_path(
+        self,
+        raw_path: str,
+    ) -> str:
+        if not isinstance(
+            raw_path,
+            str,
+        ):
+            raise TypeError(
+                "Git commit paths must be strings.",
+            )
+
+        value = raw_path.strip()
+
+        if not value:
+            raise ValueError(
+                "Git commit path cannot be empty.",
+            )
+
+        candidate = self.filesystem.resolve_path(
+            value,
+        )
+
+        relative = candidate.relative_to(
+            self.filesystem.root,
+        ).as_posix()
+
+        return relative
+
+    @staticmethod
+    def _normalize_git_path(
+        path: str,
+    ) -> str:
+        return path.replace(
+            "\\",
+            "/",
+        ).strip()
 
     # =========================================================
     # SINGLE COMMIT
@@ -234,7 +307,7 @@ class GitCommitTool(Tool):
         )
 
     # =========================================================
-    # ONE COMMIT PER FILE
+    # EACH FILE
     # =========================================================
 
     def _commit_each(
@@ -253,15 +326,7 @@ class GitCommitTool(Tool):
                 [path],
             )
 
-            commit_message = (
-                message
-                or generated_messages.get(
-                    path,
-                )
-                or self._fallback_message(
-                    path,
-                )
-            )
+            commit_message = message or generated_messages.get(path) or self._fallback_message(path)
 
             commit_hash = self._commit_only(
                 message=commit_message,
@@ -316,9 +381,16 @@ class GitCommitTool(Tool):
         ]
 
         try:
-            return self.message_generator.generate(
+            result = self.message_generator.generate(
                 changes,
             )
+
+            return {
+                path: message.strip()
+                for path, message in result.items()
+                if isinstance(message, str) and message.strip()
+            }
+
         except Exception:
             return {}
 
@@ -344,8 +416,8 @@ class GitCommitTool(Tool):
                 changes,
             )
 
-            if generated and len(generated) == 1:
-                return next(iter(generated.values()))
+            if len(generated) == 1 and generated:
+                return next(iter(generated.values())).strip()
 
         except Exception:
             pass
@@ -355,7 +427,7 @@ class GitCommitTool(Tool):
         )
 
     # =========================================================
-    # GIT STATE
+    # GIT STATUS
     # =========================================================
 
     def _get_changed_files(
@@ -365,14 +437,13 @@ class GitCommitTool(Tool):
             [
                 "status",
                 "--short",
-            ]
+            ],
         )
 
         files: list[str] = []
 
         for line in result.stdout.splitlines():
-            if not line.strip():
-                continue
+            line = line.rstrip()
 
             if len(line) < 4:
                 continue
@@ -387,54 +458,48 @@ class GitCommitTool(Tool):
 
             if path:
                 files.append(
-                    path.replace(
-                        "\\",
-                        "/",
-                    )
+                    self._normalize_git_path(
+                        path,
+                    ),
                 )
 
         return list(
-            dict.fromkeys(
-                files,
-            )
+            dict.fromkeys(files),
         )
 
-    def _select_requested_files(
+    def _status_map(
         self,
-        requested: list[str],
-        changed_files: list[str],
-    ) -> list[str]:
-        normalized_changed = {
-            path.replace(
-                "\\",
-                "/",
-            )
-            for path in changed_files
-        }
-
-        selected: list[str] = []
-
-        for requested_path in requested:
-            resolved = self.filesystem.resolve_path(
-                requested_path,
-            )
-
-            relative = resolved.relative_to(
-                self.filesystem.root,
-            ).as_posix()
-
-            if relative not in normalized_changed:
-                raise ValueError(f"File is not currently changed: {relative}")
-
-            selected.append(
-                relative,
-            )
-
-        return list(
-            dict.fromkeys(
-                selected,
-            )
+    ) -> dict[str, str]:
+        result = self._run_git(
+            [
+                "status",
+                "--short",
+            ],
         )
+
+        status: dict[str, str] = {}
+
+        for line in result.stdout.splitlines():
+            if len(line) < 4:
+                continue
+
+            state = line[:2]
+            path = line[3:].strip()
+
+            if " -> " in path:
+                path = path.split(
+                    " -> ",
+                    1,
+                )[1]
+
+            normalized = self._normalize_git_path(
+                path,
+            )
+
+            if normalized:
+                status[normalized] = state
+
+        return status
 
     # =========================================================
     # DIFF
@@ -506,13 +571,16 @@ class GitCommitTool(Tool):
         return f"--- /dev/null\n+++ b/{path}\n" + "\n".join(f"+{line}" for line in lines)
 
     # =========================================================
-    # COMMIT
+    # STAGE
     # =========================================================
 
     def _stage(
         self,
         files: list[str],
     ) -> None:
+        if not files:
+            return
+
         self._run_git(
             [
                 "add",
@@ -521,19 +589,26 @@ class GitCommitTool(Tool):
             ],
         )
 
+    # =========================================================
+    # COMMIT
+    # =========================================================
+
     def _commit_only(
         self,
         message: str,
         files: list[str],
     ) -> str:
         """
-        Commit ONLY these files.
+        Commit ONLY the supplied files.
 
-        This is the critical Git-scope protection.
-
-        Other files already staged in the repository
-        are not included.
+        `--only` is important because it prevents unrelated
+        staged files from accidentally entering this commit.
         """
+
+        if not files:
+            raise ValueError(
+                "Cannot create a commit without files.",
+            )
 
         self._run_git(
             [
@@ -557,14 +632,23 @@ class GitCommitTool(Tool):
         commit_hash = result.stdout.strip()
 
         if not commit_hash:
-            raise RuntimeError("Git commit succeeded but no commit hash was returned.")
+            raise RuntimeError(
+                "Git commit succeeded but no commit hash was returned.",
+            )
 
         return commit_hash
+
+    # =========================================================
+    # VERIFY SELECTED FILES
+    # =========================================================
 
     def _verify_clean(
         self,
         files: list[str],
     ) -> None:
+        if not files:
+            return
+
         result = subprocess.run(
             [
                 "git",
@@ -583,14 +667,62 @@ class GitCommitTool(Tool):
         )
 
         if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "Unable to verify Git status.")
-
-        remaining = result.stdout.strip()
-
-        if remaining:
             raise RuntimeError(
-                f"Git commit completed, but the selected file(s) are still changed:\n{remaining}"
+                result.stderr.strip() or "Unable to verify Git status.",
             )
+
+        if result.stdout.strip():
+            raise RuntimeError(
+                "Git commit completed, but selected "
+                "file(s) are still changed:\n" + result.stdout.strip(),
+            )
+
+    # =========================================================
+    # VERIFY SCOPE
+    # =========================================================
+
+    def _verify_scope(
+        self,
+        requested_files: list[str],
+        before_status: dict[str, str],
+    ) -> None:
+        """
+        Final safety check.
+
+        Every requested file must now be clean.
+
+        We intentionally do NOT require the entire repository
+        to be clean because unrelated/pre-existing changes are
+        allowed to remain untouched.
+        """
+
+        self._verify_clean(
+            requested_files,
+        )
+
+        after_status = self._status_map()
+
+        requested_set = set(
+            requested_files,
+        )
+
+        # Nothing outside the requested scope should have changed
+        # merely because this tool committed selected files.
+        #
+        # We compare only files that existed in the status before
+        # the operation or are currently dirty.
+        #
+        # This catches accidental new dirty files caused by the
+        # commit operation without treating pre-existing unrelated
+        # changes as an error.
+        for path in after_status:
+            if path in requested_set:
+                continue
+
+            if path not in before_status:
+                raise RuntimeError(
+                    f"Git scope violation: unexpected file became changed: {path}",
+                )
 
     # =========================================================
     # PROCESS
@@ -631,10 +763,10 @@ class GitCommitTool(Tool):
     def _fallback_message(
         path: str,
     ) -> str:
-        return f"🛠️ update {Path(path).stem}"
+        return f"🖕 update {Path(path).stem}"
 
     @staticmethod
     def _fallback_group_message(
         files: list[str],
     ) -> str:
-        return f"🛠️ update {len(files)} files"
+        return f"🖕 update {len(files)} files"
