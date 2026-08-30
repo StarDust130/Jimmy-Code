@@ -139,6 +139,7 @@ class AgentLoop:
             permissions=self.permissions,
             session_store=self.session_store,
             observability=self.observability,
+            workspace=self.workspace,
         )
 
         self.current_session_id: str | None = None
