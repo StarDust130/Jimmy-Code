@@ -10,7 +10,9 @@ from jimmy.state.session import SessionState
 
 @dataclass(frozen=True, slots=True)
 class ToolGuardDecision:
-    """Deterministic result of tool validation."""
+    """
+    Result of deterministic runtime policy validation.
+    """
 
     allowed: bool
     reason: str = ""
@@ -18,21 +20,25 @@ class ToolGuardDecision:
 
 class ToolGuard:
     """
-    Lightweight deterministic guard for obvious tool mistakes.
+    Very small runtime policy guard.
 
-    Important:
-    - Never calls the LLM.
-    - Never decides whether a task is complete.
-    - Never replaces normal tool execution.
-    - Only blocks actions that clearly contradict the workspace
-      or the user's explicit request.
+    IMPORTANT:
+
+    This guard does NOT:
+    - understand natural-language task scope
+    - parse "commit all"
+    - decide which files the user meant
+    - decide whether a task is complete
+    - call the LLM
+
+    It only blocks objectively invalid tool usage.
     """
 
     def __init__(
         self,
         workspace: Path,
     ) -> None:
-        self.workspace = workspace
+        self.workspace = workspace.resolve()
 
     def check(
         self,
@@ -40,19 +46,89 @@ class ToolGuard:
         arguments: dict[str, Any],
         state: SessionState,
     ) -> ToolGuardDecision:
-        if tool_name == "create_files":
-            return self._check_create_files(arguments)
+        """
+        Validate hard runtime rules.
 
-        if tool_name == "edit_file":
-            return self._check_edit_file(arguments)
+        `state` remains part of the interface so future
+        runtime policies can inspect state without making
+        the guard responsible for task understanding.
+        """
+
+        del state
+
+        if (
+            not isinstance(
+                tool_name,
+                str,
+            )
+            or not tool_name.strip()
+        ):
+            return self._deny(
+                "Tool name is required.",
+            )
 
         if tool_name == "run_shell":
-            return self._check_run_shell(arguments)
-
-        if tool_name == "git_commit":
-            return self._check_git_commit(
+            return self._check_run_shell(
                 arguments,
-                state,
+            )
+
+        if tool_name == "create_files":
+            return self._check_create_files(
+                arguments,
+            )
+
+        if tool_name == "edit_file":
+            return self._check_edit_file(
+                arguments,
+            )
+
+        # Every other tool owns its own argument/runtime
+        # validation.
+        return ToolGuardDecision(
+            allowed=True,
+        )
+
+    # =========================================================
+    # SHELL
+    # =========================================================
+
+    def _check_run_shell(
+        self,
+        arguments: dict[str, Any],
+    ) -> ToolGuardDecision:
+        command = arguments.get(
+            "command",
+            "",
+        )
+
+        if not isinstance(
+            command,
+            str,
+        ):
+            return self._deny(
+                "run_shell requires a string command.",
+            )
+
+        command = command.strip()
+
+        if not command:
+            return self._deny(
+                "run_shell requires a non-empty command.",
+            )
+
+        # Git mutation belongs to the dedicated Git tool.
+        #
+        # IMPORTANT:
+        # We deliberately do NOT block generic shell writes,
+        # mkdir, npm, python, package managers, generators,
+        # build tools, etc.
+        #
+        # A real coding agent needs shell flexibility.
+        if self._is_git_mutation(
+            command,
+        ):
+            return self._deny(
+                "Use git_commit for Git mutations instead of run_shell.",
             )
 
         return ToolGuardDecision(
@@ -67,31 +143,55 @@ class ToolGuard:
         self,
         arguments: dict[str, Any],
     ) -> ToolGuardDecision:
-        raw_files = arguments.get(
+        files = arguments.get(
             "files",
-            [],
         )
 
-        if not isinstance(raw_files, list):
-            return self._deny("create_files requires a 'files' list.")
+        if not isinstance(
+            files,
+            list,
+        ):
+            return self._deny(
+                "create_files requires a files list.",
+            )
 
-        for item in raw_files:
-            if not isinstance(item, dict):
-                return self._deny("Each create_files entry must be an object.")
+        for item in files:
+            if not isinstance(
+                item,
+                dict,
+            ):
+                return self._deny(
+                    "Each created file must be an object.",
+                )
 
             raw_path = item.get(
                 "path",
                 "",
             )
 
-            if not isinstance(raw_path, str) or not raw_path.strip():
-                return self._deny("Every file needs a valid path.")
+            if (
+                not isinstance(
+                    raw_path,
+                    str,
+                )
+                or not raw_path.strip()
+            ):
+                return self._deny(
+                    "Each created file requires a path.",
+                )
 
-            path = self._resolve(raw_path)
+            try:
+                path = self._resolve(
+                    raw_path,
+                )
+            except ValueError as exc:
+                return self._deny(
+                    str(exc),
+                )
 
             if path.exists():
                 return self._deny(
-                    f"'{raw_path}' already exists. Use edit_file to modify an existing file."
+                    (f"'{raw_path}' already exists. Use edit_file for existing files."),
                 )
 
         return ToolGuardDecision(
@@ -111,52 +211,34 @@ class ToolGuard:
             "",
         )
 
-        if not isinstance(raw_path, str) or not raw_path.strip():
-            return self._deny("edit_file requires a valid file path.")
+        if (
+            not isinstance(
+                raw_path,
+                str,
+            )
+            or not raw_path.strip()
+        ):
+            return self._deny(
+                "edit_file requires a valid path.",
+            )
 
-        path = self._resolve(raw_path)
+        try:
+            path = self._resolve(
+                raw_path,
+            )
+        except ValueError as exc:
+            return self._deny(
+                str(exc),
+            )
 
         if not path.exists():
             return self._deny(
-                f"'{raw_path}' does not exist. Use create_files when creating a new file."
+                (f"'{raw_path}' does not exist. Use create_files for new files."),
             )
 
         if not path.is_file():
-            return self._deny(f"'{raw_path}' is not a file.")
-
-        return ToolGuardDecision(
-            allowed=True,
-        )
-
-    # =========================================================
-    # SHELL
-    # =========================================================
-
-    def _check_run_shell(
-        self,
-        arguments: dict[str, Any],
-    ) -> ToolGuardDecision:
-        command = str(
-            arguments.get(
-                "command",
-                "",
-            )
-        ).strip()
-
-        if not command:
-            return self._deny("run_shell requires a non-empty command.")
-
-        # Git mutations belong to git_commit.
-        if self._is_git_mutation(command):
-            return self._deny("Do not use run_shell for Git mutations. Use git_commit.")
-
-        # Obvious file creation/editing through shell belongs
-        # to dedicated filesystem tools.
-        if self._is_filesystem_write(command):
             return self._deny(
-                "Do not use run_shell for direct file creation "
-                "or editing when a dedicated filesystem tool exists. "
-                "Use create_files or edit_file."
+                f"'{raw_path}' is not a file.",
             )
 
         return ToolGuardDecision(
@@ -164,261 +246,49 @@ class ToolGuard:
         )
 
     # =========================================================
-    # GIT COMMIT
-    # =========================================================
-
-    def _check_git_commit(
-        self,
-        arguments: dict[str, Any],
-        state: SessionState,
-    ) -> ToolGuardDecision:
-        user_task = self._latest_user_task(state)
-
-        # No useful user text means don't overrule the model.
-        if not user_task:
-            return ToolGuardDecision(
-                allowed=True,
-            )
-
-        requested_paths = self._extract_requested_paths(user_task)
-
-        if not requested_paths:
-            return ToolGuardDecision(
-                allowed=True,
-            )
-
-        selected_paths = self._extract_commit_paths(arguments)
-
-        all_changes = bool(
-            arguments.get(
-                "all_changes",
-                False,
-            )
-        )
-
-        # Explicit path request must not become
-        # "commit everything".
-        if all_changes:
-            return self._deny(
-                "The user requested a specific commit scope: "
-                f"{', '.join(sorted(requested_paths))}. "
-                "Do not commit all changes."
-            )
-
-        if selected_paths:
-            unrelated = selected_paths - requested_paths
-
-            missing = requested_paths - selected_paths
-
-            if unrelated:
-                return self._deny(
-                    "Commit scope includes files the user did not request: "
-                    + ", ".join(sorted(unrelated))
-                )
-
-            if missing:
-                return self._deny(
-                    "The user requested these files to be committed, "
-                    "but they are missing from the commit scope: " + ", ".join(sorted(missing))
-                )
-
-        return ToolGuardDecision(
-            allowed=True,
-        )
-
-    # =========================================================
-    # HELPERS
+    # PATH SAFETY
     # =========================================================
 
     def _resolve(
         self,
         relative_path: str,
     ) -> Path:
-        """
-        Resolve through the same workspace root concept as
-        the filesystem layer.
-
-        The final tool still performs the authoritative path
-        validation.
-        """
-
         candidate = (self.workspace / relative_path).resolve()
 
-        workspace = self.workspace.resolve()
-
         try:
-            candidate.relative_to(workspace)
+            candidate.relative_to(
+                self.workspace,
+            )
         except ValueError as exc:
-            raise ValueError(f"Path escapes workspace: {relative_path}") from exc
+            raise ValueError(
+                f"Path escapes workspace: {relative_path}",
+            ) from exc
 
         return candidate
+
+    # =========================================================
+    # GIT DETECTION
+    # =========================================================
 
     @staticmethod
     def _is_git_mutation(
         command: str,
     ) -> bool:
-        normalized = command.strip()
+        """
+        Detect Git commands that mutate repository state.
+
+        Read-only Git commands remain allowed.
+        """
 
         return bool(
             re.search(
                 r"(?i)"
                 r"(?:^|[;&|])\s*"
-                r"(?:git\s+)?"
-                r"(?:add|commit|reset|restore|checkout|switch|clean)\b",
-                normalized,
-            )
-        )
-
-    @staticmethod
-    def _is_filesystem_write(
-        command: str,
-    ) -> bool:
-        """
-        Detect common direct shell file mutations.
-
-        This is intentionally conservative.
-        We do NOT block package managers, compilers,
-        test runners, scripts, or generators.
-        """
-
-        patterns = (
-            # POSIX
-            r"(?i)(?:^|[;&|])\s*(?:mkdir|touch)\b",
-            r"(?i)(?:>|>>)\s*[^;&|]+",
-            r"(?i)\becho\b.*(?:>|>>)",
-            r"(?i)\bprintf\b.*(?:>|>>)",
-            r"(?i)\bcat\b.*(?:>|>>)",
-            r"(?i)\btee\b",
-            # Windows / PowerShell
-            r"(?i)\bNew-Item\b",
-            r"(?i)\bSet-Content\b",
-            r"(?i)\bAdd-Content\b",
-            r"(?i)\bOut-File\b",
-            r"(?i)\bmkdir\b",
-        )
-
-        return any(
-            re.search(
-                pattern,
+                r"(?:git\s+)"
+                r"(?:add|commit|reset|restore|checkout|switch|clean|rebase|merge|cherry-pick|revert|rm)\b",
                 command,
-            )
-            for pattern in patterns
+            ),
         )
-
-    @staticmethod
-    def _latest_user_task(
-        state: SessionState,
-    ) -> str:
-        for message in reversed(state.messages):
-            if message.get("role") != "user":
-                continue
-
-            content = message.get(
-                "content",
-                "",
-            )
-
-            if isinstance(
-                content,
-                str,
-            ):
-                text = content.strip()
-
-                if text:
-                    return text
-
-        return ""
-
-    @staticmethod
-    def _extract_requested_paths(
-        task: str,
-    ) -> set[str]:
-        """
-        Extract obvious file/path references from a commit request.
-
-        This intentionally avoids pretending that every natural
-        language sentence can be parsed perfectly.
-        """
-
-        lowered = task.lower()
-
-        commit_words = (
-            "commit",
-            "committed",
-            "commit changes",
-        )
-
-        if not any(word in lowered for word in commit_words):
-            return set()
-
-        paths: set[str] = set()
-
-        # Typical source/config paths.
-        matches = re.findall(
-            r"(?<![\w./-])"
-            r"([A-Za-z0-9_.-]+"
-            r"(?:/[A-Za-z0-9_.-]+)*"
-            r"\.[A-Za-z0-9_-]+)"
-            r"(?![\w./-])",
-            task,
-        )
-
-        for match in matches:
-            paths.add(
-                match.replace(
-                    "\\",
-                    "/",
-                )
-            )
-
-        # Directory names such as "commit evals".
-        directory_matches = re.findall(
-            r"\bcommit\s+"
-            r"([A-Za-z0-9_.-]+)"
-            r"(?:\s+only)?",
-            task,
-            flags=re.IGNORECASE,
-        )
-
-        for match in directory_matches:
-            if "." not in match:
-                paths.add(
-                    match.replace(
-                        "\\",
-                        "/",
-                    )
-                )
-
-        return paths
-
-    @staticmethod
-    def _extract_commit_paths(
-        arguments: dict[str, Any],
-    ) -> set[str]:
-        paths: set[str] = set()
-
-        raw_paths = arguments.get(
-            "paths",
-            [],
-        )
-
-        if isinstance(
-            raw_paths,
-            list,
-        ):
-            for item in raw_paths:
-                if isinstance(
-                    item,
-                    str,
-                ):
-                    paths.add(
-                        item.replace(
-                            "\\",
-                            "/",
-                        )
-                    )
-
-        return paths
 
     @staticmethod
     def _deny(
