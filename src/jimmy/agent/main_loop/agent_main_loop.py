@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from jimmy.agent.events import AgentEvent
@@ -56,6 +57,7 @@ class AgentMainLoop:
         permissions: PermissionManager,
         session_store: SessionStore,
         observability: Observability,
+        workspace: Path,
     ) -> None:
         self.tools = tools
         self.session_store = session_store
@@ -73,6 +75,7 @@ class AgentMainLoop:
             recovery=recovery,
             permissions=permissions,
             observability=observability,
+            workspace=workspace,
         )
 
         self.observability = observability
