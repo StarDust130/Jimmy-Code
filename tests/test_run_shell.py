@@ -38,13 +38,16 @@ def test_run_shell_failure(
 
     result = tool.execute(
         RunShellInput(
-            command=('python -c "raise SystemExit(3)"'),
+            command='python -c "raise SystemExit(3)"',
         )
     )
 
-    assert result.success is True
-    assert "Exit code: 3" in result.output
+    assert result.success is False
+    assert result.error_type == "ShellCommandFailed"
+    assert result.error == "Command exited with code 3."
     assert result.metadata["exit_code"] == 3
+    assert result.metadata["command"] == ('python -c "raise SystemExit(3)"')
+    assert "Exit code: 3" in result.output
 
 
 def test_run_shell_timeout(
@@ -93,11 +96,13 @@ def test_run_shell_returns_nonzero_exit_code(
 
     result = tool.execute(
         RunShellInput(
-            command='python -c "raise SystemExit(2)"',
+            command=('python -c "raise SystemExit(2)"'),
         )
     )
 
-    assert result.success is True
+    assert result.success is False
+    assert result.error_type == "ShellCommandFailed"
+    assert result.error == "Command exited with code 2."
     assert result.metadata["exit_code"] == 2
     assert "Exit code: 2" in result.output
 
@@ -116,5 +121,6 @@ def test_run_shell_returns_stdout_and_stderr(
     )
 
     assert result.success is True
+    assert result.metadata["exit_code"] == 0
     assert "stdout" in result.output
     assert "stderr" in result.output
