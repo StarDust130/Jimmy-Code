@@ -10,6 +10,7 @@ from jimmy.tools.filesystem import Filesystem
 from jimmy.tools.models import ToolMetadata, ToolResult
 from jimmy.utils.safety import check_shell_command
 
+
 DEFAULT_TIMEOUT: Final[int] = 120
 MAX_TIMEOUT: Final[int] = 600
 
@@ -21,12 +22,7 @@ class RunShellInput(BaseModel):
 
 
 class RunShellTool(Tool):
-    """
-    Execute a real shell command inside the workspace.
-
-    This tool is intentionally for commands/program execution.
-    Use dedicated filesystem tools for creating or editing files.
-    """
+    """Run a shell command inside the current workspace."""
 
     def __init__(
         self,
@@ -37,7 +33,10 @@ class RunShellTool(Tool):
             raise ValueError("timeout must be greater than zero.")
 
         self.filesystem = filesystem
-        self.timeout = min(timeout, MAX_TIMEOUT)
+        self.timeout = min(
+            timeout,
+            MAX_TIMEOUT,
+        )
 
     @property
     def name(self) -> str:
@@ -47,11 +46,12 @@ class RunShellTool(Tool):
     def description(self) -> str:
         return (
             "Run a shell command inside the current workspace. "
-            "Use this for tests, builds, linters, scripts, package commands, "
-            "program execution, and other commands that genuinely require a shell. "
-            "Do NOT use this to create, edit, delete, move, or rename files when "
-            "a dedicated filesystem tool exists. "
-            "For Git commits, always use git_commit instead of git add/git commit."
+            "Use this for tests, builds, linters, scripts, package "
+            "commands, programs, and other commands that genuinely "
+            "require a shell. "
+            "Do not use this for creating or editing files when a "
+            "dedicated filesystem tool exists. "
+            "For Git commits, use git_commit instead of git commit."
         )
 
     @property
@@ -81,7 +81,7 @@ class RunShellTool(Tool):
         check_shell_command(command)
 
         try:
-            completed = subprocess.run(
+            result = subprocess.run(
                 command,
                 cwd=self.filesystem.root,
                 shell=True,
@@ -99,38 +99,46 @@ class RunShellTool(Tool):
         except OSError as exc:
             raise RuntimeError(f"Failed to start shell command: {exc}") from exc
 
-        stdout = completed.stdout.strip()
-        stderr = completed.stderr.strip()
-
-        metadata = {
-            "command": command,
-            "exit_code": completed.returncode,
-            "timed_out": False,
-        }
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
 
         output = (
-            f"Exit code: {completed.returncode}\n"
+            f"Exit code: {result.returncode}\n"
             f"STDOUT:\n"
             f"{stdout or '(empty)'}\n"
             f"STDERR:\n"
             f"{stderr or '(empty)'}"
         )
 
-        # IMPORTANT:
-        # Non-zero exit code is a failed tool execution.
-        # Never tell the agent that the command succeeded when it did not.
-        if completed.returncode != 0:
-            return ToolResult.fail(
-                error_type="ShellCommandFailed",
-                error=(f"Command exited with code {completed.returncode}."),
-                metadata=metadata
-                | {
-                    "stdout": stdout,
-                    "stderr": stderr,
-                },
+        metadata = {
+            "command": command,
+            "exit_code": result.returncode,
+            "timed_out": False,
+        }
+
+        # --------------------------------------------------
+        # Successful command
+        # --------------------------------------------------
+
+        if result.returncode == 0:
+            return ToolResult.ok(
+                output=output,
+                metadata=metadata,
             )
 
-        return ToolResult.ok(
+        # --------------------------------------------------
+        # Failed command
+        #
+        # IMPORTANT:
+        # Keep stdout/stderr/exit code in `output`.
+        # The agent needs that information to understand
+        # what went wrong and decide what to do next.
+        # --------------------------------------------------
+
+        return ToolResult(
+            success=False,
             output=output,
+            error_type="ShellCommandFailed",
+            error=(f"Command exited with code {result.returncode}."),
             metadata=metadata,
         )
