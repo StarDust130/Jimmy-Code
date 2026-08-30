@@ -8,29 +8,68 @@ from typing import Any
 from evals.tasks.coding_tasks import EvalTask
 from evals.trace import EvalTrace
 
+# ============================================================
+# CONFIG
+# ============================================================
 
-@dataclass(frozen=True)
-class GitStateSnapshot:
-    """Git state captured before an eval task starts."""
+# These tasks explicitly allow intermediate failures.
+#
+# E19:
+#   run tests
+#   if they fail -> fix
+#   run tests again
+#
+# Therefore a failed intermediate tool call is expected.
+RECOVERY_TASKS = {
+    "E19",
+}
 
-    head: str
-    status_files: frozenset[str]
+
+# Runtime/test artifacts that should not count as meaningful
+# source changes.
+IGNORED_PATH_PARTS = {
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+}
+
+
+# ============================================================
+# BASELINE
+# ============================================================
+
+
+@dataclass(frozen=True, slots=True)
+class GitBaseline:
+    """
+    Git state captured immediately before Jimmy starts.
+
+    The baseline commit lets the grader distinguish:
+        - files already present in the repository
+        - commits created by Jimmy during the eval
+    """
+
+    commit: str | None
+    changed_files: frozenset[str]
 
 
 def capture_git_state(
     workspace: Path,
-) -> GitStateSnapshot:
+) -> GitBaseline:
     """
-    Capture the repository state before Jimmy starts.
+    Capture the Git state before Jimmy runs.
 
-    This lets graders distinguish:
-        - files that were already dirty
-        - files Jimmy changed
-        - files Jimmy committed
+    This function is part of the runner/grader contract.
+    Keep it available because evals/runner.py imports it.
     """
 
-    head_result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+    commit_result = subprocess.run(
+        [
+            "git",
+            "rev-parse",
+            "HEAD",
+        ],
         cwd=workspace,
         capture_output=True,
         text=True,
@@ -40,219 +79,327 @@ def capture_git_state(
         timeout=20,
     )
 
-    if head_result.returncode != 0:
-        return GitStateSnapshot(
-            head="",
-            status_files=frozenset(),
-        )
+    commit = commit_result.stdout.strip() if commit_result.returncode == 0 else None
 
-    return GitStateSnapshot(
-        head=head_result.stdout.strip(),
-        status_files=frozenset(
-            git_status_files(workspace),
+    changed_files = git_changed_files(
+        workspace,
+    )
+
+    return GitBaseline(
+        commit=commit,
+        changed_files=frozenset(
+            changed_files,
         ),
     )
+
+
+# ============================================================
+# MAIN GRADER
+# ============================================================
 
 
 def grade_task(
     task: EvalTask,
     trace: EvalTrace,
     workspace: Path,
-    baseline: GitStateSnapshot | None = None,
+    baseline: GitBaseline | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     """
-    Grade the observable outcome of the task.
+    Grade whether the user's requested outcome was actually achieved.
 
-    Tool sequence is a quality signal, not the definition of correctness.
+    Important rule:
 
-    When a Git baseline is supplied, grading distinguishes:
-        - committed changes
-        - uncommitted changes
-        - unexpected changes
+        intermediate tool failure
+        !=
+        final task failure
+
+    This matters for recovery tasks such as E19.
     """
 
     reasons: list[str] = []
 
     used_tools = [item.name for item in trace.tool_trace]
 
-    # ----------------------------------------------------------
-    # TOOL QUALITY
-    # ----------------------------------------------------------
+    all_changed = git_changed_files(
+        workspace,
+    )
 
-    missing_expected = [tool for tool in task.expected_tools if tool not in used_tools]
+    changed_files = filter_runtime_artifacts(
+        all_changed,
+    )
 
-    wrong_tools = [tool for tool in used_tools if tool in task.forbidden_tools]
+    # --------------------------------------------------------
+    # Tool expectations
+    # --------------------------------------------------------
 
-    trace.wrong_tool_attempts = len(wrong_tools)
+    missing_tools = [tool for tool in task.expected_tools if tool not in used_tools]
 
-    if missing_expected:
-        reasons.append("missing expected tools: " + ", ".join(missing_expected))
+    forbidden_tools = [tool for tool in used_tools if tool in task.forbidden_tools]
 
-    if wrong_tools:
-        reasons.append("forbidden tools used: " + ", ".join(wrong_tools))
+    trace.wrong_tool_attempts = len(
+        forbidden_tools,
+    )
 
-    if trace.failed_tools:
-        reasons.append(f"{trace.failed_tools} tool call(s) failed")
+    if missing_tools:
+        reasons.append(
+            "missing expected tools: "
+            + ", ".join(
+                missing_tools,
+            ),
+        )
+
+    if forbidden_tools:
+        reasons.append(
+            "forbidden tools used: "
+            + ", ".join(
+                forbidden_tools,
+            ),
+        )
+
+    # --------------------------------------------------------
+    # Repeated calls
+    # --------------------------------------------------------
 
     if trace.repeated_tools:
-        reasons.append(f"{trace.repeated_tools} repeated identical tool call(s)")
-
-    # ----------------------------------------------------------
-    # GIT STATE
-    # ----------------------------------------------------------
-
-    committed_files: set[str] = set()
-    uncommitted_files: set[str] = set()
-    changed_files: set[str] = set()
-
-    if baseline is not None and baseline.head:
-        committed_files = git_committed_files_since(
-            workspace,
-            baseline.head,
+        reasons.append(
+            f"{trace.repeated_tools} repeated identical tool call(s)",
         )
 
-        uncommitted_files = git_status_files(
-            workspace,
-        )
-
-        # Files changed by the task are the union of:
-        # committed changes + remaining working-tree changes.
-        changed_files = committed_files | uncommitted_files
-
-    else:
-        changed_files = git_changed_files(
-            workspace,
-        )
-        uncommitted_files = set(changed_files)
-
-    trace.changed_files = sorted(changed_files)
-
-    # ----------------------------------------------------------
-    # EXPECTED FILES
-    # ----------------------------------------------------------
+    # --------------------------------------------------------
+    # Expected files
+    # --------------------------------------------------------
 
     for relative in task.expected_changed_files:
-        if not path_exists(
-            workspace,
-            relative,
-        ):
-            reasons.append(f"expected file missing: {relative}")
+        target = workspace / relative
 
-    # ----------------------------------------------------------
-    # UNMODIFIED FILES
-    # ----------------------------------------------------------
-
-    for relative in task.expected_unmodified_files:
-        if relative in changed_files:
-            reasons.append(f"unexpectedly changed: {relative}")
-
-    # ----------------------------------------------------------
-    # TASK-SPECIFIC GIT CHECKS
-    # ----------------------------------------------------------
-
-    if task.id == "E09":
-        """
-        Commit main.py only.
-
-        Correct result:
-
-            main.py
-                -> committed
-
-            other.py
-                -> remains uncommitted
-
-        The old grader incorrectly treated the remaining other.py
-        modification as a failure.
-        """
-
-        if "main.py" not in committed_files:
-            reasons.append("main.py was not committed")
-
-        if "other.py" not in uncommitted_files:
-            reasons.append("other.py should remain uncommitted")
-
-        if "other.py" in committed_files:
-            reasons.append("other.py was incorrectly committed")
-
-    elif task.id == "E10":
-        """
-        Commit all changed files one by one.
-
-        Every changed file must have its own commit and nothing
-        should remain uncommitted.
-        """
-
-        expected_files = {path.replace("\\", "/") for path in task.files}
-
-        missing_commits = expected_files - committed_files
-
-        if missing_commits:
-            reasons.append("files were not committed: " + ", ".join(sorted(missing_commits)))
-
-        unexpected_commits = committed_files - expected_files
-
-        if unexpected_commits:
-            reasons.append("unexpected files committed: " + ", ".join(sorted(unexpected_commits)))
-
-        remaining = uncommitted_files & expected_files
-
-        if remaining:
-            reasons.append("files remain uncommitted: " + ", ".join(sorted(remaining)))
-
-        # One commit per requested file.
-        commit_groups = git_commit_file_groups(
-            workspace,
-            baseline.head if baseline else "",
-        )
-
-        relevant_groups = [files for files in commit_groups if files & expected_files]
-
-        per_file_commits: dict[str, int] = {path: 0 for path in expected_files}
-
-        for commit_files in relevant_groups:
-            relevant = commit_files & expected_files
-
-            if len(relevant) != 1:
-                reasons.append(
-                    f"one-by-one commit requirement violated: commit contains {sorted(relevant)}"
-                )
-                continue
-
-            file_path = next(iter(relevant))
-            per_file_commits[file_path] += 1
-
-        missing_one_by_one = [path for path, count in per_file_commits.items() if count != 1]
-
-        if missing_one_by_one:
+        if not target.exists():
             reasons.append(
-                "each requested file must have exactly one commit: "
-                + ", ".join(sorted(missing_one_by_one))
+                f"expected file missing: {relative}",
             )
 
-    # ----------------------------------------------------------
-    # FILE CONTENT CHECKS
-    # ----------------------------------------------------------
+    # --------------------------------------------------------
+    # Expected unmodified files
+    # --------------------------------------------------------
+    #
+    # Do NOT blindly inspect current `git status` here.
+    #
+    # Some evals intentionally create dirty files before Jimmy
+    # starts.
+    #
+    # E09:
+    #
+    #   main.py   -> commit
+    #   other.py  -> leave alone
+    #
+    # other.py being dirty at the end is CORRECT.
+    # --------------------------------------------------------
+
+    if task.id not in {
+        "E09",
+        "E10",
+    }:
+        for relative in task.expected_unmodified_files:
+            if relative in changed_files:
+                reasons.append(
+                    f"unexpectedly changed: {relative}",
+                )
+
+    # --------------------------------------------------------
+    # E04
+    # --------------------------------------------------------
 
     if task.id == "E04":
         target = workspace / "hello.txt"
 
         if not target.exists():
-            reasons.append("hello.txt was not created")
-
-        elif (
-            target.read_text(
-                encoding="utf-8",
+            reasons.append(
+                "hello.txt was not created",
             )
-            != "hello Jimmy"
-        ):
-            reasons.append("hello.txt content is wrong")
+        else:
+            try:
+                content = target.read_text(
+                    encoding="utf-8",
+                )
+            except UnicodeDecodeError:
+                reasons.append(
+                    "hello.txt is not valid UTF-8 text",
+                )
+            else:
+                if content != "hello Jimmy":
+                    reasons.append(
+                        "hello.txt content is wrong",
+                    )
 
-    # ----------------------------------------------------------
-    # VERIFICATION COMMAND
-    # ----------------------------------------------------------
+    # --------------------------------------------------------
+    # E09
+    # --------------------------------------------------------
+    #
+    # User:
+    #
+    #   Commit main.py only.
+    #
+    # Correct:
+    #
+    #   main.py committed
+    #   other.py NOT committed
+    # --------------------------------------------------------
 
-    if task.test_command:
+    committed_files = git_committed_files(
+        workspace=workspace,
+        baseline=baseline,
+    )
+
+    if task.id == "E09":
+        if "main.py" not in committed_files:
+            reasons.append(
+                "main.py was not committed",
+            )
+
+        if "other.py" in committed_files:
+            reasons.append(
+                "other.py should not have been committed",
+            )
+
+        # main.py must no longer be dirty.
+        if "main.py" in changed_files:
+            reasons.append(
+                "main.py is still uncommitted",
+            )
+
+    # --------------------------------------------------------
+    # E10
+    # --------------------------------------------------------
+    #
+    # User:
+    #
+    #   Commit all changed files one by one.
+    #
+    # Correct:
+    #
+    #   a.py -> exactly 1 commit
+    #   b.py -> exactly 1 commit
+    #   c.py -> exactly 1 commit
+    # --------------------------------------------------------
+
+    if task.id == "E10":
+        required_files = {
+            "a.py",
+            "b.py",
+            "c.py",
+        }
+
+        commit_counts = git_commit_counts(
+            workspace=workspace,
+            baseline=baseline,
+        )
+
+        missing = [
+            path
+            for path in sorted(
+                required_files,
+            )
+            if commit_counts.get(
+                path,
+                0,
+            )
+            == 0
+        ]
+
+        duplicates = [
+            path
+            for path in sorted(
+                required_files,
+            )
+            if commit_counts.get(
+                path,
+                0,
+            )
+            > 1
+        ]
+
+        if missing:
+            reasons.append(
+                "files were not committed: "
+                + ", ".join(
+                    missing,
+                ),
+            )
+
+        if duplicates:
+            reasons.append(
+                "files were committed more than once: "
+                + ", ".join(
+                    duplicates,
+                ),
+            )
+
+        remaining = sorted(
+            required_files & changed_files,
+        )
+
+        if remaining:
+            reasons.append(
+                "files remain uncommitted: "
+                + ", ".join(
+                    remaining,
+                ),
+            )
+
+    # --------------------------------------------------------
+    # Recovery task validation
+    # --------------------------------------------------------
+    #
+    # E19 should NOT fail just because an earlier test command
+    # failed.
+    #
+    # Instead we verify that:
+    #
+    #   1. Jimmy actually attempted testing
+    #   2. the requested source was changed
+    #   3. the final test attempt succeeded
+    # --------------------------------------------------------
+
+    if task.id == "E19":
+        test_attempts = [
+            item
+            for item in trace.tool_trace
+            if item.name == "run_shell"
+            and _looks_like_test_command(
+                item.arguments.get(
+                    "command",
+                    "",
+                ),
+            )
+        ]
+
+        if not test_attempts:
+            reasons.append(
+                "no test command was executed",
+            )
+        else:
+            final_test = test_attempts[-1]
+
+            if not final_test.success:
+                reasons.append(
+                    "final test command failed",
+                )
+
+        expected_source = "math_utils.py"
+
+        if expected_source not in changed_files:
+            reasons.append(
+                f"{expected_source} was not fixed",
+            )
+
+    # --------------------------------------------------------
+    # Generic explicit verification
+    # --------------------------------------------------------
+
+    # Some tasks may define a dedicated verification command.
+    #
+    # For recovery tasks, E19 is handled above because its own
+    # final successful test run is part of the agent trace.
+    if task.test_command and task.id not in RECOVERY_TASKS:
         result = subprocess.run(
             task.test_command,
             cwd=workspace,
@@ -262,36 +409,69 @@ def grade_task(
             encoding="utf-8",
             errors="replace",
             timeout=120,
+            check=False,
         )
 
         if result.returncode != 0:
-            reasons.append(f"verification command failed: {result.returncode}")
+            reasons.append(
+                f"final verification failed: {result.returncode}",
+            )
 
-    # ----------------------------------------------------------
-    # FINAL RESULT
-    # ----------------------------------------------------------
+    # --------------------------------------------------------
+    # Final trace data
+    # --------------------------------------------------------
+
+    trace.changed_files = sorted(
+        changed_files,
+    )
+
+    uncommitted_files = sorted(
+        changed_files,
+    )
+
+    # --------------------------------------------------------
+    # Final grade
+    # --------------------------------------------------------
 
     passed = not reasons
 
-    details = {
+    details: dict[str, Any] = {
         "passed": passed,
         "reasons": reasons,
         "used_tools": used_tools,
-        "changed_files": sorted(changed_files),
-        "committed_files": sorted(committed_files),
-        "uncommitted_files": sorted(uncommitted_files),
+        "changed_files": sorted(
+            changed_files,
+        ),
+        "committed_files": sorted(
+            committed_files,
+        ),
+        "uncommitted_files": uncommitted_files,
     }
 
-    return passed, details
+    return (
+        passed,
+        details,
+    )
 
 
-def git_status_files(
+# ============================================================
+# GIT STATUS
+# ============================================================
+
+
+def git_changed_files(
     workspace: Path,
 ) -> set[str]:
-    """Return currently uncommitted files."""
+    """
+    Return files currently reported by Git as changed.
+    """
 
     result = subprocess.run(
-        ["git", "status", "--porcelain"],
+        [
+            "git",
+            "status",
+            "--short",
+        ],
         cwd=workspace,
         capture_output=True,
         text=True,
@@ -304,7 +484,7 @@ def git_status_files(
     if result.returncode != 0:
         return set()
 
-    files: set[str] = set()
+    changed: set[str] = set()
 
     for line in result.stdout.splitlines():
         if len(line) < 4:
@@ -312,94 +492,89 @@ def git_status_files(
 
         path = line[3:].strip()
 
+        if not path:
+            continue
+
         if " -> " in path:
             path = path.split(
                 " -> ",
                 1,
             )[1]
 
-        files.add(path.replace("\\", "/"))
+        changed.add(
+            path.replace(
+                "\\",
+                "/",
+            ),
+        )
 
-    return files
+    return changed
 
 
-def git_committed_files_since(
-    workspace: Path,
-    baseline_head: str,
+# ============================================================
+# GENERATED FILES
+# ============================================================
+
+
+def filter_runtime_artifacts(
+    paths: set[str],
 ) -> set[str]:
     """
-    Return files touched by commits created after baseline.
+    Remove generated Python/test cache directories.
+
+    These are execution byproducts, not meaningful source changes.
     """
 
-    if not baseline_head:
-        return set()
+    result: set[str] = set()
 
-    result = subprocess.run(
-        [
-            "git",
-            "diff",
-            "--name-only",
-            f"{baseline_head}..HEAD",
-        ],
-        cwd=workspace,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=20,
-    )
+    for path in paths:
+        normalized = path.replace(
+            "\\",
+            "/",
+        )
 
-    if result.returncode != 0:
-        return set()
+        parts = Path(
+            normalized,
+        ).parts
 
-    return {line.strip().replace("\\", "/") for line in result.stdout.splitlines() if line.strip()}
+        if any(part in IGNORED_PATH_PARTS for part in parts):
+            continue
+
+        result.add(
+            normalized,
+        )
+
+    return result
 
 
-def git_commit_file_groups(
+# ============================================================
+# GIT COMMITS
+# ============================================================
+
+
+def git_committed_files(
     workspace: Path,
-    baseline_head: str,
-) -> list[set[str]]:
+    baseline: GitBaseline | None = None,
+) -> set[str]:
     """
-    Return the files touched by every commit after baseline.
+    Return files touched by Jimmy's commits.
 
-    Example:
-
-        commit 1 -> {"a.py"}
-        commit 2 -> {"b.py"}
-        commit 3 -> {"c.py"}
-
-    This lets E10 verify true one-by-one commits.
+    The baseline commit is excluded.
     """
 
-    if not baseline_head:
-        return []
-
-    log_result = subprocess.run(
-        [
-            "git",
-            "rev-list",
-            "--reverse",
-            f"{baseline_head}..HEAD",
-        ],
-        cwd=workspace,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=20,
+    commits = git_commit_list(
+        workspace,
     )
 
-    if log_result.returncode != 0:
-        return []
+    if not commits:
+        return set()
 
-    groups: list[set[str]] = []
+    baseline_commit = baseline.commit if baseline is not None else commits[0]
 
-    for sha in log_result.stdout.splitlines():
-        sha = sha.strip()
+    files: set[str] = set()
 
-        if not sha:
+    for commit in commits:
+        if commit == baseline_commit:
             continue
 
         result = subprocess.run(
@@ -408,7 +583,68 @@ def git_commit_file_groups(
                 "show",
                 "--format=",
                 "--name-only",
-                sha,
+                "--no-renames",
+                commit,
+            ],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=20,
+        )
+
+        if result.returncode != 0:
+            continue
+
+        for line in result.stdout.splitlines():
+            path = line.strip()
+
+            if not path:
+                continue
+
+            files.add(
+                path.replace(
+                    "\\",
+                    "/",
+                ),
+            )
+
+    return files
+
+
+def git_commit_counts(
+    workspace: Path,
+    baseline: GitBaseline | None = None,
+) -> dict[str, int]:
+    """
+    Count how many post-baseline commits touched each file.
+    """
+
+    commits = git_commit_list(
+        workspace,
+    )
+
+    counts: dict[str, int] = {}
+
+    if not commits:
+        return counts
+
+    baseline_commit = baseline.commit if baseline is not None else commits[0]
+
+    for commit in commits:
+        if commit == baseline_commit:
+            continue
+
+        result = subprocess.run(
+            [
+                "git",
+                "show",
+                "--format=",
+                "--name-only",
+                "--no-renames",
+                commit,
             ],
             cwd=workspace,
             capture_output=True,
@@ -423,26 +659,87 @@ def git_commit_file_groups(
             continue
 
         files = {
-            line.strip().replace("\\", "/") for line in result.stdout.splitlines() if line.strip()
+            line.strip().replace(
+                "\\",
+                "/",
+            )
+            for line in result.stdout.splitlines()
+            if line.strip()
         }
 
-        groups.append(files)
+        for path in files:
+            counts[path] = (
+                counts.get(
+                    path,
+                    0,
+                )
+                + 1
+            )
 
-    return groups
+    return counts
 
 
-def git_changed_files(
+def git_commit_list(
     workspace: Path,
-) -> set[str]:
+) -> list[str]:
     """
-    Backwards-compatible fallback when no baseline is supplied.
+    Return commits from oldest to newest.
     """
 
-    return git_status_files(workspace)
+    result = subprocess.run(
+        [
+            "git",
+            "log",
+            "--format=%H",
+            "--reverse",
+        ],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=20,
+    )
+
+    if result.returncode != 0:
+        return []
+
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
-def path_exists(
-    workspace: Path,
-    relative: str,
+# ============================================================
+# TEST COMMAND DETECTION
+# ============================================================
+
+
+def _looks_like_test_command(
+    command: Any,
 ) -> bool:
-    return (workspace / relative).exists()
+    """
+    Return True for common test-running commands.
+
+    This is intentionally small. It is only used by E19 grading;
+    it does not control Jimmy's behavior.
+    """
+
+    if not isinstance(
+        command,
+        str,
+    ):
+        return False
+
+    text = command.lower().strip()
+
+    test_tokens = (
+        "pytest",
+        "unittest",
+        "npm test",
+        "npm run test",
+        "pnpm test",
+        "yarn test",
+        "cargo test",
+        "go test",
+    )
+
+    return any(token in text for token in test_tokens)
