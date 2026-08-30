@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import re
 import time
+from collections.abc import Callable
 from typing import Any
 
 from jimmy.agent.events import AgentEvent
 from jimmy.agent.executor import ToolExecutor
 from jimmy.agent.main_loop.agent_progress import AgentProgress
+from jimmy.agent.main_loop.agent_tool_guard import ToolGuard
 from jimmy.agent.observer import Observer
 from jimmy.agent.recovery import RecoveryManager
 from jimmy.observability.metrics import (
@@ -22,9 +23,21 @@ from jimmy.state.session import SessionState
 from jimmy.tools.registry import ToolRegistry
 from jimmy.utils.limits import truncate_output
 
+EventHandler = Callable[[AgentEvent], None]
+
+PermissionHandler = Callable[
+    [str, str, dict[str, Any]],
+    bool,
+]
+
 
 class AgentToolRunner:
-    """Validate, execute, observe and record one tool call."""
+    """
+    Validate → permission → execute → observe → recover.
+
+    ToolGuard performs deterministic tool-choice validation.
+    It never calls the LLM.
+    """
 
     def __init__(
         self,
@@ -34,6 +47,7 @@ class AgentToolRunner:
         recovery: RecoveryManager,
         permissions: PermissionManager,
         observability: Observability,
+        workspace,
     ) -> None:
         self.tools = tools
         self.executor = executor
@@ -42,41 +56,9 @@ class AgentToolRunner:
         self.permissions = permissions
         self.observability = observability
 
-    @staticmethod
-    def _tool_policy_error(
-        tool_name: str,
-        arguments: dict[str, Any],
-    ) -> str | None:
-        """
-        Enforce generic dedicated-tool rules.
-
-        Do not replace every shell command with a special case.
-        Only reject operations for which Jimmy already has a
-        dedicated tool and the generic command would be risky.
-        """
-
-        if tool_name != "run_shell":
-            return None
-
-        command = str(
-            arguments.get(
-                "command",
-                "",
-            )
-        ).strip()
-
-        git_mutation = re.match(
-            r"^(?:git\s+)?"
-            r"(?:add|commit|reset|restore|checkout|switch)"
-            r"\b",
-            command,
-            flags=re.IGNORECASE,
+        self.guard = ToolGuard(
+            workspace=workspace,
         )
-
-        if git_mutation:
-            return "Do not use run_shell for Git changes. Use the dedicated git_commit tool."
-
-        return None
 
     def run(
         self,
@@ -86,8 +68,8 @@ class AgentToolRunner:
         tool_call: Any,
         progress: AgentProgress,
         task_turn: int,
-        on_event=None,
-        on_permission=None,
+        on_event: EventHandler | None = None,
+        on_permission: PermissionHandler | None = None,
     ) -> bool:
         started_at = time.monotonic()
 
@@ -97,7 +79,8 @@ class AgentToolRunner:
             if on_event is not None:
                 on_event(event)
 
-        tool_name = tool_call.name
+        tool_name = str(tool_call.name)
+
         arguments = dict(tool_call.arguments or {})
 
         emit(
@@ -109,23 +92,40 @@ class AgentToolRunner:
             )
         )
 
-        # --------------------------------------------
-        # Generic tool correctness
-        # --------------------------------------------
+        # ====================================================
+        # 1. TOOL GUARD
+        # ====================================================
 
-        policy_error = self._tool_policy_error(
-            tool_name,
-            arguments,
+        guard = self.guard.check(
+            tool_name=tool_name,
+            arguments=arguments,
+            state=state,
         )
 
-        if policy_error:
+        if not guard.allowed:
+            reason = guard.reason
+
             state.add_message(
                 {
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "name": tool_name,
-                    "content": (f"Tool rejected: {policy_error}"),
+                    "content": (
+                        "Tool rejected by Jimmy's tool guard.\n"
+                        f"{reason}\n"
+                        "Choose a tool that matches the requested action."
+                    ),
                 }
+            )
+
+            self.observability.record(
+                "tool_guard_rejection",
+                {
+                    "session_id": session_id,
+                    "task_turn": task_turn,
+                    "tool": tool_name,
+                    "reason": reason,
+                },
             )
 
             emit(
@@ -145,11 +145,17 @@ class AgentToolRunner:
                 changed_workspace=False,
             )
 
+            # Important:
+            #
+            # A guard rejection is not a crash.
+            #
+            # The LLM should see the rejection and choose
+            # a better tool on its next decision.
             return False
 
-        # --------------------------------------------
-        # Anti-loop
-        # --------------------------------------------
+        # ====================================================
+        # 2. PROGRESS / ANTI-LOOP
+        # ====================================================
 
         allowed, reason = progress.can_run(
             tool_name,
@@ -178,15 +184,15 @@ class AgentToolRunner:
 
             raise RuntimeError(reason)
 
-        # --------------------------------------------
-        # Resolve tool
-        # --------------------------------------------
+        # ====================================================
+        # 3. RESOLVE TOOL
+        # ====================================================
 
         tool = self.tools.get(tool_name)
 
-        # --------------------------------------------
-        # Permission
-        # --------------------------------------------
+        # ====================================================
+        # 4. PERMISSION
+        # ====================================================
 
         decision = self.permissions.check(tool)
 
@@ -198,7 +204,7 @@ class AgentToolRunner:
                     kind="tool_end",
                     turn=task_turn,
                     tool_name=tool_name,
-                    elapsed=time.monotonic() - started_at,
+                    elapsed=(time.monotonic() - started_at),
                     message="denied",
                 )
             )
@@ -250,9 +256,9 @@ class AgentToolRunner:
 
                 return False
 
-        # --------------------------------------------
-        # Execute
-        # --------------------------------------------
+        # ====================================================
+        # 5. EXECUTE
+        # ====================================================
 
         try:
             tool_result = self.executor.execute(
@@ -310,9 +316,9 @@ class AgentToolRunner:
 
             return False
 
-        # --------------------------------------------
-        # Normalize result
-        # --------------------------------------------
+        # ====================================================
+        # 6. NORMALIZE RESULT
+        # ====================================================
 
         output = truncate_output(
             tool_result.output
@@ -344,9 +350,9 @@ class AgentToolRunner:
             },
         )
 
-        # --------------------------------------------
-        # Observe
-        # --------------------------------------------
+        # ====================================================
+        # 7. OBSERVE
+        # ====================================================
 
         if tool_result.success:
             observation = self.observer.observe_success(
@@ -369,9 +375,9 @@ class AgentToolRunner:
             )
         )
 
-        # --------------------------------------------
-        # Failure / recovery
-        # --------------------------------------------
+        # ====================================================
+        # 8. TOOL FAILURE / RECOVERY
+        # ====================================================
 
         if not tool_result.success:
             metrics.failures += 1
@@ -390,9 +396,9 @@ class AgentToolRunner:
             if not recovery.should_continue:
                 raise RuntimeError(recovery.message)
 
-        # --------------------------------------------
-        # Save observation
-        # --------------------------------------------
+        # ====================================================
+        # 9. SAVE OBSERVATION
+        # ====================================================
 
         state.add_message(
             {
@@ -403,8 +409,6 @@ class AgentToolRunner:
             }
         )
 
-        # A successful non-read-only tool is treated as a
-        # possible workspace change and resets repetition.
         changed_workspace = tool_result.success and not tool.metadata.read_only
 
         progress.record(
@@ -414,9 +418,9 @@ class AgentToolRunner:
             changed_workspace=changed_workspace,
         )
 
-        # --------------------------------------------
-        # Generic completion
-        # --------------------------------------------
+        # ====================================================
+        # 10. GENERIC COMPLETION
+        # ====================================================
 
         return bool(
             tool_result.success
