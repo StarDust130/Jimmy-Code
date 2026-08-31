@@ -14,11 +14,17 @@ class CreateFileSpec(BaseModel):
 
     path: str = Field(
         min_length=1,
-        description="Workspace-relative path of the new file.",
+        description=(
+            "Workspace-relative path for a NEW file. "
+            "Include the complete path, including directories when needed, "
+            "for example 'src/app/main.py' or 'mypkg/__init__.py'."
+        ),
     )
 
     content: str = Field(
-        description="Complete UTF-8 text content for the new file.",
+        description=(
+            "Complete UTF-8 text content that should be written to the new file."
+        ),
     )
 
 
@@ -27,13 +33,16 @@ class CreateFilesInput(BaseModel):
 
     files: list[CreateFileSpec] = Field(
         min_length=1,
-        description="Files to create.",
+        description=(
+            "One or more NEW files to create. "
+            "Use one call for several independent new files when practical."
+        ),
     )
 
 
 class CreateFilesTool(Tool):
     """
-    Create one or more new text files.
+    Create one or more new UTF-8 text files.
 
     Existing files are never overwritten.
     """
@@ -51,11 +60,17 @@ class CreateFilesTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Create one or more new UTF-8 text files inside the workspace. "
+            "Create new UTF-8 text files inside the workspace. "
+            "Use this when the target file does not already exist. "
             "Parent directories are created automatically. "
             "Existing files are never overwritten. "
-            "Use this instead of run_shell for creating source files, "
-            "HTML, CSS, JavaScript, Python, configuration, tests, or similar files."
+            "For a multi-file feature, prefer creating all required NEW "
+            "files in one call when their contents are already known. "
+            "Use the exact workspace-relative paths requested by the user; "
+            "for example, a Python package may require "
+            "'mypkg/__init__.py' and 'mypkg/calculator.py'. "
+            "Do not use this to modify an existing file; use edit_file instead. "
+            "Do not use run_shell merely to write source files."
         )
 
     @property
@@ -77,39 +92,46 @@ class CreateFilesTool(Tool):
     ) -> ToolResult:
         args = CreateFilesInput.model_validate(arguments)
 
-        if not args.files:
-            raise ValueError("At least one file is required.")
-
         resolved: list[tuple[CreateFileSpec, Path]] = []
-
         seen: set[str] = set()
 
         for spec in args.files:
             relative = spec.path.strip()
 
             if not relative:
-                raise ValueError("File path must not be empty.")
+                raise ValueError(
+                    "File path must not be empty.",
+                )
 
-            normalized_key = relative.replace("\\", "/").lower()
+            normalized = relative.replace(
+                "\\",
+                "/",
+            ).lower()
 
-            if normalized_key in seen:
-                raise ValueError(f"Duplicate file path: {relative}")
+            if normalized in seen:
+                raise ValueError(
+                    f"Duplicate file path: {relative}",
+                )
 
-            seen.add(normalized_key)
+            seen.add(normalized)
 
-            path = self.filesystem.resolve_path(relative)
+            path = self.filesystem.resolve_path(
+                relative,
+            )
 
             if path.exists():
                 raise FileExistsError(
-                    f"File already exists: {relative}. Use edit_file to modify it."
+                    f"File already exists: {relative}. "
+                    "Use edit_file to modify it.",
                 )
 
-            resolved.append((spec, path))
+            resolved.append(
+                (spec, path),
+            )
 
         created: list[str] = []
 
         try:
-            # Create all files only after validating all paths.
             for spec, path in resolved:
                 path.parent.mkdir(
                     parents=True,
@@ -121,15 +143,23 @@ class CreateFilesTool(Tool):
                     content=spec.content,
                 )
 
-                created.append(spec.path)
+                created.append(
+                    spec.path,
+                )
 
         except Exception:
-            # Best-effort rollback for files created by THIS invocation.
             for relative in created:
                 try:
-                    created_path = self.filesystem.resolve_path(relative)
-                    if created_path.exists() and created_path.is_file():
+                    created_path = self.filesystem.resolve_path(
+                        relative,
+                    )
+
+                    if (
+                        created_path.exists()
+                        and created_path.is_file()
+                    ):
                         created_path.unlink()
+
                 except OSError:
                     pass
 
@@ -139,7 +169,10 @@ class CreateFilesTool(Tool):
             output=(
                 f"Created {len(created)} file"
                 f"{'' if len(created) == 1 else 's'}:\n"
-                + "\n".join(f"- {path}" for path in created)
+                + "\n".join(
+                    f"- {path}"
+                    for path in created
+                )
             ),
             metadata={
                 "created": created,
@@ -152,12 +185,6 @@ class CreateFilesTool(Tool):
         path: Path,
         content: str,
     ) -> None:
-        """
-        Create the file without overwriting an existing file.
-
-        Uses exclusive creation semantics to avoid accidental replacement.
-        """
-
         try:
             with path.open(
                 "x",
@@ -170,4 +197,6 @@ class CreateFilesTool(Tool):
             raise
 
         except OSError as exc:
-            raise OSError(f"Failed to create file '{path}': {exc}") from exc
+            raise OSError(
+                f"Failed to create file '{path}': {exc}",
+            ) from exc
