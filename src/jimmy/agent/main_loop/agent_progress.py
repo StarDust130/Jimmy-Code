@@ -8,7 +8,6 @@ from typing import Any
 #
 # We do NOT want to block a legitimate retry too early.
 MAX_SAME_FAILED_ACTIONS = 2
-MAX_CONSECUTIVE_TOOL_FAILURES = 3
 
 
 @dataclass(slots=True)
@@ -111,22 +110,6 @@ class AgentProgress:
                     "The exact same tool action has already "
                     f"failed {same_failures} times without progress. "
                     "Do not repeat it. Use a different approach."
-                ),
-            )
-
-        tool_failures = self._tool_failure_streaks.get(
-            tool_name,
-            0,
-        )
-
-        if tool_failures >= MAX_CONSECUTIVE_TOOL_FAILURES:
-            return (
-                False,
-                (
-                    f"Tool '{tool_name}' has failed "
-                    f"{tool_failures} consecutive times. "
-                    "Stop repeating it and choose a different "
-                    "valid approach."
                 ),
             )
 
