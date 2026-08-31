@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from typing import Final
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from jimmy.tools.base import Tool
 from jimmy.tools.filesystem import Filesystem
@@ -18,7 +18,11 @@ MAX_TIMEOUT: Final[int] = 600
 class RunShellInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    command: str
+    command: str = Field(
+        description=(
+            "Shell command to execute from the workspace root."
+        ),
+    )
 
 
 class RunShellTool(Tool):
@@ -30,7 +34,9 @@ class RunShellTool(Tool):
         timeout: int = DEFAULT_TIMEOUT,
     ) -> None:
         if timeout <= 0:
-            raise ValueError("timeout must be greater than zero.")
+            raise ValueError(
+                "timeout must be greater than zero.",
+            )
 
         self.filesystem = filesystem
         self.timeout = min(
@@ -45,13 +51,17 @@ class RunShellTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Run a shell command inside the current workspace. "
-            "Use this for tests, builds, linters, scripts, package "
-            "commands, programs, and other commands that genuinely "
-            "require a shell. "
-            "Do not use this for creating or editing files when a "
-            "dedicated filesystem tool exists. "
-            "For Git commits, use git_commit instead of git commit."
+            "Run a shell command from the workspace root. "
+            "Use this when command execution is actually required: "
+            "tests, builds, linters, formatters, package managers, "
+            "scripts, programs, servers, migrations, and other shell "
+            "operations. "
+            "Do not use run_shell to create or edit source files when "
+            "create_files or edit_file can perform the operation directly. "
+            "For Git mutations, use git_commit instead of git add/commit. "
+            "When a command fails, use its exit code and stdout/stderr "
+            "to diagnose the actual cause before choosing the next command. "
+            "Do not blindly try unrelated commands."
         )
 
     @property
@@ -71,14 +81,20 @@ class RunShellTool(Tool):
         self,
         arguments: BaseModel,
     ) -> ToolResult:
-        args = RunShellInput.model_validate(arguments)
+        args = RunShellInput.model_validate(
+            arguments,
+        )
 
         command = args.command.strip()
 
         if not command:
-            raise ValueError("'command' must be a non-empty string.")
+            raise ValueError(
+                "'command' must be a non-empty string.",
+            )
 
-        check_shell_command(command)
+        check_shell_command(
+            command,
+        )
 
         try:
             result = subprocess.run(
@@ -94,10 +110,14 @@ class RunShellTool(Tool):
             )
 
         except subprocess.TimeoutExpired as exc:
-            raise TimeoutError(f"Command timed out after {self.timeout} seconds.") from exc
+            raise TimeoutError(
+                f"Command timed out after {self.timeout} seconds.",
+            ) from exc
 
         except OSError as exc:
-            raise RuntimeError(f"Failed to start shell command: {exc}") from exc
+            raise RuntimeError(
+                f"Failed to start shell command: {exc}",
+            ) from exc
 
         stdout = result.stdout.strip()
         stderr = result.stderr.strip()
@@ -116,29 +136,18 @@ class RunShellTool(Tool):
             "timed_out": False,
         }
 
-        # --------------------------------------------------
-        # Successful command
-        # --------------------------------------------------
-
         if result.returncode == 0:
             return ToolResult.ok(
                 output=output,
                 metadata=metadata,
             )
 
-        # --------------------------------------------------
-        # Failed command
-        #
-        # IMPORTANT:
-        # Keep stdout/stderr/exit code in `output`.
-        # The agent needs that information to understand
-        # what went wrong and decide what to do next.
-        # --------------------------------------------------
-
         return ToolResult(
             success=False,
             output=output,
             error_type="ShellCommandFailed",
-            error=(f"Command exited with code {result.returncode}."),
+            error=(
+                f"Command exited with code {result.returncode}."
+            ),
             metadata=metadata,
         )
