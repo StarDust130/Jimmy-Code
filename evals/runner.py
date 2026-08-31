@@ -10,61 +10,34 @@ import time
 from pathlib import Path
 from typing import Any
 
-# ============================================================
-# DIRECT EXECUTION SUPPORT
-# ============================================================
-#
-# Both work:
+from evals.config import EvalConfig
+from evals.graders.graders import (
+    capture_git_state,
+    grade_task,
+)
+from evals.rate_limit import RateLimitedProvider, RequestLimiter
+from evals.tasks.coding_tasks import TASKS, EvalTask
+from evals.trace import EvalTrace, TraceCollector
+from jimmy.config.settings import Settings
+from jimmy.llm.gemini import GeminiProvider
+
+# Allow:
 #
 #   python evals/runner.py
 #   python -m evals.runner
 #
-# ============================================================
-
 if __package__ in {None, ""}:
     REPO_ROOT = Path(__file__).resolve().parent.parent
 
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
-
-# ============================================================
-# EVAL IMPORTS
-# ============================================================
-
-from evals.config import EvalConfig
-from evals.graders.graders import (
-    capture_git_state,
-    grade_task,
-)
-from evals.rate_limit import (
-    RateLimitedProvider,
-    RequestLimiter,
-)
-from evals.tasks.coding_tasks import (
-    TASKS,
-    EvalTask,
-)
-from evals.trace import (
-    EvalTrace,
-    TraceCollector,
-)
-
-# ============================================================
-# JIMMY IMPORTS
-# ============================================================
-
 try:
     from jimmy.agent.main_loop.agent_loop import AgentLoop
 except ImportError:
-    from jimmy.agent.agent_loop import AgentLoop
+    from jimmy.agent.main_loop.agent_loop import AgentLoop
 
-from jimmy.config.settings import Settings
-from jimmy.llm.gemini import GeminiProvider
-from jimmy.permissions.manager import (
-    PermissionManager,
-    PermissionMode,
-)
+from jimmy.permissions.manager import PermissionManager, PermissionMode
 from jimmy.tools.defaults import create_default_registry
 
 # ============================================================
@@ -74,28 +47,28 @@ from jimmy.tools.defaults import create_default_registry
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run Jimmy coding evaluations.",
+        description="Run Jimmy coding evals in isolated workspaces.",
     )
 
     parser.add_argument(
         "--task",
-        help="Run one eval, e.g. E07.",
+        help="Run one eval, for example E07.",
     )
 
     parser.add_argument(
         "--start",
-        help="First eval ID, e.g. E01.",
+        help="First eval id.",
     )
 
     parser.add_argument(
         "--end",
-        help="Last eval ID, e.g. E10.",
+        help="Last eval id.",
     )
 
     parser.add_argument(
         "--report",
         default="evals/traces/latest.json",
-        help="JSON report path.",
+        help="Output report path.",
     )
 
     parser.add_argument(
@@ -108,7 +81,7 @@ def parse_args() -> argparse.Namespace:
 
 
 # ============================================================
-# COMMAND EXECUTION
+# GIT / PROCESS
 # ============================================================
 
 
@@ -117,35 +90,23 @@ def run_cmd(
     args: list[str],
     *,
     timeout: int = 30,
-    check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
+    """
+    Run a command and raise on failure.
+
+    Eval setup commands are expected to succeed.
+    """
+
+    return subprocess.run(
         args,
         cwd=cwd,
+        check=True,
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
         timeout=timeout,
-        check=False,
     )
-
-    if check and result.returncode != 0:
-        stdout = result.stdout.strip()
-        stderr = result.stderr.strip()
-
-        details = stderr or stdout or "Command failed without output."
-
-        raise RuntimeError(
-            f"Command failed with exit code {result.returncode}:\n$ {' '.join(args)}\n{details}",
-        )
-
-    return result
-
-
-# ============================================================
-# GIT WORKSPACE
-# ============================================================
 
 
 def init_git_repo(
@@ -153,7 +114,10 @@ def init_git_repo(
 ) -> None:
     run_cmd(
         workspace,
-        ["git", "init"],
+        [
+            "git",
+            "init",
+        ],
     )
 
     run_cmd(
@@ -181,6 +145,10 @@ def create_fixtures(
     workspace: Path,
     task: EvalTask,
 ) -> None:
+    """
+    Create exactly the files required by the eval.
+    """
+
     for relative_path, content in task.files.items():
         target = workspace / relative_path
 
@@ -199,14 +167,18 @@ def create_baseline(
     workspace: Path,
 ) -> None:
     """
-    Create the clean baseline commit.
+    Commit the fixture state.
 
-    Fixtures must exist before this is called.
+    This commit represents the repository BEFORE Jimmy works.
     """
 
     run_cmd(
         workspace,
-        ["git", "add", "."],
+        [
+            "git",
+            "add",
+            ".",
+        ],
     )
 
     status = run_cmd(
@@ -227,7 +199,7 @@ def create_baseline(
             "git",
             "commit",
             "-m",
-            "eval baseline",
+            "✨ eval baseline",
         ],
     )
 
@@ -237,59 +209,46 @@ def prepare_post_baseline_changes(
     task: EvalTask,
 ) -> None:
     """
-    Add intentional dirty changes for Git evals.
+    Add intentional changes required by Git evals.
+
+    E09 and E10 need already-dirty files so the agent can commit them.
     """
 
-    if task.id not in {
-        "E09",
-        "E10",
-    }:
-        return
+    if task.id == "E09" or task.id == "E10":
+        for relative_path in task.files:
+            path = workspace / relative_path
 
-    for relative_path in task.files:
-        path = workspace / relative_path
-
-        original = path.read_text(
-            encoding="utf-8",
-        )
-
-        path.write_text(
-            original + "\n# changed by eval\n",
-            encoding="utf-8",
-        )
+            path.write_text(
+                path.read_text(
+                    encoding="utf-8",
+                )
+                + "# changed by eval\n",
+                encoding="utf-8",
+            )
 
 
 # ============================================================
-# GEMINI
+# LLM
 # ============================================================
 
 
 def make_provider(
     config: EvalConfig,
-) -> tuple[
-    RateLimitedProvider,
-    RequestLimiter,
-]:
-    """
-    Use the same project configuration as Jimmy.
-
-    Settings() loads .env through jimmy.config.settings.
-    """
-
+) -> tuple[Any, RequestLimiter]:
     settings = Settings()
 
     api_key = settings.gemini_api_key.strip()
 
     if not api_key:
         raise RuntimeError(
-            "Gemini API key is missing from project configuration.",
+            "GEMINI_API_KEY is empty in .env.",
         )
 
     model = settings.gemini_model.strip()
 
     if not model:
         raise RuntimeError(
-            "Gemini model is missing from project configuration.",
+            "GEMINI_MODEL is empty in .env.",
         )
 
     provider = GeminiProvider(
@@ -308,21 +267,18 @@ def make_provider(
         config.max_rate_limit_retries,
     )
 
-    return (
-        wrapped_provider,
-        limiter,
-    )
+    return wrapped_provider, limiter
 
 
 # ============================================================
-# BUILD JIMMY
+# AGENT
 # ============================================================
 
 
 def build_agent(
     workspace: Path,
     config: EvalConfig,
-    provider: RateLimitedProvider,
+    provider: Any,
 ) -> AgentLoop:
     tools = create_default_registry(
         root=workspace,
@@ -361,41 +317,29 @@ def select_tasks(
             f"Unknown eval task: {args.task}",
         )
 
-    task_ids = [task.id for task in TASKS]
+    ids = [task.id for task in TASKS]
 
-    start_index = (
-        task_ids.index(
-            args.start.upper(),
-        )
-        if args.start
-        else 0
-    )
+    start = ids.index(args.start.upper()) if args.start else 0
 
-    end_index = (
-        task_ids.index(
-            args.end.upper(),
-        )
-        if args.end
-        else len(TASKS) - 1
-    )
+    end = ids.index(args.end.upper()) if args.end else len(TASKS) - 1
 
-    if end_index < start_index:
+    if end < start:
         raise ValueError(
-            "--end must be after --start.",
+            "--end must be after --start",
         )
 
-    return list(TASKS[start_index : end_index + 1])
+    return list(TASKS[start : end + 1])
 
 
 # ============================================================
-# RUN ONE TASK
+# SINGLE TASK
 # ============================================================
 
 
 def run_task(
     task: EvalTask,
     config: EvalConfig,
-    provider: RateLimitedProvider,
+    provider: Any,
     limiter: RequestLimiter,
     keep_workspace: bool,
 ) -> tuple[
@@ -404,7 +348,7 @@ def run_task(
 ]:
     workspace = Path(
         tempfile.mkdtemp(
-            prefix=(f"jimmy-eval-{task.id.lower()}-"),
+            prefix=f"jimmy-eval-{task.id.lower()}-",
         ),
     )
 
@@ -416,14 +360,10 @@ def run_task(
 
     started = time.monotonic()
 
-    wait_count_before = limiter.wait_count
-
-    wait_seconds_before = limiter.wait_seconds
-
     try:
-        # ----------------------------------------------------
-        # 1. Prepare clean repository
-        # ----------------------------------------------------
+        # --------------------------------------------------------
+        # Prepare isolated repository
+        # --------------------------------------------------------
 
         init_git_repo(
             workspace,
@@ -438,27 +378,32 @@ def run_task(
             workspace,
         )
 
-        # IMPORTANT:
-        # Capture baseline after the baseline commit.
-        baseline = capture_git_state(
-            workspace,
-        )
-
-        # Add intentionally dirty files for Git tests.
         prepare_post_baseline_changes(
             workspace,
             task,
         )
 
-        # ----------------------------------------------------
-        # 2. Build and run Jimmy
-        # ----------------------------------------------------
+        # IMPORTANT:
+        #
+        # Capture baseline AFTER setup is complete.
+        # Jimmy's work begins here.
+        baseline = capture_git_state(
+            workspace,
+        )
+
+        # --------------------------------------------------------
+        # Build agent
+        # --------------------------------------------------------
 
         agent = build_agent(
             workspace=workspace,
             config=config,
             provider=provider,
         )
+
+        # --------------------------------------------------------
+        # Run Jimmy
+        # --------------------------------------------------------
 
         try:
             result = agent.run(
@@ -480,9 +425,9 @@ def run_task(
             result,
         )
 
-        # ----------------------------------------------------
-        # 3. Grade actual workspace behavior
-        # ----------------------------------------------------
+        # --------------------------------------------------------
+        # Grade
+        # --------------------------------------------------------
 
         passed, details = grade_task(
             task=task,
@@ -493,51 +438,15 @@ def run_task(
 
         collector.trace.passed = passed
 
-        elapsed = time.monotonic() - started
+        details["wall_seconds"] = time.monotonic() - started
 
-        details["wall_seconds"] = elapsed
+        details["rate_limit_waits"] = limiter.wait_count
 
-        details["rate_limit_waits"] = limiter.wait_count - wait_count_before
-
-        details["rate_limit_wait_seconds"] = limiter.wait_seconds - wait_seconds_before
+        details["rate_limit_wait_seconds"] = limiter.wait_seconds
 
         details["workspace"] = str(
             workspace,
         )
-
-        return (
-            collector.trace,
-            details,
-        )
-
-    except KeyboardInterrupt:
-        raise
-
-    except Exception as exc:
-        elapsed = time.monotonic() - started
-
-        collector.fail(
-            exc,
-        )
-
-        collector.finish(
-            "",
-        )
-
-        collector.trace.passed = False
-
-        details = {
-            "passed": False,
-            "reasons": [
-                (f"Eval harness error: {type(exc).__name__}: {exc}"),
-            ],
-            "wall_seconds": elapsed,
-            "rate_limit_waits": (limiter.wait_count - wait_count_before),
-            "rate_limit_wait_seconds": (limiter.wait_seconds - wait_seconds_before),
-            "workspace": str(
-                workspace,
-            ),
-        }
 
         return (
             collector.trace,
@@ -553,60 +462,59 @@ def run_task(
 
 
 # ============================================================
-# PRINT RESULT
+# OUTPUT
 # ============================================================
 
 
 def print_task_result(
     index: int,
     total: int,
+    task: EvalTask,
     trace: EvalTrace,
     grade: dict[str, Any],
 ) -> None:
     status = "✅ PASS" if trace.passed else "❌ FAIL"
 
-    print(f"[{index:02d}/{total:02d}] {trace.eval_id} {status}")
+    print(
+        f"[{index:02d}/{total:02d}] {task.id} {status}",
+    )
 
-    print(f"   {trace.task}")
+    print(
+        f"   {task.prompt}",
+    )
 
-    print(f"   ⏱ {trace.elapsed_seconds:.1f}s  🧠 turns={trace.turns}  🛠 tools={trace.tool_calls}")
+    print(
+        f"   ⏱ {trace.elapsed_seconds:.1f}s  🧠 turns={trace.turns}  🛠 tools={trace.tool_calls}",
+    )
 
     print(
         f"   ❌ tool failures={trace.failed_tools}"
         f"  🔁 repeats={trace.repeated_tools}"
-        f"  🚫 wrong tools={trace.wrong_tool_attempts}"
+        f"  🚫 wrong tools={trace.wrong_tool_attempts}",
     )
 
-    changed_files = list(trace.changed_files)
-
-    if changed_files:
+    if trace.changed_files:
         print(
             "   📁 changed: "
             + ", ".join(
-                sorted(
-                    changed_files,
-                ),
+                trace.changed_files,
             ),
         )
 
-    committed_files = list(
-        grade.get(
-            "committed_files",
-            [],
-        ),
+    committed = grade.get(
+        "committed_files",
+        [],
     )
 
-    if committed_files:
+    if committed:
         print(
             "   📦 committed: "
             + ", ".join(
-                sorted(
-                    committed_files,
-                ),
+                committed,
             ),
         )
 
-    waits = grade.get(
+    wait_count = grade.get(
         "rate_limit_waits",
         0,
     )
@@ -616,9 +524,27 @@ def print_task_result(
         0.0,
     )
 
-    if waits:
+    if wait_count:
         print(
-            f"   ⏳ rate-limit waits={waits} ({wait_seconds:.1f}s)",
+            f"   ⏳ rate-limit waits={wait_count} ({wait_seconds:.1f}s)",
+        )
+
+    efficiency = grade.get(
+        "efficiency",
+    )
+
+    if isinstance(
+        efficiency,
+        dict,
+    ) and efficiency.get(
+        "measured",
+    ):
+        print(
+            "   ⚡ efficiency: "
+            f"tools={trace.tool_calls}"
+            f"/{task.efficiency_max_tools}"
+            f"  turns={trace.turns}"
+            f"/{task.efficiency_max_turns}",
         )
 
     for reason in grade.get(
@@ -629,15 +555,12 @@ def print_task_result(
             f"   → {reason}",
         )
 
-    if not trace.passed:
-        workspace = grade.get(
-            "workspace",
+    if grade.get(
+        "workspace",
+    ):
+        print(
+            f"   📂 workspace: {grade['workspace']}",
         )
-
-        if workspace:
-            print(
-                f"   📂 workspace: {workspace}",
-            )
 
     print()
 
@@ -651,36 +574,64 @@ def main() -> None:
     args = parse_args()
 
     config = EvalConfig(
-        keep_workspaces=(args.keep_workspaces),
+        keep_workspaces=args.keep_workspaces,
     )
 
     tasks = select_tasks(
         args,
     )
 
-    provider, limiter = make_provider(
-        config,
-    )
+    try:
+        provider, limiter = make_provider(
+            config,
+        )
+    except Exception as exc:
+        print(
+            "❌ Eval setup failed",
+            file=sys.stderr,
+        )
+        print(
+            f"   {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
-    print()
     print("╔══════════════════════════════════════════════╗")
-    print("║           JIMMY EVAL HARNESS                ║")
+    print("║          JIMMY EVAL HARNESS                 ║")
     print("╚══════════════════════════════════════════════╝")
     print()
 
-    print(f"🧪 Tasks: {len(tasks)}")
+    settings = Settings()
 
-    print(f"🚦 Request limit: {config.requests_per_minute} req/min")
+    print(
+        f"🧪 Tasks: {len(tasks)}",
+    )
 
-    print("📦 Workspace: fresh temporary Git repo")
+    print(
+        f"🚦 Request limit: {config.requests_per_minute} req/min",
+    )
 
-    print("🔐 Jimmy mode: FULL_ACCESS")
+    print(
+        "📦 Workspace: fresh temporary Git repo",
+    )
 
-    print("🔁 Execution: sequential")
+    print(
+        "🔐 Jimmy mode: FULL_ACCESS",
+    )
+
+    print(
+        f"🤖 Model: {settings.gemini_model}",
+    )
+
+    print(
+        "🔁 Execution: sequential",
+    )
 
     print()
 
     results: list[dict[str, Any]] = []
+
+    run_started = time.monotonic()
 
     for index, task in enumerate(
         tasks,
@@ -692,15 +643,47 @@ def main() -> None:
                 config=config,
                 provider=provider,
                 limiter=limiter,
-                keep_workspace=(args.keep_workspaces),
+                keep_workspace=args.keep_workspaces,
             )
 
         except KeyboardInterrupt:
-            print()
             print(
-                "⛔ Evaluation interrupted.",
+                "\n⛔ Evaluation interrupted.",
             )
             raise SystemExit(130)
+
+        except Exception as exc:
+            # Keep the harness alive long enough to record the
+            # failure rather than destroying the entire run.
+            trace = EvalTrace(
+                eval_id=task.id,
+                task=task.prompt,
+                workspace="",
+                started_at=time.monotonic(),
+                finished_at=time.monotonic(),
+                result="",
+                passed=False,
+                error=(f"{type(exc).__name__}: {exc}"),
+                turns=0,
+                tool_calls=0,
+                failed_tools=0,
+                repeated_tools=0,
+                wrong_tool_attempts=0,
+                changed_files=[],
+                tool_trace=[],
+            )
+
+            grade = {
+                "passed": False,
+                "reasons": [
+                    (f"Eval harness error: {type(exc).__name__}: {exc}"),
+                ],
+                "used_tools": [],
+                "changed_files": [],
+                "committed_files": [],
+                "uncommitted_files": [],
+                "workspace": "",
+            }
 
         results.append(
             {
@@ -712,6 +695,7 @@ def main() -> None:
         print_task_result(
             index=index,
             total=len(tasks),
+            task=task,
             trace=trace,
             grade=grade,
         )
@@ -720,7 +704,9 @@ def main() -> None:
     # SUMMARY
     # ========================================================
 
-    total = len(results)
+    total = len(
+        results,
+    )
 
     passed = sum(1 for item in results if item["trace"]["passed"])
 
@@ -734,11 +720,11 @@ def main() -> None:
         sum(item["trace"]["elapsed_seconds"] for item in results) / total if total else 0.0
     )
 
-    total_tool_failures = sum(item["trace"]["failed_tools"] for item in results)
+    tool_failures = sum(item["trace"]["failed_tools"] for item in results)
 
-    total_wrong_tools = sum(item["trace"]["wrong_tool_attempts"] for item in results)
+    wrong_tools = sum(item["trace"]["wrong_tool_attempts"] for item in results)
 
-    total_repeats = sum(item["trace"]["repeated_tools"] for item in results)
+    repeated_calls = sum(item["trace"]["repeated_tools"] for item in results)
 
     report = {
         "summary": {
@@ -749,18 +735,15 @@ def main() -> None:
             "avg_turns": avg_turns,
             "avg_tool_calls": avg_tools,
             "avg_seconds": avg_seconds,
-            "tool_failures": (total_tool_failures),
-            "wrong_tool_attempts": (total_wrong_tools),
-            "repeated_calls": (total_repeats),
-            "rate_limit_waits": (limiter.wait_count),
-            "rate_limit_wait_seconds": (limiter.wait_seconds),
+            "tool_failures": tool_failures,
+            "wrong_tool_attempts": wrong_tools,
+            "repeated_calls": repeated_calls,
+            "rate_limit_waits": limiter.wait_count,
+            "rate_limit_wait_seconds": limiter.wait_seconds,
+            "total_wall_seconds": (time.monotonic() - run_started),
         },
         "results": results,
     }
-
-    # ========================================================
-    # REPORT
-    # ========================================================
 
     report_path = Path(
         args.report,
@@ -780,42 +763,60 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    # ========================================================
-    # FINAL OUTPUT
-    # ========================================================
-
     print("╔══════════════════════════════════════════════╗")
-    print("║               FINAL RESULT                  ║")
+    print("║              FINAL RESULT                   ║")
     print("╚══════════════════════════════════════════════╝")
     print()
 
-    print(f"✅ Passed: {passed}/{total}")
+    print(
+        f"✅ Passed: {passed}/{total}",
+    )
 
-    print(f"📊 Pass rate: {report['summary']['pass_rate']:.1%}")
+    print(
+        f"📊 Pass rate: {report['summary']['pass_rate']:.1%}",
+    )
 
-    print(f"🧠 Avg turns: {avg_turns:.2f}")
+    print(
+        f"🧠 Avg turns: {avg_turns:.2f}",
+    )
 
-    print(f"🛠 Avg tools: {avg_tools:.2f}")
+    print(
+        f"🛠 Avg tools: {avg_tools:.2f}",
+    )
 
-    print(f"⏱ Avg task time: {avg_seconds:.1f}s")
+    print(
+        f"⏱ Avg task time: {avg_seconds:.1f}s",
+    )
 
-    print(f"❌ Tool failures: {total_tool_failures}")
+    print(
+        f"❌ Tool failures: {tool_failures}",
+    )
 
-    print(f"🚫 Wrong-tool attempts: {total_wrong_tools}")
+    print(
+        f"🚫 Wrong-tool attempts: {wrong_tools}",
+    )
 
-    print(f"🔁 Repeated calls: {total_repeats}")
+    print(
+        f"🔁 Repeated calls: {repeated_calls}",
+    )
 
-    print(f"⏳ Rate-limit waits: {limiter.wait_count}")
+    print(
+        f"⏳ Rate-limit waits: {limiter.wait_count}",
+    )
 
-    print(f"⏳ Rate-limit wait time: {limiter.wait_seconds:.1f}s")
+    print(
+        f"⏳ Rate-limit wait time: {limiter.wait_seconds:.1f}s",
+    )
 
     print()
 
-    print(f"📄 Report: {report_path}")
+    print(
+        f"📄 Report: {report_path}",
+    )
 
     print()
 
-    if failed:
+    if passed != total:
         raise SystemExit(1)
 
 
