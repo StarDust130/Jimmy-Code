@@ -11,17 +11,24 @@ from jimmy.agent.main_loop.agent_progress import AgentProgress
 from jimmy.agent.main_loop.agent_tool_guard import ToolGuard
 from jimmy.agent.observer import Observer
 from jimmy.agent.recovery import RecoveryManager
-from jimmy.observability.metrics import Observability, RunMetrics
+from jimmy.observability.metrics import (
+    Observability,
+    RunMetrics,
+)
 from jimmy.permissions.errors import PermissionRequired
 from jimmy.permissions.manager import (
     PermissionAction,
     PermissionManager,
 )
 from jimmy.state.session import SessionState
+from jimmy.tools.models import ToolResult
 from jimmy.tools.registry import ToolRegistry
 from jimmy.utils.limits import truncate_output
 
-EventHandler = Callable[[AgentEvent], None]
+EventHandler = Callable[
+    [AgentEvent],
+    None,
+]
 
 PermissionHandler = Callable[
     [str, str, dict[str, Any]],
@@ -31,7 +38,7 @@ PermissionHandler = Callable[
 
 class AgentToolRunner:
     """
-    Executes one model-requested tool call.
+    Execute one model-requested tool call.
 
     Pipeline:
 
@@ -40,9 +47,13 @@ class AgentToolRunner:
         -> tool lookup
         -> permission
         -> execution
+        -> result formatting
         -> observation
         -> recovery
         -> state update
+
+    The runner keeps tool results useful for the next model turn,
+    especially when a command fails.
     """
 
     def __init__(
@@ -66,6 +77,10 @@ class AgentToolRunner:
             workspace=workspace,
         )
 
+    # ============================================================
+    # RUN
+    # ============================================================
+
     def run(
         self,
         state: SessionState,
@@ -79,7 +94,9 @@ class AgentToolRunner:
     ) -> bool:
         started_at = time.monotonic()
 
-        def emit(event: AgentEvent) -> None:
+        def emit(
+            event: AgentEvent,
+        ) -> None:
             if on_event is not None:
                 on_event(event)
 
@@ -100,9 +117,9 @@ class AgentToolRunner:
             ),
         )
 
-        # ======================================================
-        # 1. TOOL POLICY
-        # ======================================================
+        # ========================================================
+        # 1. TOOL GUARD
+        # ========================================================
 
         guard = self.guard.check(
             tool_name=tool_name,
@@ -118,7 +135,9 @@ class AgentToolRunner:
                 tool_call_id=tool_call.id,
                 tool_name=tool_name,
                 content=(
-                    f"Tool rejected by runtime.\nReason: {reason}\nChoose a valid tool/action."
+                    "Tool rejected by runtime policy.\n"
+                    f"Reason: {reason}\n"
+                    "Choose a valid tool/action."
                 ),
             )
 
@@ -142,13 +161,12 @@ class AgentToolRunner:
                 ),
             )
 
-            # The tool never executed.
-            # Do not record an execution failure.
+            # Rejection is not execution failure.
             return False
 
-        # ======================================================
+        # ========================================================
         # 2. PROGRESS GUARD
-        # ======================================================
+        # ========================================================
 
         allowed, reason = progress.can_run(
             tool_name,
@@ -191,15 +209,15 @@ class AgentToolRunner:
 
             raise RuntimeError(message)
 
-        # ======================================================
+        # ========================================================
         # 3. TOOL LOOKUP
-        # ======================================================
+        # ========================================================
 
         try:
-            tool = self.tools.get(tool_name)
+            tool = self.tools.get(
+                tool_name,
+            )
         except Exception:
-            error = RuntimeError(f"Unknown tool '{tool_name}'.")
-
             progress.record(
                 tool_name,
                 arguments,
@@ -213,15 +231,17 @@ class AgentToolRunner:
                 metrics=metrics,
                 tool_call=tool_call,
                 tool_name=tool_name,
-                error=error,
+                error=RuntimeError(
+                    f"Unknown tool '{tool_name}'.",
+                ),
                 started_at=started_at,
                 task_turn=task_turn,
                 on_event=on_event,
             )
 
-        # ======================================================
+        # ========================================================
         # 4. PERMISSION
-        # ======================================================
+        # ========================================================
 
         permission = self.permissions.check(
             tool,
@@ -259,7 +279,6 @@ class AgentToolRunner:
                 ),
             )
 
-            # Permission rejection is not a tool execution failure.
             return False
 
         if permission.action == PermissionAction.ASK:
@@ -302,9 +321,9 @@ class AgentToolRunner:
 
                 return False
 
-        # ======================================================
+        # ========================================================
         # 5. EXECUTE
-        # ======================================================
+        # ========================================================
 
         try:
             tool_result = self.executor.execute(
@@ -324,24 +343,14 @@ class AgentToolRunner:
                 on_event=on_event,
             )
 
-        # ======================================================
-        # 6. NORMALIZE OUTPUT
-        # ======================================================
+        # ========================================================
+        # 6. RESULT
+        # ========================================================
 
-        if tool_result.success:
-            output = truncate_output(
-                tool_result.output or "",
-            )
-        else:
-            output = truncate_output(
-                (
-                    f"Tool '{tool_name}' failed.\n"
-                    f"Error type: "
-                    f"{tool_result.error_type}\n"
-                    f"Error: "
-                    f"{tool_result.error or 'Unknown error'}"
-                ),
-            )
+        result_text = self._format_tool_result(
+            tool_name=tool_name,
+            result=tool_result,
+        )
 
         elapsed = time.monotonic() - started_at
 
@@ -350,14 +359,14 @@ class AgentToolRunner:
             elapsed=elapsed,
         )
 
-        # ======================================================
+        # ========================================================
         # 7. OBSERVE
-        # ======================================================
+        # ========================================================
 
         if tool_result.success:
             observation = self.observer.observe_success(
                 tool_name=tool_name,
-                result=output,
+                result=result_text,
             )
         else:
             observation = self.observer.observe_failure(
@@ -367,9 +376,9 @@ class AgentToolRunner:
                 ),
             )
 
-        # ======================================================
-        # 8. ACTUAL FAILURE
-        # ======================================================
+        # ========================================================
+        # 8. FAILURE
+        # ========================================================
 
         if not tool_result.success:
             metrics.failures += 1
@@ -382,10 +391,14 @@ class AgentToolRunner:
                 failure,
             )
 
-            # IMPORTANT:
-            # Send the actual error AND recovery guidance
-            # back to the LLM.
-            tool_message = f"{observation.result}\n\nRecovery guidance: {recovery.message}"
+            # Give the LLM both:
+            #
+            #   actual tool diagnostics
+            #   recovery guidance
+            #
+            # This is important for commands such as pytest,
+            # npm, build tools, compilers, etc.
+            tool_message = f"{result_text}\n\nRecovery guidance: {recovery.message}"
 
             self._save_tool_message(
                 state=state,
@@ -407,7 +420,7 @@ class AgentToolRunner:
                     "session_id": session_id,
                     "task_turn": task_turn,
                     "tool": tool_name,
-                    "error": failure.__class__.__name__,
+                    "error_type": type(failure).__name__,
                     "error_message": str(failure),
                     "recovery_category": recovery.category.value,
                     "retryable": recovery.retry,
@@ -431,9 +444,9 @@ class AgentToolRunner:
 
             return False
 
-        # ======================================================
+        # ========================================================
         # 9. SUCCESS
-        # ======================================================
+        # ========================================================
 
         self._save_tool_message(
             state=state,
@@ -476,9 +489,164 @@ class AgentToolRunner:
             )
         )
 
-    # ==========================================================
-    # EXCEPTION PATH
-    # ==========================================================
+    # ============================================================
+    # RESULT FORMATTER
+    # ============================================================
+
+    @staticmethod
+    def _format_tool_result(
+        tool_name: str,
+        result: ToolResult,
+    ) -> str:
+        """
+        Convert ToolResult into useful, compact model context.
+
+        Successful tools:
+            preserve their normal output.
+
+        Failed tools:
+            preserve the actual error plus useful metadata.
+
+        We intentionally use the project's existing
+        truncate_output(text) API with one positional argument.
+        """
+
+        if result.success:
+            output = str(
+                result.output or "",
+            ).strip()
+
+            if not output:
+                output = "Tool completed successfully."
+
+            return truncate_output(
+                output,
+            )
+
+        lines: list[str] = [
+            f"Tool '{tool_name}' failed.",
+        ]
+
+        if result.error_type:
+            lines.append(
+                f"Error type: {result.error_type}",
+            )
+
+        if result.error:
+            lines.append(
+                f"Error: {result.error}",
+            )
+
+        metadata = result.metadata or {}
+
+        # --------------------------------------------------------
+        # Shell diagnostics
+        # --------------------------------------------------------
+
+        command = metadata.get(
+            "command",
+        )
+
+        if (
+            isinstance(
+                command,
+                str,
+            )
+            and command.strip()
+        ):
+            lines.append(
+                f"Command: {command.strip()}",
+            )
+
+        exit_code = metadata.get(
+            "exit_code",
+        )
+
+        if exit_code is not None:
+            lines.append(
+                f"Exit code: {exit_code}",
+            )
+
+        timed_out = metadata.get(
+            "timed_out",
+        )
+
+        if timed_out is not None:
+            lines.append(
+                f"Timed out: {bool(timed_out)}",
+            )
+
+        stdout = metadata.get(
+            "stdout",
+        )
+
+        if (
+            isinstance(
+                stdout,
+                str,
+            )
+            and stdout.strip()
+        ):
+            lines.extend(
+                [
+                    "STDOUT:",
+                    stdout.strip(),
+                ],
+            )
+
+        stderr = metadata.get(
+            "stderr",
+        )
+
+        if (
+            isinstance(
+                stderr,
+                str,
+            )
+            and stderr.strip()
+        ):
+            lines.extend(
+                [
+                    "STDERR:",
+                    stderr.strip(),
+                ],
+            )
+
+        # --------------------------------------------------------
+        # File/path diagnostics
+        # --------------------------------------------------------
+
+        path = metadata.get(
+            "path",
+        )
+
+        if (
+            isinstance(
+                path,
+                str,
+            )
+            and path.strip()
+        ):
+            lines.append(
+                f"Path: {path}",
+            )
+
+        details = metadata.get(
+            "details",
+        )
+
+        if details:
+            lines.append(
+                f"Details: {details}",
+            )
+
+        return truncate_output(
+            "\n".join(lines),
+        )
+
+    # ============================================================
+    # EXCEPTION HANDLER
+    # ============================================================
 
     def _handle_exception(
         self,
@@ -503,7 +671,8 @@ class AgentToolRunner:
 
         message = (
             f"Tool '{tool_name}' failed.\n"
-            f"{type(error).__name__}: {error}\n\n"
+            f"Error type: {type(error).__name__}\n"
+            f"Error: {error}\n"
             f"Recovery guidance: {recovery.message}"
         )
 
@@ -535,7 +704,7 @@ class AgentToolRunner:
                     tool_name=tool_name,
                     elapsed=elapsed,
                     message="error",
-                )
+                ),
             )
 
         if not recovery.should_continue:
@@ -545,9 +714,9 @@ class AgentToolRunner:
 
         return False
 
-    # ==========================================================
-    # STATE HELPER
-    # ==========================================================
+    # ============================================================
+    # STATE
+    # ============================================================
 
     @staticmethod
     def _save_tool_message(
@@ -563,5 +732,5 @@ class AgentToolRunner:
                 "tool_call_id": tool_call_id,
                 "name": tool_name,
                 "content": content,
-            }
+            },
         )
