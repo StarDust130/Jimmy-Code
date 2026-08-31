@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 from typing import Any
@@ -21,6 +22,7 @@ from jimmy.permissions.manager import PermissionManager
 from jimmy.session.store import SessionStore
 from jimmy.state.session import SessionState
 from jimmy.tools.registry import ToolRegistry
+
 
 EventHandler = Callable[
     [AgentEvent],
@@ -100,6 +102,7 @@ class AgentMainLoop:
         max_turns: int,
         started_at: float,
         metrics: RunMetrics,
+        progress: AgentProgress | None = None,
         on_event: EventHandler | None = None,
         on_permission: PermissionHandler | None = None,
         on_text_delta: TextDeltaHandler | None = None,
@@ -108,21 +111,23 @@ class AgentMainLoop:
         Run one user task.
 
         The task has its own turn budget.
+        The supplied AgentProgress belongs to this task execution.
         """
 
         tool_schemas = self.tools.schemas()
 
-        # New progress state for this task only.
-        progress = AgentProgress()
+        if progress is None:
+            progress = AgentProgress()
 
-        # IMPORTANT:
-        # Do NOT use state.turn_count for the task budget.
         task_turn = 0
 
         while task_turn < max_turns:
             task_turn += 1
 
-            # Persistent session turn.
+            # --------------------------------------------------
+            # PERSISTENT SESSION TURN
+            # --------------------------------------------------
+
             state.next_turn()
 
             self.session_store.save(
@@ -165,7 +170,49 @@ class AgentMainLoop:
             # --------------------------------------------------
 
             if not response.tool_calls:
-                result = response.content or ""
+                result = (
+                    response.content or ""
+                ).strip()
+
+                # The model is allowed to finish normally for:
+                #
+                # - read-only tasks
+                # - search/answer tasks
+                # - successful tool workflows
+                #
+                # We only intervene when the model explicitly claims
+                # that it changed the workspace but no successful
+                # workspace mutation actually happened.
+                if self._false_completion(
+                    result=result,
+                    progress=progress,
+                ):
+                    state.add_message(
+                        {
+                            "role": "system",
+                            "content": (
+                                "<completion_check>\n"
+                                "Your previous response claims that "
+                                "you changed the workspace, but no "
+                                "successful workspace mutation was "
+                                "recorded for this task.\n\n"
+                                "Do not claim the change is complete yet. "
+                                "Continue the task using the available "
+                                "tools and make the actual requested "
+                                "change. If the requested change truly "
+                                "cannot be made, explain the real blocker.\n"
+                                "</completion_check>"
+                            ),
+                        },
+                    )
+
+                    self.session_store.save(
+                        session_id=session_id,
+                        state=state,
+                        status="running",
+                    )
+
+                    continue
 
                 return self._complete(
                     state=state,
@@ -199,11 +246,7 @@ class AgentMainLoop:
                     status="running",
                 )
 
-                # A tool may explicitly say:
-                #
-                # task_complete=True
-                #
-                # Only then should the loop finish immediately.
+                # A tool may explicitly mark the task complete.
                 if completed:
                     result = self._last_tool_result(
                         state,
@@ -219,21 +262,18 @@ class AgentMainLoop:
                         on_event=on_event,
                     )
 
-            # If tools were executed and none marked completion,
-            # go back to the LLM for the next decision.
-            #
-            # This is important for tasks such as:
-            #
-            #     commit a.py, b.py, c.py one by one
-            #
-            # where one tool call may only complete part of
-            # the user's request.
+            # If no tool completed the task, the updated tool
+            # observations are already in state. The next iteration
+            # gives that state back to the model.
 
         # ------------------------------------------------------
         # TASK TURN LIMIT
         # ------------------------------------------------------
 
-        message = f"❌ Jimmy stopped because this task reached the maximum of {max_turns} turns."
+        message = (
+            "❌ Jimmy stopped because this task reached "
+            f"the maximum of {max_turns} turns."
+        )
 
         metrics.failures += 1
 
@@ -257,7 +297,6 @@ class AgentMainLoop:
             on_event=on_event,
             task_turn=task_turn,
             message=message,
-            started_at_monotonic=started_at,
         )
 
         raise RuntimeError(
@@ -265,11 +304,99 @@ class AgentMainLoop:
         )
 
     # ==========================================================
-    # COMPLETION
+    # COMPLETION CHECK
+    # ==========================================================
+
+    @staticmethod
+    def _claims_workspace_change(
+        text: str,
+    ) -> bool:
+        """
+        Detect explicit claims that the workspace was changed.
+
+        This is intentionally narrow.
+
+        It does NOT determine task intent.
+        It only detects contradictions such as:
+
+            "I fixed the bug."
+
+        when no successful workspace mutation occurred.
+        """
+
+        normalized = text.strip().lower()
+
+        if not normalized:
+            return False
+
+        patterns = (
+            r"\bi\s+fixed\b",
+            r"\bi\s+created\b",
+            r"\bi\s+added\b",
+            r"\bi\s+updated\b",
+            r"\bi\s+changed\b",
+            r"\bi\s+modified\b",
+            r"\bi\s+implemented\b",
+            r"\bi\s+removed\b",
+            r"\bi\s+deleted\b",
+            r"\bi\s+renamed\b",
+            r"\bi\s+edited\b",
+            r"\bi\s+have\s+fixed\b",
+            r"\bi\s+have\s+created\b",
+            r"\bi\s+have\s+added\b",
+            r"\bi\s+have\s+updated\b",
+            r"\bi\s+have\s+changed\b",
+            r"\bi\s+have\s+implemented\b",
+            (
+                r"\bsuccessfully\s+"
+                r"(?:fixed|created|added|updated|changed|implemented)\b"
+            ),
+        )
+
+        return any(
+            re.search(
+                pattern,
+                normalized,
+            )
+            for pattern in patterns
+        )
+
+    @classmethod
+    def _false_completion(
+        cls,
+        *,
+        result: str,
+        progress: AgentProgress,
+    ) -> bool:
+        """
+        Detect a likely false completion.
+
+        We do NOT require every task to mutate the workspace.
+
+        Read-only tasks can finish normally.
+
+        This only blocks a final response when:
+            1. the model claims it changed something, and
+            2. no successful workspace mutation happened.
+        """
+
+        if not result:
+            return False
+
+        if progress.has_workspace_change:
+            return False
+
+        return cls._claims_workspace_change(
+            result,
+        )
+
+    # ==========================================================
+    # NORMAL COMPLETION
     # ==========================================================
 
     def _complete(
         self,
+        *,
         state: SessionState,
         session_id: str,
         metrics: RunMetrics,
@@ -287,7 +414,6 @@ class AgentMainLoop:
             on_event=on_event,
             task_turn=task_turn,
             message=message,
-            started_at_monotonic=started_at,
         )
 
         return message
@@ -301,7 +427,7 @@ class AgentMainLoop:
         state: SessionState,
     ) -> str:
         """
-        Return the latest tool observation.
+        Return the newest tool result.
         """
 
         for message in reversed(
@@ -315,7 +441,7 @@ class AgentMainLoop:
                     "content",
                     "",
                 )
-                or "",
+                or ""
             ).strip()
 
             if content:
@@ -338,14 +464,8 @@ class AgentMainLoop:
         on_event: EventHandler | None,
         task_turn: int,
         message: str,
-        started_at_monotonic: float,
     ) -> None:
-        # `started_at_monotonic` is kept explicit so this method
-        # remains easy to follow and avoids accidentally mixing
-        # wall-clock time with monotonic time.
-        del started_at
-
-        elapsed = time.monotonic() - started_at_monotonic
+        elapsed = time.monotonic() - started_at
 
         metrics.finish(
             elapsed,
@@ -365,7 +485,11 @@ class AgentMainLoop:
         if on_event is not None:
             on_event(
                 AgentEvent(
-                    kind=("complete" if status == "completed" else "error"),
+                    kind=(
+                        "complete"
+                        if status == "completed"
+                        else "error"
+                    ),
                     turn=task_turn,
                     elapsed=elapsed,
                     message=message,

@@ -4,45 +4,41 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-# Conservative limits.
-#
-# We do NOT want to block a legitimate retry too early.
+
+# Only the exact same failed action is limited.
 MAX_SAME_FAILED_ACTIONS = 2
 
 
 @dataclass(slots=True)
 class AgentProgress:
     """
-    Lightweight runtime guard against obvious no-progress loops.
+    Tracks concrete execution progress for one task.
 
-    This class does not understand user language and does not
-    decide which tool should be used.
+    This class intentionally does NOT understand:
+    - natural language
+    - user intent
+    - task type
+    - which tool should be used
+    - whether a task is semantically complete
 
-    It only tracks what actually happened during execution.
-
-    A retry is allowed when:
-        - the action is different
-        - the tool/environment has changed
-        - the previous attempt succeeded
-        - the previous failure has not reached the limit
-
-    A repeated identical failure is eventually blocked.
+    It only records what actually happened.
     """
 
     _same_failed_actions: dict[str, int] = field(
         default_factory=dict,
     )
 
-    _tool_failure_streaks: dict[str, int] = field(
-        default_factory=dict,
-    )
-
     _last_action: str | None = None
+
     _last_action_succeeded: bool | None = None
 
-    # ---------------------------------------------------------
-    # ACTION ID
-    # ---------------------------------------------------------
+    _successful_tool_calls: int = 0
+
+    _successful_mutations: int = 0
+
+    # =========================================================
+    # ACTION FINGERPRINT
+    # =========================================================
 
     @staticmethod
     def fingerprint(
@@ -50,13 +46,7 @@ class AgentProgress:
         arguments: dict[str, Any],
     ) -> str:
         """
-        Build a stable ID for one exact tool action.
-
-        Example:
-
-            edit_file(path="a.py", old_text="x", new_text="y")
-
-        always produces the same fingerprint.
+        Build a stable fingerprint for an exact tool action.
         """
 
         try:
@@ -77,9 +67,9 @@ class AgentProgress:
 
         return f"{tool_name}:{normalized}"
 
-    # ---------------------------------------------------------
+    # =========================================================
     # BEFORE EXECUTION
-    # ---------------------------------------------------------
+    # =========================================================
 
     def can_run(
         self,
@@ -87,10 +77,7 @@ class AgentProgress:
         arguments: dict[str, Any],
     ) -> tuple[bool, str]:
         """
-        Decide whether the exact action should be attempted.
-
-        This only blocks actions that have repeatedly failed.
-        Successful actions are never blocked by this method.
+        Prevent only repeated identical failed actions.
         """
 
         fingerprint = self.fingerprint(
@@ -98,26 +85,27 @@ class AgentProgress:
             arguments,
         )
 
-        same_failures = self._same_failed_actions.get(
+        failures = self._same_failed_actions.get(
             fingerprint,
             0,
         )
 
-        if same_failures >= MAX_SAME_FAILED_ACTIONS:
+        if failures >= MAX_SAME_FAILED_ACTIONS:
             return (
                 False,
                 (
                     "The exact same tool action has already "
-                    f"failed {same_failures} times without progress. "
-                    "Do not repeat it. Use a different approach."
+                    f"failed {failures} times. "
+                    "Do not repeat it unchanged. "
+                    "Use a different or corrected approach."
                 ),
             )
 
         return True, ""
 
-    # ---------------------------------------------------------
+    # =========================================================
     # AFTER EXECUTION
-    # ---------------------------------------------------------
+    # =========================================================
 
     def record(
         self,
@@ -128,13 +116,10 @@ class AgentProgress:
         changed_workspace: bool = False,
     ) -> None:
         """
-        Record one real tool execution.
+        Record one actual tool execution.
 
-        IMPORTANT:
-
-        Only actual execution reaches this method.
-
-        A tool-choice rejection should NOT be recorded here.
+        Tool-policy rejection is not execution and should
+        therefore never call this method.
         """
 
         fingerprint = self.fingerprint(
@@ -143,34 +128,25 @@ class AgentProgress:
         )
 
         self._last_action = fingerprint
+
         self._last_action_succeeded = success
 
-        # -----------------------------------------------------
-        # Successful execution
-        # -----------------------------------------------------
-
         if success:
+            self._successful_tool_calls += 1
+
             self._same_failed_actions.pop(
                 fingerprint,
                 None,
             )
 
-            self._tool_failure_streaks.pop(
-                tool_name,
-                None,
-            )
-
-            # A successful workspace mutation means the world
-            # has changed. Old failures are no longer useful.
             if changed_workspace:
+                self._successful_mutations += 1
+
+                # Workspace progress makes previous failures
+                # less useful.
                 self._same_failed_actions.clear()
-                self._tool_failure_streaks.clear()
 
             return
-
-        # -----------------------------------------------------
-        # Failed execution
-        # -----------------------------------------------------
 
         self._same_failed_actions[fingerprint] = (
             self._same_failed_actions.get(
@@ -180,35 +156,54 @@ class AgentProgress:
             + 1
         )
 
-        self._tool_failure_streaks[tool_name] = (
-            self._tool_failure_streaks.get(
-                tool_name,
-                0,
-            )
-            + 1
-        )
+    # =========================================================
+    # EVIDENCE
+    # =========================================================
 
-    # ---------------------------------------------------------
-    # EXTERNAL STATE CHANGE
-    # ---------------------------------------------------------
+    @property
+    def successful_tool_calls(self) -> int:
+        return self._successful_tool_calls
+
+    @property
+    def successful_mutations(self) -> int:
+        return self._successful_mutations
+
+    @property
+    def has_workspace_change(self) -> bool:
+        return self._successful_mutations > 0
+
+    @property
+    def has_successful_tool_call(self) -> bool:
+        return self._successful_tool_calls > 0
+
+    # =========================================================
+    # RESET
+    # =========================================================
 
     def reset_after_progress(self) -> None:
         """
-        Clear failure history after meaningful external progress.
+        Clear failure history after meaningful workspace progress.
 
-        Useful when another subsystem knows that the workspace
-        or execution environment changed.
+        Do not clear successful-mutation evidence.
         """
 
         self._same_failed_actions.clear()
-        self._tool_failure_streaks.clear()
 
         self._last_action = None
+
         self._last_action_succeeded = None
 
-    # ---------------------------------------------------------
-    # RESET
-    # ---------------------------------------------------------
-
     def reset(self) -> None:
-        self.reset_after_progress()
+        """
+        Completely reset this task's progress state.
+        """
+
+        self._same_failed_actions.clear()
+
+        self._last_action = None
+
+        self._last_action_succeeded = None
+
+        self._successful_tool_calls = 0
+
+        self._successful_mutations = 0
