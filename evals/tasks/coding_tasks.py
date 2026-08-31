@@ -292,9 +292,9 @@ TASKS: tuple[EvalTask, ...] = (
         "E19",
         "Run the tests, and if they fail fix the failure then run them again.",
         {
-            "math.py": ("def add(a, b):\n    return a + b\n"),
+            "math_utils.py": ("def add(a, b):\n    return a - b\n"),
             "test_math.py": (
-                "from math import add\n\ndef test_add():\n    assert add(1, 1) == 2\n"
+                "from math_utils import add\n\ndef test_add():\n    assert add(1, 1) == 2\n"
             ),
         },
         expected_tools=("run_shell",),
