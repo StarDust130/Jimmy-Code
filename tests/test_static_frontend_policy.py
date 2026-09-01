@@ -41,3 +41,22 @@ def test_static_frontend_allows_shell_when_user_explicitly_requests_it(
     )
 
     assert decision.allowed is True
+
+
+def test_non_shell_edit_task_rejects_shell_even_if_stale_schema_offers_it(
+    tmp_path: Path,
+) -> None:
+    state = build_task_state(
+        "Add a comment above greeting in main.py.",
+        tmp_path,
+    )
+
+    decision = ToolGuard(tmp_path).check(
+        "run_shell",
+        {"command": "cat main.py"},
+        SessionState(task="test"),
+        state,
+    )
+
+    assert decision.allowed is False
+    assert "shell" in decision.reason.lower()
