@@ -35,6 +35,10 @@ class AgentProgress:
         default_factory=dict,
     )
 
+    _successful_actions: dict[str, int] = field(
+        default_factory=dict,
+    )
+
     _tool_failure_streaks: dict[str, int] = field(
         default_factory=dict,
     )
@@ -147,6 +151,19 @@ class AgentProgress:
                 ),
             )
 
+        # Reading the exact same file repeatedly is not useful progress.
+        # Keep repeated shell commands allowed because polling/status checks
+        # are legitimate, and clear this record after any workspace change.
+        fingerprint = self.fingerprint(tool_name, arguments)
+        if (
+            tool_name == "read_file"
+            and self._successful_actions.get(fingerprint, 0) >= 1
+        ):
+            return (
+                False,
+                "The same file was already read successfully. Use the existing result or choose a different target.",
+            )
+
         return True, ""
 
     # =========================================================
@@ -198,6 +215,10 @@ class AgentProgress:
                 None,
             )
 
+            self._successful_actions[fingerprint] = (
+                self._successful_actions.get(fingerprint, 0) + 1
+            )
+
             self._tool_failure_streaks.pop(
                 tool_name,
                 None,
@@ -211,6 +232,7 @@ class AgentProgress:
                 # that have made no meaningful progress.
                 self._same_failed_actions.clear()
                 self._tool_failure_streaks.clear()
+                self._successful_actions.clear()
 
                 self._remember_changed_paths(
                     tool_name=tool_name,
