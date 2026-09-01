@@ -224,6 +224,10 @@ class AgentLoop:
             workspace=self.workspace,
         )
 
+        state.add_message(
+            self._task_context_message(task_state),
+        )
+
         return self._run_session(
             state=state,
             session_id=session_id,
@@ -269,6 +273,10 @@ class AgentLoop:
 
         self.current_session_id = session_id
 
+        # A session may contain several completed user requests.  Its saved
+        # task is the resumable active request, not the first historical one.
+        state.task = task
+
         # --------------------------------------------------------
         # Explicit task boundary.
         # --------------------------------------------------------
@@ -306,6 +314,10 @@ class AgentLoop:
         task_state = build_task_state(
             task=task,
             workspace=self.workspace,
+        )
+
+        state.add_message(
+            self._task_context_message(task_state),
         )
 
         return self._run_session(
@@ -372,6 +384,26 @@ class AgentLoop:
     # ============================================================
     # ENVIRONMENT
     # ============================================================
+
+    @staticmethod
+    def _task_context_message(
+        task_state: TaskState,
+    ) -> dict[str, str]:
+        paths = sorted(task_state.requested_paths)
+        scope = ", ".join(paths) if paths else "workspace root"
+        return {
+            "role": "system",
+            "content": (
+                "<active_task_context>\n"
+                f"explicit_target_scope: {scope}\n"
+                f"commit_requested: {'yes' if task_state.commit_requested else 'no'}\n"
+                "If the task creates a new standalone folder, implement and "
+                "verify that target only. Do not infer that language tools or "
+                "test runners from the parent repository apply to it.\n"
+                "Do not use git_commit unless commit_requested is yes.\n"
+                "</active_task_context>"
+            ),
+        }
 
     def _refresh_environment_context(
         self,
