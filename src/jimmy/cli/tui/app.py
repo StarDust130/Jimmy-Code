@@ -399,7 +399,10 @@ class JimmyTUI(App[None]):
                     )
                 else:
                     bar = THINKING_BAR[self._think_idx]
-                    label = "Jimmy is responding" if self._streaming else "Jimmy is thinking"
+                    if self.status == "waiting for quota":
+                        label = "Waiting for Gemini quota window"
+                    else:
+                        label = "Jimmy is responding" if self._streaming else "Jimmy is thinking"
                     self.query_one(
                         "#typing-indicator",
                         Static,
@@ -1391,6 +1394,9 @@ class JimmyTUI(App[None]):
             else:
                 self.status = "planning"
 
+        elif event.kind == "rate_limit_wait":
+            self.status = "waiting for quota"
+
         elif event.kind == "llm_usage":
             self.observability_model = event.model_name or event.message or self.observability_model
             self.observability_input_tokens = event.input_tokens or 0
@@ -1420,6 +1426,8 @@ class JimmyTUI(App[None]):
             success = event.message not in {
                 "error",
                 "denied",
+                "blocked",
+                "approval required",
             }
 
             self._write_tool_end(
@@ -1508,7 +1516,8 @@ class JimmyTUI(App[None]):
         self.status = "error"
         self.current_tool = ""
         self.current_file = ""
-        self._last_error = str(exc)
+        error_text = self._error_summary(exc)
+        self._last_error = error_text
         self.elapsed = time.monotonic() - self._task_started_at
         self._hide_streaming_response()
         self._stream_buffer = ""
@@ -1517,7 +1526,7 @@ class JimmyTUI(App[None]):
         try:
             log = self.query_one("#conversation", RichLog)
             log.write("")
-            log.write(Text(f"▎ × {type(exc).__name__}: {exc}", style="bold red"))
+            log.write(Text(f"▎ × {error_text}", style="bold red"))
             log.write(Text(f"▎ {self._summary()}", style="dim"))
             log.write("")
         except Exception:
@@ -1527,6 +1536,18 @@ class JimmyTUI(App[None]):
         self._enable_input()
         self._update_status_indicator()
         self._update_session_indicator()
+
+    @staticmethod
+    def _error_summary(exc: Exception) -> str:
+        """Keep provider errors actionable instead of flooding the chat."""
+        message = str(exc).strip()
+        normalized = message.lower()
+
+        if "rate limit" in normalized or "resource_exhausted" in normalized:
+            return "Gemini quota reached. Wait for the quota window, then resume this session."
+
+        first_line = next((line.strip() for line in message.splitlines() if line.strip()), "Agent request failed.")
+        return f"{type(exc).__name__}: {first_line[:220]}"
 
     # ------------------------------------------------------------------
     # CANCEL
