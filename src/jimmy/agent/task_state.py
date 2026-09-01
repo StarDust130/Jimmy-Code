@@ -25,6 +25,13 @@ class TaskState:
 
     destructive_operations_requested: bool = False
 
+    # A narrow task classification used only to avoid offering or accepting
+    # shell work for a plain browser project.  It is deliberately a runtime
+    # fact rather than a planner: an explicit request for a command, package
+    # manager, or server overrides it.
+    static_frontend: bool = False
+    shell_requested: bool = False
+
     # =========================================================
     # PATH HELPERS
     # =========================================================
