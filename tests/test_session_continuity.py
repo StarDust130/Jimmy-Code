@@ -86,6 +86,8 @@ def test_continue_session_keeps_previous_messages(
 
     assert second_result == ("Yes, I remember the previous file.")
 
+    assert store.load(session_id).task == "Commit that file."
+
     second_context = llm.seen_messages[1]
 
     user_messages = [message for message in second_context if message.get("role") == "user"]
