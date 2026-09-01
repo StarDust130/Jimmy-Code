@@ -181,7 +181,7 @@ class AgentMainLoop:
                 ):
                     state.add_message(
                         {
-                            "role": "system",
+                            "role": "user",
                             "content": (
                                 "<verification_failure>\n"
                                 "A real verification command failed.\n\n"
@@ -216,7 +216,7 @@ class AgentMainLoop:
                 ):
                     state.add_message(
                         {
-                            "role": "system",
+                            "role": "user",
                             "content": (
                                 "<completion_check>\n"
                                 "Your previous response claims that "
@@ -253,8 +253,13 @@ class AgentMainLoop:
             # EXECUTE TOOL CALLS
             # ==================================================
 
+            completed = False
+
+            # A Gemini function-call response is an atomic batch: every
+            # requested call needs a function response before the agent can
+            # finish or ask the model for another decision.
             for tool_call in response.tool_calls:
-                completed = self.tool_runner.run(
+                tool_completed = self.tool_runner.run(
                     state=state,
                     session_id=session_id,
                     metrics=metrics,
@@ -272,22 +277,22 @@ class AgentMainLoop:
                     status="running",
                 )
 
-                # Only an explicit tool completion can finish
-                # immediately. Otherwise the model gets another turn.
-                if completed:
-                    result = self._last_tool_result(
-                        state,
-                    )
+                completed = completed or tool_completed
 
-                    return self._complete(
-                        state=state,
-                        session_id=session_id,
-                        metrics=metrics,
-                        started_at=started_at,
-                        task_turn=task_turn,
-                        message=result,
-                        on_event=on_event,
-                    )
+            if completed:
+                result = self._last_tool_result(
+                    state,
+                )
+
+                return self._complete(
+                    state=state,
+                    session_id=session_id,
+                    metrics=metrics,
+                    started_at=started_at,
+                    task_turn=task_turn,
+                    message=result,
+                    on_event=on_event,
+                )
 
         # ======================================================
         # MAX TURN FAILURE
