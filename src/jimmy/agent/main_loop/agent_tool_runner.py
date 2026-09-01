@@ -17,7 +17,6 @@ from jimmy.observability.metrics import (
     Observability,
     RunMetrics,
 )
-from jimmy.permissions.errors import PermissionRequired
 from jimmy.permissions.manager import (
     PermissionAction,
     PermissionManager,
@@ -168,8 +167,12 @@ class AgentToolRunner:
                 ),
             )
 
-            # IMPORTANT:
-            # A policy rejection is not execution failure.
+            # It did not execute, but is still useful loop evidence.
+            progress.record(
+                tool_name,
+                arguments,
+                success=False,
+            )
             return False
 
         # ========================================================
@@ -218,9 +221,10 @@ class AgentToolRunner:
                 ),
             )
 
-            raise RuntimeError(
-                message,
-            )
+            # The assistant call must always have a corresponding tool
+            # response. Raising here left later calls in the same batch
+            # unresolved and corrupted Gemini history on resume.
+            return False
 
         # ========================================================
         # 3. TOOL LOOKUP
@@ -302,11 +306,34 @@ class AgentToolRunner:
 
         if permission.action == PermissionAction.ASK:
             if on_permission is None:
-                raise PermissionRequired(
+                self._save_tool_message(
+                    state=state,
+                    tool_call_id=tool_call.id,
                     tool_name=tool_name,
-                    reason=permission.reason,
-                    arguments=arguments,
+                    content=(
+                        "Permission is required before this action can run. "
+                        "It was not executed. Ask the user for approval or "
+                        "choose an allowed approach."
+                    ),
                 )
+
+                progress.record(
+                    tool_name,
+                    arguments,
+                    success=False,
+                )
+
+                emit(
+                    AgentEvent(
+                        kind="tool_end",
+                        turn=task_turn,
+                        tool_name=tool_name,
+                        elapsed=time.monotonic() - started_at,
+                        message="approval required",
+                    ),
+                )
+
+                return False
 
             approved = on_permission(
                 tool_name,
@@ -339,6 +366,12 @@ class AgentToolRunner:
                         elapsed=elapsed,
                         message="denied",
                     ),
+                )
+
+                progress.record(
+                    tool_name,
+                    arguments,
+                    success=False,
                 )
 
                 return False
