@@ -13,6 +13,29 @@ def test_allows_first_action() -> None:
     assert reason == ""
 
 
+def test_blocks_repeated_successful_file_read() -> None:
+    progress = AgentProgress()
+    arguments = {"path": "index.html"}
+
+    progress.record("read_file", arguments, success=True)
+
+    allowed, reason = progress.can_run("read_file", arguments)
+
+    assert allowed is False
+    assert "already read" in reason
+
+
+def test_allows_repeated_successful_shell_checks() -> None:
+    progress = AgentProgress()
+    arguments = {"command": "pwd"}
+
+    progress.record("run_shell", arguments, success=True)
+
+    allowed, _ = progress.can_run("run_shell", arguments)
+
+    assert allowed is True
+
+
 def test_blocks_same_failed_action_after_limit() -> None:
     progress = AgentProgress()
 
