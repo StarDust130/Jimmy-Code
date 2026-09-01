@@ -764,15 +764,10 @@ class GeminiProvider(LLMProvider):
         contents: list[types.Content],
     ) -> list[types.Content]:
         """
-        Enforce Gemini's GenerateContent turn contract.
-
-        Gemini rejects requests whose final content item is a model
-        turn. This can happen when Jimmy re-enters the provider after
-        an assistant response.
-
-        A model function-call turn is different: it MUST be followed
-        by its tool response. We never fabricate a response for that
-        case because doing so would corrupt the conversation history.
+        Validate Gemini's GenerateContent turn contract without changing
+        history. The agent state machine must provide a real next user turn
+        whenever it needs another decision; inventing "Continue." changes
+        the conversation and can corrupt function-call ordering.
         """
 
         if not contents:
@@ -796,21 +791,10 @@ class GeminiProvider(LLMProvider):
                 "a model function call without its tool response."
             )
 
-        # GenerateContent does not accept a request ending in a model
-        # turn. Add a real user continuation turn instead of sending
-        # a model prefill.
-        contents.append(
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part.from_text(
-                        text="Continue.",
-                    ),
-                ],
-            )
+        raise ValueError(
+            "Invalid Gemini history: conversation ends with a model turn "
+            "without a real subsequent user or function response turn."
         )
-
-        return contents
 
     # ============================================================
     # RESPONSE
@@ -1268,3 +1252,4 @@ class GeminiProvider(LLMProvider):
             ),
             code="provider_error",
         )
+
