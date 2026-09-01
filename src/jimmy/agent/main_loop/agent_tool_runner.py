@@ -11,6 +11,7 @@ from jimmy.agent.main_loop.agent_progress import AgentProgress
 from jimmy.agent.main_loop.agent_tool_guard import ToolGuard
 from jimmy.agent.observer import Observer
 from jimmy.agent.recovery import RecoveryManager
+from jimmy.agent.task_state import TaskState
 from jimmy.observability.metrics import (
     Observability,
     RunMetrics,
@@ -24,6 +25,7 @@ from jimmy.state.session import SessionState
 from jimmy.tools.models import ToolResult
 from jimmy.tools.registry import ToolRegistry
 from jimmy.utils.limits import truncate_output
+
 
 EventHandler = Callable[
     [AgentEvent],
@@ -42,7 +44,8 @@ class AgentToolRunner:
 
     Pipeline:
 
-        tool guard
+        task scope
+        -> tool guard
         -> progress guard
         -> tool lookup
         -> permission
@@ -52,8 +55,9 @@ class AgentToolRunner:
         -> recovery
         -> state update
 
-    The runner keeps tool results useful for the next model turn,
-    especially when a command fails.
+    The runner does not decide what the task means.
+    It only executes the model's chosen tool and enforces
+    deterministic runtime rules.
     """
 
     def __init__(
@@ -89,6 +93,7 @@ class AgentToolRunner:
         tool_call: Any,
         progress: AgentProgress,
         task_turn: int,
+        task_state: TaskState | None = None,
         on_event: EventHandler | None = None,
         on_permission: PermissionHandler | None = None,
     ) -> bool:
@@ -125,10 +130,14 @@ class AgentToolRunner:
             tool_name=tool_name,
             arguments=arguments,
             state=state,
+            task_state=task_state,
         )
 
         if not guard.allowed:
-            reason = guard.reason or "Tool action was rejected."
+            reason = (
+                guard.reason
+                or "Tool action was rejected."
+            )
 
             self._save_tool_message(
                 state=state,
@@ -161,7 +170,7 @@ class AgentToolRunner:
                 ),
             )
 
-            # Rejection is not execution failure.
+            # Policy rejection is NOT tool execution failure.
             return False
 
         # ========================================================
@@ -174,7 +183,10 @@ class AgentToolRunner:
         )
 
         if not allowed:
-            message = reason or "Repeated action detected."
+            message = (
+                reason
+                or "Repeated action detected."
+            )
 
             self._save_tool_message(
                 state=state,
@@ -207,7 +219,9 @@ class AgentToolRunner:
                 ),
             )
 
-            raise RuntimeError(message)
+            raise RuntimeError(
+                message,
+            )
 
         # ========================================================
         # 3. TOOL LOOKUP
@@ -217,7 +231,7 @@ class AgentToolRunner:
             tool = self.tools.get(
                 tool_name,
             )
-        except Exception:
+        except Exception as exc:
             progress.record(
                 tool_name,
                 arguments,
@@ -248,9 +262,15 @@ class AgentToolRunner:
         )
 
         if permission.action == PermissionAction.DENY:
-            elapsed = time.monotonic() - started_at
+            elapsed = (
+                time.monotonic()
+                - started_at
+            )
 
-            message = f"Permission denied for '{tool_name}'.\n{permission.reason}"
+            message = (
+                f"Permission denied for '{tool_name}'.\n"
+                f"{permission.reason}"
+            )
 
             self._save_tool_message(
                 state=state,
@@ -296,7 +316,10 @@ class AgentToolRunner:
             )
 
             if not approved:
-                elapsed = time.monotonic() - started_at
+                elapsed = (
+                    time.monotonic()
+                    - started_at
+                )
 
                 self._save_tool_message(
                     state=state,
@@ -352,7 +375,10 @@ class AgentToolRunner:
             result=tool_result,
         )
 
-        elapsed = time.monotonic() - started_at
+        elapsed = (
+            time.monotonic()
+            - started_at
+        )
 
         metrics.add_tool_time(
             tool_name=tool_name,
@@ -372,7 +398,8 @@ class AgentToolRunner:
             observation = self.observer.observe_failure(
                 tool_name=tool_name,
                 error=RuntimeError(
-                    tool_result.error or "Unknown tool error.",
+                    tool_result.error
+                    or "Unknown tool error.",
                 ),
             )
 
@@ -384,21 +411,18 @@ class AgentToolRunner:
             metrics.failures += 1
 
             failure = RuntimeError(
-                tool_result.error or "Unknown tool error.",
+                tool_result.error
+                or "Unknown tool error.",
             )
 
             recovery = self.recovery.recover(
                 failure,
             )
 
-            # Give the LLM both:
-            #
-            #   actual tool diagnostics
-            #   recovery guidance
-            #
-            # This is important for commands such as pytest,
-            # npm, build tools, compilers, etc.
-            tool_message = f"{result_text}\n\nRecovery guidance: {recovery.message}"
+            tool_message = (
+                f"{result_text}\n\n"
+                f"Recovery guidance: {recovery.message}"
+            )
 
             self._save_tool_message(
                 state=state,
@@ -499,16 +523,7 @@ class AgentToolRunner:
         result: ToolResult,
     ) -> str:
         """
-        Convert ToolResult into useful, compact model context.
-
-        Successful tools:
-            preserve their normal output.
-
-        Failed tools:
-            preserve the actual error plus useful metadata.
-
-        We intentionally use the project's existing
-        truncate_output(text) API with one positional argument.
+        Convert ToolResult into compact, useful model context.
         """
 
         if result.success:
@@ -517,7 +532,9 @@ class AgentToolRunner:
             ).strip()
 
             if not output:
-                output = "Tool completed successfully."
+                output = (
+                    "Tool completed successfully."
+                )
 
             return truncate_output(
                 output,
@@ -539,19 +556,12 @@ class AgentToolRunner:
 
         metadata = result.metadata or {}
 
-        # --------------------------------------------------------
-        # Shell diagnostics
-        # --------------------------------------------------------
-
         command = metadata.get(
             "command",
         )
 
         if (
-            isinstance(
-                command,
-                str,
-            )
+            isinstance(command, str)
             and command.strip()
         ):
             lines.append(
@@ -581,10 +591,7 @@ class AgentToolRunner:
         )
 
         if (
-            isinstance(
-                stdout,
-                str,
-            )
+            isinstance(stdout, str)
             and stdout.strip()
         ):
             lines.extend(
@@ -599,10 +606,7 @@ class AgentToolRunner:
         )
 
         if (
-            isinstance(
-                stderr,
-                str,
-            )
+            isinstance(stderr, str)
             and stderr.strip()
         ):
             lines.extend(
@@ -612,19 +616,12 @@ class AgentToolRunner:
                 ],
             )
 
-        # --------------------------------------------------------
-        # File/path diagnostics
-        # --------------------------------------------------------
-
         path = metadata.get(
             "path",
         )
 
         if (
-            isinstance(
-                path,
-                str,
-            )
+            isinstance(path, str)
             and path.strip()
         ):
             lines.append(
@@ -661,7 +658,10 @@ class AgentToolRunner:
         task_turn: int,
         on_event: EventHandler | None,
     ) -> bool:
-        elapsed = time.monotonic() - started_at
+        elapsed = (
+            time.monotonic()
+            - started_at
+        )
 
         metrics.failures += 1
 
