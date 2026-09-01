@@ -85,7 +85,7 @@ def main(
         tools=tools,
         workspace=project_root,
         git_state=git_state,
-        max_turns=20,
+        max_turns=100, # 💥
         permission_manager=permission_manager,
     )
 
