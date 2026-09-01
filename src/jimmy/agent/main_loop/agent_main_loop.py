@@ -354,6 +354,33 @@ class AgentMainLoop:
 
         if task_state.static_frontend:
             excluded.add("run_shell")
+        elif not task_state.shell_requested:
+            # Shell is for explicit execution/verification requests. Keeping
+            # it out of the menu for ordinary edits prevents needless status,
+            # Python, and server detours; ToolGuard remains authoritative.
+            excluded.add("run_shell")
+
+        task_text = task_state.task.lower()
+        edit_intent = any(
+            word in task_text
+            for word in ("add", "edit", "fix", "improve", "modify", "update", "change", "remove")
+        )
+        create_intent = any(
+            word in task_text
+            for word in ("create", "build", "make", "write")
+        )
+        existing_context = any(
+            word in task_text
+            for word in ("existing", "current", "already", "without changing")
+        )
+
+        # Keep the model's menu aligned with the requested operation. The
+        # runtime still validates every call, so this is an efficiency hint,
+        # not a safety bypass.
+        if edit_intent and not create_intent:
+            excluded.add("create_files")
+        if create_intent and not edit_intent and not existing_context:
+            excluded.add("edit_file")
 
         return [
             schema
