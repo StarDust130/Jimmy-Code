@@ -206,9 +206,36 @@ class ToolGuard:
                         ),
                     )
 
+        # Discovery and verification are scoped too.  Mutations were already
+        # protected above, but allowing read/search paths to escape lets a
+        # model wander through the parent repository and spend turns on
+        # unrelated code.  An omitted search path is filled by the runner
+        # when there is one explicit project directory.
+        if tool_name in {"read_file", "search_files", "verify_frontend"}:
+            raw_path = self._discovery_path(tool_name, arguments)
+            if raw_path and task_state.requested_paths:
+                if not task_state.is_path_in_scope(raw_path):
+                    return self._deny(
+                        (
+                            f"Path '{raw_path}' is outside the explicit "
+                            "task scope. Stay inside the requested project."
+                        ),
+                    )
+
         return ToolGuardDecision(
             allowed=True,
         )
+
+    @staticmethod
+    def _discovery_path(
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> str:
+        if tool_name in {"read_file", "search_files"}:
+            value = arguments.get("path")
+        else:
+            value = arguments.get("directory")
+        return value.strip() if isinstance(value, str) else ""
 
     # =========================================================
     # GIT PATHS

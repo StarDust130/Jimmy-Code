@@ -397,9 +397,12 @@ class AgentLoop:
                 "<active_task_context>\n"
                 f"explicit_target_scope: {scope}\n"
                 f"commit_requested: {'yes' if task_state.commit_requested else 'no'}\n"
+                f"static_frontend: {'yes' if task_state.static_frontend else 'no'}\n"
                 "If the task creates a new standalone folder, implement and "
                 "verify that target only. Do not infer that language tools or "
                 "test runners from the parent repository apply to it.\n"
+                "Do not search, read, verify, or modify sibling folders or the "
+                "parent project unless the user explicitly includes them.\n"
                 "Do not use git_commit unless commit_requested is yes.\n"
                 "</active_task_context>"
             ),
