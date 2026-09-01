@@ -151,18 +151,25 @@ class AgentProgress:
                 ),
             )
 
-        # Reading the exact same file repeatedly is not useful progress.
-        # Keep repeated shell commands allowed because polling/status checks
-        # are legitimate, and clear this record after any workspace change.
-        fingerprint = self.fingerprint(tool_name, arguments)
-        if (
-            tool_name == "read_file"
-            and self._successful_actions.get(fingerprint, 0) >= 1
-        ):
-            return (
-                False,
-                "The same file was already read successfully. Use the existing result or choose a different target.",
-            )
+        # Repeating the same informational action without any relevant
+        # workspace change is not progress. This includes re-reading the same
+        # file, re-searching the same query, or re-running the same static
+        # frontend verification after a successful result.
+        #
+        # Keep repeated shell commands allowed for explicit verification or
+        # command-driven tasks; the task-state policy already prevents shell
+        # calls for ordinary edits.
+        if tool_name in {"read_file", "search_files", "verify_frontend"}:
+            if self._successful_actions.get(fingerprint, 0) >= 1:
+                action_word = {
+                    "read_file": "read",
+                    "search_files": "searched",
+                    "verify_frontend": "verified",
+                }[tool_name]
+                return (
+                    False,
+                    f"The same {tool_name} action was already {action_word}. Use the existing result or choose a different target.",
+                )
 
         return True, ""
 
