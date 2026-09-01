@@ -1543,6 +1543,16 @@ class JimmyTUI(App[None]):
         message = str(exc).strip()
         normalized = message.lower()
 
+        if (
+            "quota_exhausted" in normalized
+            or "generaterequestsperday" in normalized
+            or "daily quota" in normalized
+        ):
+            return (
+                "Gemini daily quota is exhausted for this project. "
+                "Use a key from another Google project or wait for reset."
+            )
+
         if "rate limit" in normalized or "resource_exhausted" in normalized:
             return "Gemini quota reached. Wait for the quota window, then resume this session."
 
