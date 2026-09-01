@@ -11,6 +11,7 @@ EventKind = Literal[
     "llm_usage",
     "complete",
     "error",
+    "rate_limit_wait",
 ]
 
 
