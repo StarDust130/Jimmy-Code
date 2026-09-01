@@ -320,8 +320,10 @@ AllSessionsScreen {
 }
 
 #all-sessions-dialog {
-    width: 60;
-    height: 22;
+    width: 72;
+    max-width: 90%;
+    height: 80%;
+    max-height: 30;
     background: #0b1017;
     border: solid #22d3ee;
     padding: 1 2;
@@ -349,7 +351,7 @@ AllSessionsScreen {
 .all-session-card {
     width: 1fr;
     height: auto;
-    padding: 0 1;
+    padding: 1 1;
     margin: 0 0 1 0;
     background: #0b1017;
     border: solid #1e293b;
@@ -364,6 +366,10 @@ AllSessionsScreen {
 .all-session-card.selected {
     background: #164e63;
     border: solid #22d3ee;
+}
+
+.all-session-card:focus {
+    border: solid #67e8f9;
 }
 
 #all-sessions-footer {
