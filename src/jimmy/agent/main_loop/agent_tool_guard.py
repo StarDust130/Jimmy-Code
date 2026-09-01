@@ -84,6 +84,10 @@ class ToolGuard:
         # -----------------------------------------------------
 
         if tool_name == "run_shell":
+            if task_state is not None and not task_state.shell_requested:
+                return self._deny(
+                    "This task did not request shell execution. Use the file tools or ask for command execution explicitly."
+                )
             return self._check_run_shell(
                 arguments,
             )
