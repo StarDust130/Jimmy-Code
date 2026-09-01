@@ -56,6 +56,7 @@ class AgentTurn:
         10.0,
         20.0,
     )
+    DEFAULT_RATE_LIMIT_DELAY = 60.0
 
     def __init__(
         self,
@@ -107,6 +108,19 @@ class AgentTurn:
         context = self.context_manager.prepare(
             state.messages,
         )
+
+        if progress is not None:
+            # Keep a compact runtime checkpoint outside the long transcript.
+            # This gives the model an explicit memory of successful reads,
+            # mutations, failures, and current progress without resending
+            # every old tool result at full size.
+            context = [
+                {
+                    "role": "system",
+                    "content": progress.context_summary(),
+                },
+                *context,
+            ]
 
         stream_method_raw = getattr(
             self.llm,
@@ -263,6 +277,12 @@ class AgentTurn:
                     ),
                 )
 
+                if getattr(exc, "code", None) == "rate_limit":
+                    # A provider-supplied delay is safe to honor once; it
+                    # avoids burning more requests while the minute quota
+                    # window resets. Unknown quota delays fail immediately.
+                    retryable = attempt == 0
+
                 if emitted_text:
                     elapsed = (
                         time.monotonic()
@@ -335,9 +355,24 @@ class AgentTurn:
 
                     raise
 
-                delay = self.RETRY_DELAYS[
-                    attempt
-                ]
+                delay = (
+                    float(
+                        getattr(exc, "retry_after", None)
+                        or self.DEFAULT_RATE_LIMIT_DELAY
+                    )
+                    if getattr(exc, "code", None) == "rate_limit"
+                    else self.RETRY_DELAYS[attempt]
+                )
+
+                if getattr(exc, "code", None) == "rate_limit":
+                    emit(
+                        AgentEvent(
+                            kind="rate_limit_wait",
+                            turn=task_turn,
+                            elapsed=delay,
+                            message=f"Gemini quota reached; retrying in {delay:.0f}s",
+                        ),
+                    )
 
                 self.observability.record(
                     "llm_retry",
