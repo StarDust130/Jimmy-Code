@@ -110,6 +110,13 @@ def build_task_state(
 def _mentions_commit(
     task: str,
 ) -> bool:
+    if re.search(
+        r"\b(?:do\s+not|don't|never|without)\s+(?:commit|committing)\b",
+        task,
+        flags=re.IGNORECASE,
+    ):
+        return False
+
     return bool(
         re.search(
             r"\b(?:commit|committing|committed)\b",
@@ -239,7 +246,7 @@ def _extract_explicit_paths(
 def _mentions_shell_work(task: str) -> bool:
     return bool(
         re.search(
-            r"\b(?:run\s+(?:a\s+)?command|run\s+shell|npm|pnpm|yarn|pip|pytest|server|flask|express|curl)\b",
+            r"\b(?:run\s+(?:a\s+)?command|run\s+shell|run\s+(?:the\s+)?tests?\b|run\s+the\s+test\s+suite\b|execute\s+(?:the\s+)?tests?\b|git\s+status|current\s+git\s+status|npm|pnpm|yarn|pip|pytest|server|flask|express|curl)\b",
             task,
             flags=re.IGNORECASE,
         )
