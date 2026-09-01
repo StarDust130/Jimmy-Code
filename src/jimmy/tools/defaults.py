@@ -13,6 +13,7 @@ from jimmy.tools.read_file import ReadFileTool
 from jimmy.tools.registry import ToolRegistry
 from jimmy.tools.run_shell import RunShellTool
 from jimmy.tools.search_files import SearchFilesTool
+from jimmy.tools.verify_frontend import VerifyFrontendTool
 
 
 def create_default_registry(
@@ -27,6 +28,8 @@ def create_default_registry(
     registry.register(ReadFileTool(filesystem))
 
     registry.register(SearchFilesTool(filesystem))
+
+    registry.register(VerifyFrontendTool(filesystem))
 
     registry.register(EditFileTool(filesystem))
 
