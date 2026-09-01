@@ -15,3 +15,14 @@ def test_static_project_scope_ignores_url_examples(tmp_path: Path) -> None:
     assert state.requested_paths == {"gitGraph"}
     assert state.static_frontend is True
     assert state.shell_requested is False
+
+
+def test_scope_recognizes_name_before_folder_phrase(tmp_path: Path) -> None:
+    state = build_task_state(
+        "in my root create gitGraph folder inside that you all work not outside "
+        "Build a polished graph using HTML, CSS, and JavaScript.",
+        tmp_path,
+    )
+
+    assert state.requested_paths == {"gitGraph"}
+    assert state.static_frontend is True
