@@ -22,6 +22,7 @@ from evals.trace import EvalTrace
 # Therefore a failed intermediate tool call is expected.
 RECOVERY_TASKS = {
     "E19",
+    "E23",
 }
 
 
@@ -197,6 +198,7 @@ def grade_task(
     if task.id not in {
         "E09",
         "E10",
+        "E29",
     }:
         for relative in task.expected_unmodified_files:
             if relative in changed_files:
@@ -345,6 +347,24 @@ def grade_task(
                 ),
             )
 
+    if task.id == "E29":
+        required_files = {"a.py", "b.py"}
+        commit_counts = git_commit_counts(
+            workspace=workspace,
+            baseline=baseline,
+        )
+
+        for path in sorted(required_files):
+            if commit_counts.get(path, 0) != 1:
+                reasons.append(
+                    f"{path} was not committed exactly once",
+                )
+
+        if "other.py" in committed_files:
+            reasons.append(
+                "other.py should not have been committed",
+            )
+
     # --------------------------------------------------------
     # Recovery task validation
     # --------------------------------------------------------
@@ -359,7 +379,7 @@ def grade_task(
     #   3. the final test attempt succeeded
     # --------------------------------------------------------
 
-    if task.id == "E19":
+    if task.id in {"E19", "E23"}:
         test_attempts = [
             item
             for item in trace.tool_trace
@@ -384,7 +404,7 @@ def grade_task(
                     "final test command failed",
                 )
 
-        expected_source = "math_utils.py"
+        expected_source = "math_utils.py" if task.id == "E19" else "calc.py"
 
         if expected_source not in changed_files:
             reasons.append(
