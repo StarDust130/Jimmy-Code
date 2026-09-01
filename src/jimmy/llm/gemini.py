@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import re
 from collections.abc import Iterator
 from typing import Any
 
@@ -81,6 +82,8 @@ class GeminiProvider(LLMProvider):
         except errors.APIError as exc:
             raise self._normalize_error(exc) from exc
         except Exception as exc:
+            if self._looks_like_rate_limit(str(exc)):
+                raise self._rate_limit_error(str(exc)) from exc
             raise LLMProviderError(
                 message=(
                     "❌ Gemini request failed.\n"
@@ -254,6 +257,8 @@ class GeminiProvider(LLMProvider):
         except errors.APIError as exc:
             raise self._normalize_error(exc) from exc
         except Exception as exc:
+            if self._looks_like_rate_limit(str(exc)):
+                raise self._rate_limit_error(str(exc)) from exc
             raise LLMProviderError(
                 message=(
                     "❌ Gemini streaming request failed.\n"
@@ -1221,6 +1226,7 @@ class GeminiProvider(LLMProvider):
             )
 
         if code == 429:
+            retry_after = cls._retry_after_seconds(str(exc))
             return LLMProviderError(
                 message=(
                     "⚠️ Gemini rate limit reached.\n"
@@ -1228,6 +1234,7 @@ class GeminiProvider(LLMProvider):
                 ),
                 code="rate_limit",
                 retryable=True,
+                retry_after=retry_after,
             )
 
         if code in {
@@ -1253,3 +1260,26 @@ class GeminiProvider(LLMProvider):
             code="provider_error",
         )
 
+    @staticmethod
+    def _retry_after_seconds(error_text: str) -> float | None:
+        """Extract Gemini's documented retry delay from a 429 response."""
+        match = re.search(r"retryDelay['\"]?\s*[:=]\s*['\"](\d+(?:\.\d+)?)s", error_text)
+        if match is None:
+            match = re.search(r"retry in\s+(\d+(?:\.\d+)?)s", error_text, re.IGNORECASE)
+        if match is None:
+            return None
+        return max(0.0, min(float(match.group(1)), 300.0))
+
+    @staticmethod
+    def _looks_like_rate_limit(error_text: str) -> bool:
+        normalized = error_text.lower()
+        return "resource_exhausted" in normalized or "rate limit" in normalized or "quota exceeded" in normalized
+
+    @classmethod
+    def _rate_limit_error(cls, error_text: str) -> LLMProviderError:
+        return LLMProviderError(
+            message="⚠️ Gemini rate limit reached.\n" + error_text,
+            code="rate_limit",
+            retryable=True,
+            retry_after=cls._retry_after_seconds(error_text),
+        )
