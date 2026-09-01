@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from jimmy.agent.task_state import TaskState
 from jimmy.state.session import SessionState
 
 
@@ -20,18 +21,16 @@ class ToolGuardDecision:
 
 class ToolGuard:
     """
-    Very small runtime policy guard.
-
-    IMPORTANT:
+    Deterministic runtime policy guard.
 
     This guard does NOT:
-    - understand natural-language task scope
-    - parse "commit all"
-    - decide which files the user meant
-    - decide whether a task is complete
+    - choose tools
+    - plan tasks
     - call the LLM
+    - decide whether the task is complete
+    - infer complex natural-language intent
 
-    It only blocks objectively invalid tool usage.
+    It only enforces hard runtime rules.
     """
 
     def __init__(
@@ -40,18 +39,19 @@ class ToolGuard:
     ) -> None:
         self.workspace = workspace.resolve()
 
+    # =========================================================
+    # PUBLIC
+    # =========================================================
+
     def check(
         self,
         tool_name: str,
         arguments: dict[str, Any],
         state: SessionState,
+        task_state: TaskState | None = None,
     ) -> ToolGuardDecision:
         """
         Validate hard runtime rules.
-
-        `state` remains part of the interface so future
-        runtime policies can inspect state without making
-        the guard responsible for task understanding.
         """
 
         del state
@@ -66,6 +66,24 @@ class ToolGuard:
             return self._deny(
                 "Tool name is required.",
             )
+
+        # -----------------------------------------------------
+        # TASK-LEVEL BOUNDARIES
+        # -----------------------------------------------------
+
+        if task_state is not None:
+            decision = self._check_task_scope(
+                tool_name=tool_name,
+                arguments=arguments,
+                task_state=task_state,
+            )
+
+            if not decision.allowed:
+                return decision
+
+        # -----------------------------------------------------
+        # TOOL-SPECIFIC VALIDATION
+        # -----------------------------------------------------
 
         if tool_name == "run_shell":
             return self._check_run_shell(
@@ -82,11 +100,225 @@ class ToolGuard:
                 arguments,
             )
 
-        # Every other tool owns its own argument/runtime
-        # validation.
         return ToolGuardDecision(
             allowed=True,
         )
+
+    # =========================================================
+    # TASK SCOPE
+    # =========================================================
+
+    def _check_task_scope(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        task_state: TaskState,
+    ) -> ToolGuardDecision:
+        """
+        Enforce explicit user task boundaries.
+
+        The model still decides what action to take.
+        This guard only blocks actions that violate
+        explicit boundaries.
+        """
+
+        # -----------------------------------------------------
+        # GIT COMMIT
+        # -----------------------------------------------------
+
+        if tool_name == "git_commit":
+            if not task_state.commit_requested:
+                return self._deny(
+                    "Git commit was not requested by the user.",
+                )
+
+            # No explicit file/path scope:
+            #
+            # Example:
+            #   "Commit all changed files one by one."
+            #
+            # In this case the model/tool is allowed to determine
+            # the complete commit set.
+            if not task_state.requested_paths:
+                return ToolGuardDecision(
+                    allowed=True,
+                )
+
+            commit_paths = self._extract_commit_paths(
+                arguments,
+            )
+
+            # When the user gave explicit scope, an omitted path
+            # list is unsafe because it could mean "commit everything".
+            if not commit_paths:
+                return self._deny(
+                    (
+                        "This task has an explicit file scope. "
+                        "git_commit must specify the requested path(s)."
+                    ),
+                )
+
+            for path in commit_paths:
+                if not task_state.is_path_in_scope(
+                    path,
+                ):
+                    return self._deny(
+                        (
+                            f"Commit path '{path}' is outside "
+                            "the explicit task scope."
+                        ),
+                    )
+
+            return ToolGuardDecision(
+                allowed=True,
+            )
+
+        # -----------------------------------------------------
+        # FILE MUTATIONS
+        # -----------------------------------------------------
+
+        if tool_name in {
+            "edit_file",
+            "create_files",
+        }:
+            # No explicit scope means do not invent one.
+            if not task_state.requested_paths:
+                return ToolGuardDecision(
+                    allowed=True,
+                )
+
+            paths = self._mutation_paths(
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+
+            # Let the actual tool validate missing/invalid arguments.
+            if not paths:
+                return ToolGuardDecision(
+                    allowed=True,
+                )
+
+            for path in paths:
+                if not task_state.is_path_in_scope(
+                    path,
+                ):
+                    return self._deny(
+                        (
+                            f"Path '{path}' is outside "
+                            "the explicit scope of the current task."
+                        ),
+                    )
+
+        return ToolGuardDecision(
+            allowed=True,
+        )
+
+    # =========================================================
+    # COMMIT PATHS
+    # =========================================================
+
+    @staticmethod
+    def _extract_commit_paths(
+        arguments: dict[str, Any],
+    ) -> list[str]:
+        """
+        Extract explicit paths supplied to git_commit.
+
+        Supported form:
+
+            {
+                "paths": ["main.py"]
+            }
+        """
+
+        paths = arguments.get(
+            "paths",
+        )
+
+        if paths is None:
+            return []
+
+        if not isinstance(
+            paths,
+            list,
+        ):
+            return []
+
+        result: list[str] = []
+
+        for path in paths:
+            if isinstance(
+                path,
+                str,
+            ) and path.strip():
+                result.append(
+                    path,
+                )
+
+        return result
+
+    # =========================================================
+    # MUTATION PATHS
+    # =========================================================
+
+    @staticmethod
+    def _mutation_paths(
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> list[str]:
+        """
+        Extract file paths from mutation tool arguments.
+        """
+
+        if tool_name == "edit_file":
+            path = arguments.get(
+                "path",
+            )
+
+            if isinstance(
+                path,
+                str,
+            ):
+                return [path]
+
+            return []
+
+        if tool_name == "create_files":
+            files = arguments.get(
+                "files",
+                [],
+            )
+
+            if not isinstance(
+                files,
+                list,
+            ):
+                return []
+
+            paths: list[str] = []
+
+            for item in files:
+                if not isinstance(
+                    item,
+                    dict,
+                ):
+                    continue
+
+                path = item.get(
+                    "path",
+                )
+
+                if isinstance(
+                    path,
+                    str,
+                ):
+                    paths.append(
+                        path,
+                    )
+
+            return paths
+
+        return []
 
     # =========================================================
     # SHELL
@@ -116,14 +348,10 @@ class ToolGuard:
                 "run_shell requires a non-empty command.",
             )
 
-        # Git mutation belongs to the dedicated Git tool.
+        # Git mutations belong to the dedicated git_commit tool.
         #
-        # IMPORTANT:
-        # We deliberately do NOT block generic shell writes,
-        # mkdir, npm, python, package managers, generators,
-        # build tools, etc.
-        #
-        # A real coding agent needs shell flexibility.
+        # Normal shell commands remain available for:
+        # tests, builds, package managers, scripts, servers, etc.
         if self._is_git_mutation(
             command,
         ):
@@ -191,7 +419,10 @@ class ToolGuard:
 
             if path.exists():
                 return self._deny(
-                    (f"'{raw_path}' already exists. Use edit_file for existing files."),
+                    (
+                        f"'{raw_path}' already exists. "
+                        "Use edit_file for existing files."
+                    ),
                 )
 
         return ToolGuardDecision(
@@ -233,7 +464,10 @@ class ToolGuard:
 
         if not path.exists():
             return self._deny(
-                (f"'{raw_path}' does not exist. Use create_files for new files."),
+                (
+                    f"'{raw_path}' does not exist. "
+                    "Use create_files for new files."
+                ),
             )
 
         if not path.is_file():
@@ -253,7 +487,9 @@ class ToolGuard:
         self,
         relative_path: str,
     ) -> Path:
-        candidate = (self.workspace / relative_path).resolve()
+        candidate = (
+            self.workspace / relative_path
+        ).resolve()
 
         try:
             candidate.relative_to(
@@ -284,11 +520,28 @@ class ToolGuard:
             re.search(
                 r"(?i)"
                 r"(?:^|[;&|])\s*"
-                r"(?:git\s+)"
-                r"(?:add|commit|reset|restore|checkout|switch|clean|rebase|merge|cherry-pick|revert|rm)\b",
+                r"git\s+"
+                r"(?:"
+                r"add"
+                r"|commit"
+                r"|reset"
+                r"|restore"
+                r"|checkout"
+                r"|switch"
+                r"|clean"
+                r"|rebase"
+                r"|merge"
+                r"|cherry-pick"
+                r"|revert"
+                r"|rm"
+                r")\b",
                 command,
             ),
         )
+
+    # =========================================================
+    # DENY
+    # =========================================================
 
     @staticmethod
     def _deny(
