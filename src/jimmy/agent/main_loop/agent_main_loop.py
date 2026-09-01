@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from jimmy.agent.events import AgentEvent
@@ -73,6 +74,7 @@ class AgentMainLoop:
         workspace: Any,
     ) -> None:
         self.tools = tools
+        self.workspace = Path(workspace).resolve()
         self.session_store = session_store
         self.observability = observability
 
@@ -112,7 +114,7 @@ class AgentMainLoop:
         `state.turn_count` remains the persistent session counter.
         """
 
-        tool_schemas = self.tools.schemas()
+        tool_schemas = self._tool_schemas(task_state)
 
         if progress is None:
             progress = AgentProgress()
@@ -330,6 +332,37 @@ class AgentMainLoop:
         raise RuntimeError(
             message,
         )
+
+    def _tool_schemas(
+        self,
+        task_state: TaskState | None,
+    ) -> list[dict[str, Any]]:
+        """Expose only tools that are applicable to the active task.
+
+        Keeping a forbidden commit tool in the model's menu invited wasted
+        calls even though ToolGuard later rejected them.  This is a planning
+        hint, not a permission bypass: ToolGuard remains authoritative.
+        """
+        schemas = self.tools.schemas()
+
+        if task_state is None:
+            return schemas
+
+        excluded = set()
+        if not task_state.commit_requested:
+            excluded.add("git_commit")
+
+        if task_state.static_frontend:
+            excluded.add("run_shell")
+
+        return [
+            schema
+            for schema in schemas
+            if schema.get("function", {}).get("name") not in excluded
+        ]
+
+    def _is_static_frontend_task(self, task_state: TaskState) -> bool:
+        return task_state.static_frontend
 
     # ==========================================================
     # FALSE COMPLETION
