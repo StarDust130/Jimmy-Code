@@ -70,9 +70,14 @@ edit_file
     Read the current file first when the required text is not already known.
 
 run_shell
-    Use for commands that genuinely need execution:
+    Use only when the user explicitly asks for command execution,
     tests, builds, linters, formatters, package managers, scripts,
-    servers, programs, migrations, and similar operations.
+    servers, programs, and similar operations. Do not use it for
+    simple file edits, reads, comments, or HTML/CSS/JS creation unless
+    the user explicitly wants shell work.
+
+    If the active tool list does not show run_shell, do not invent it.
+    A missing shell tool means the task is not asking for command execution.
 
 git_commit
     Use for Git commits.
