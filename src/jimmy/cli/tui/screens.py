@@ -38,9 +38,15 @@ class SessionCard(Static):
         if len(title) > 46:
             title = title[:43] + "…"
         status = self.session.get("status", "unknown")
-        status_icon = "✓" if status == "completed" else "○"
-        status_color = "#4ade80" if status == "completed" else "#60a5fa"
-        status_text = "Completed" if status == "completed" else "Active"
+        status_map = {
+            "completed": ("✓", "#4ade80", "Completed"),
+            "failed": ("×", "#fb7185", "Needs attention"),
+            "interrupted": ("!", "#fbbf24", "Interrupted"),
+        }
+        status_icon, status_color, status_text = status_map.get(
+            status,
+            ("○", "#60a5fa", "Active"),
+        )
         turn_count = self.session.get("turn_count", 0)
         updated_at = self.session.get("updated_at", "")
         ago = self._time_ago(updated_at)
@@ -218,37 +224,10 @@ class AllSessionsScreen(Screen[str | None]):
         # Remove from local list
         self.sessions = [s for s in self.sessions if s.get("id") != session_id]
 
-        # Refresh the UI immediately
-        self._refresh_list()
-
-        # If no sessions left, close the dialog
-        if not self.sessions:
-            self.dismiss(None)
-        else:
-            # Ensure the screen is properly refreshed
-            self.refresh()
-
-    def _refresh_list(self) -> None:
-        """Rebuild the session list widget."""
-        list_container = self.query_one("#all-sessions-list", Vertical)
-        # Clear all existing children
-        list_container.remove_children()
-
-        # Re-add each session row
-        for session in self.sessions:
-            row = Horizontal(classes="session-row")
-            card = SessionCard(session, classes="all-session-card")
-            delete_btn = DeleteButton(session.get("id", ""))
-            row.mount(card, delete_btn)
-            list_container.mount(row)
-
-        # Reapply selection
-        if self.sessions:
-            self.selected_index = min(self.selected_index, len(self.sessions) - 1)
-            self._update_selection()
-        else:
-            # No sessions – nothing to select
-            pass
+        # Textual mounts/removals are asynchronous.  The old synchronous
+        # rebuild could leave a stale card and an open modal. Close this
+        # transient picker; reopening reads the authoritative session store.
+        self.dismiss(None)
 
 
 class HelpScreen(Screen):
