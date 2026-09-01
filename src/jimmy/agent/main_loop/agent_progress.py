@@ -206,6 +206,12 @@ class AgentProgress:
             if changed_workspace:
                 self._successful_mutations += 1
 
+                # A real edit can make an earlier failed action valid (for
+                # example, fix code then rerun pytest). Only block loops
+                # that have made no meaningful progress.
+                self._same_failed_actions.clear()
+                self._tool_failure_streaks.clear()
+
                 self._remember_changed_paths(
                     tool_name=tool_name,
                     arguments=arguments,
