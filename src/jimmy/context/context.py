@@ -46,15 +46,15 @@ class ContextConfig:
         Only happens when the context becomes large.
     """
 
-    max_messages: int = 20
-    max_message_chars: int = 8_000
-    max_total_chars: int = 60_000
+    max_messages: int = 16
+    max_message_chars: int = 4_000
+    max_total_chars: int = 28_000
 
-    compact_at_chars: int = 45_000
+    compact_at_chars: int = 20_000
 
     # Approximate number of recent messages to preserve.
     # Tool-call + tool-result exchanges are always kept together.
-    recent_messages: int = 8
+    recent_messages: int = 6
 
     # Preserve the initial system messages.
     max_leading_system_messages: int = 2
