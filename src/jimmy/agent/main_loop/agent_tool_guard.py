@@ -72,6 +72,13 @@ class ToolGuard:
             if not decision.allowed:
                 return decision
 
+            if tool_name == "run_shell" and task_state.static_frontend:
+                return self._deny(
+                    "This is a plain static frontend task. Use the file tools and "
+                    "verify_frontend; do not start servers or use shell commands "
+                    "unless the user explicitly requests command-line work."
+                )
+
         # -----------------------------------------------------
         # TOOL-SPECIFIC CHECKS
         # -----------------------------------------------------
