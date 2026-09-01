@@ -110,6 +110,12 @@ class AgentToolRunner:
             tool_call.arguments or {},
         )
 
+        self._apply_task_scope(
+            tool_name=tool_name,
+            arguments=arguments,
+            task_state=task_state,
+        )
+
         emit(
             AgentEvent(
                 kind="tool_start",
@@ -599,6 +605,34 @@ class AgentToolRunner:
                 False,
             )
         )
+
+    # ========================================================
+    # TASK-AWARE TOOL INPUTS
+    # ========================================================
+
+    def _apply_task_scope(
+        self,
+        *,
+        tool_name: str,
+        arguments: dict[str, Any],
+        task_state: TaskState | None,
+    ) -> None:
+        """Constrain discovery to one explicit existing target directory."""
+        if (
+            tool_name != "search_files"
+            or task_state is None
+            or arguments.get("path")
+        ):
+            return
+
+        directories = [
+            path
+            for path in sorted(task_state.requested_paths)
+            if (self.guard.workspace / path).is_dir()
+        ]
+
+        if len(directories) == 1:
+            arguments["path"] = directories[0]
 
     # ============================================================
     # VERIFICATION DETECTION
