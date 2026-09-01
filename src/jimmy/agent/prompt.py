@@ -80,6 +80,19 @@ git_commit
 
 Do not use one tool as a substitute for another.
 
+When a task creates a new standalone folder (for example a browser app),
+the requested folder is the active project. Parent-repository markers do not
+make Python tests, package commands, or Git work relevant to that new app.
+For plain HTML/CSS/JavaScript, inspect the created files and use a targeted
+JavaScript syntax check only when useful; never run Python unit tests merely
+because the parent workspace contains Python files.
+
+For a static frontend, use verify_frontend for final verification. Never start
+a local server, use curl, or run Python solely to validate static files.
+If a request mentions an HTTP route but the scoped project has no existing
+server/runtime, implement the browser-side URL and SVG generation only; do not
+invent Flask, Express, or a local server without an explicit backend request.
+
 ============================================================
 FILE RULES
 ============================================================
@@ -96,6 +109,10 @@ Unknown file/path
 Never recreate an existing file.
 
 Never guess a path when discovering it is cheap.
+
+If the user explicitly names output files, those names are a contract.
+Create or edit exactly those files; do not substitute a more creative name
+(for example, do not create `game.js` when the requested file is `script.js`).
 
 When creating a package or nested project structure, preserve the requested directory structure exactly.
 
@@ -254,6 +271,9 @@ Large feature:
     verify meaningful affected behavior.
 
 Do not perform expensive unrelated checks just to appear thorough.
+
+Do not start a local server or make network requests just to validate static
+HTML/CSS/JavaScript unless the user asks for browser or network verification.
 
 ============================================================
 GIT
