@@ -14,6 +14,7 @@ from jimmy.agent.planner import Planner
 from jimmy.agent.recovery import RecoveryManager
 from jimmy.context.context import ContextManager
 from jimmy.context.context_summarizer import ContextSummarizer
+from jimmy.environment.snapshot import EnvironmentInspector
 from jimmy.exploration.explorer import CodebaseExplorer
 from jimmy.git.state import GitState
 from jimmy.llm.base import LLMProvider
@@ -25,6 +26,7 @@ from jimmy.state.session import SessionState
 from jimmy.tools.registry import ToolRegistry
 
 from ..prompt import SYSTEM_PROMPT
+
 
 EventHandler = Callable[
     [AgentEvent],
@@ -50,7 +52,12 @@ class AgentLoop:
 
     Each call to run() starts a new task/session.
     continue_session() continues an existing conversation.
+
+    Environment awareness is refreshed at task/session boundaries,
+    not before every LLM/tool turn.
     """
+
+    _ENVIRONMENT_MARKER = "<environment_context>"
 
     def __init__(
         self,
@@ -73,13 +80,29 @@ class AgentLoop:
         self.workspace = workspace.resolve()
         self.max_turns = max_turns
 
-        self.planner = planner if planner is not None else Planner(llm)
+        self.planner = (
+            planner
+            if planner is not None
+            else Planner(llm)
+        )
 
-        self.executor = executor if executor is not None else ToolExecutor(tools)
+        self.executor = (
+            executor
+            if executor is not None
+            else ToolExecutor(tools)
+        )
 
-        self.observer = observer if observer is not None else Observer()
+        self.observer = (
+            observer
+            if observer is not None
+            else Observer()
+        )
 
-        self.recovery = recovery if recovery is not None else RecoveryManager()
+        self.recovery = (
+            recovery
+            if recovery is not None
+            else RecoveryManager()
+        )
 
         self.explorer = (
             explorer
@@ -90,11 +113,12 @@ class AgentLoop:
         )
 
         self.permissions = (
-            permission_manager if permission_manager is not None else PermissionManager()
+            permission_manager
+            if permission_manager is not None
+            else PermissionManager()
         )
 
-        # Git is optional because some tests/workspaces are not
-        # Git repositories.
+        # Git is optional because some workspaces are not Git repos.
         self.git_state = git_state
 
         self.session_store = (
@@ -105,10 +129,18 @@ class AgentLoop:
             )
         )
 
-        self.observability = observability if observability is not None else Observability()
+        self.observability = (
+            observability
+            if observability is not None
+            else Observability()
+        )
 
         self.context_manager = ContextManager(
             summarizer=ContextSummarizer(llm),
+        )
+
+        self.environment = EnvironmentInspector(
+            self.workspace,
         )
 
         self.main_loop = AgentMainLoop(
@@ -142,7 +174,11 @@ class AgentLoop:
 
         A new session is created, so previous conversation messages
         are not reused.
+
+        A fresh environment snapshot is captured once here.
         """
+
+        started_at = time.monotonic()
 
         task = task.strip()
 
@@ -151,12 +187,22 @@ class AgentLoop:
                 "Task cannot be empty.",
             )
 
+        environment_prompt = (
+            self.environment
+            .snapshot()
+            .to_prompt()
+        )
+
         state = SessionState(
             task=task,
             messages=[
                 {
                     "role": "system",
                     "content": SYSTEM_PROMPT,
+                },
+                {
+                    "role": "system",
+                    "content": environment_prompt,
                 },
                 {
                     "role": "user",
@@ -174,6 +220,7 @@ class AgentLoop:
         return self._run_session(
             state=state,
             session_id=session_id,
+            started_at=started_at,
             on_event=on_event,
             on_permission=on_permission,
             on_text_delta=on_text_delta,
@@ -194,11 +241,12 @@ class AgentLoop:
         """
         Continue an existing conversation with a new user request.
 
-        Previous messages remain available for references such as
-        "that file" or "the previous change".
+        Previous messages remain available for explicit references.
 
-        The previous task is not automatically treated as active.
+        The new task gets a fresh environment snapshot.
         """
+
+        started_at = time.monotonic()
 
         task = task.strip()
 
@@ -213,7 +261,10 @@ class AgentLoop:
 
         self.current_session_id = session_id
 
-        # Explicitly mark a new task boundary.
+        # --------------------------------------------------------
+        # Explicit task boundary.
+        # --------------------------------------------------------
+
         state.add_message(
             {
                 "role": "system",
@@ -228,6 +279,15 @@ class AgentLoop:
             },
         )
 
+        # --------------------------------------------------------
+        # Refresh environment because the workspace may have
+        # changed since the previous task.
+        # --------------------------------------------------------
+
+        self._refresh_environment_context(
+            state,
+        )
+
         state.add_message(
             {
                 "role": "user",
@@ -238,6 +298,7 @@ class AgentLoop:
         return self._run_session(
             state=state,
             session_id=session_id,
+            started_at=started_at,
             on_event=on_event,
             on_permission=on_permission,
             on_text_delta=on_text_delta,
@@ -256,7 +317,12 @@ class AgentLoop:
     ) -> str:
         """
         Resume an existing saved session/task.
+
+        The workspace may have changed while the process was stopped,
+        so refresh the environment snapshot before continuing.
         """
+
+        started_at = time.monotonic()
 
         state = self.session_store.load(
             session_id,
@@ -264,12 +330,85 @@ class AgentLoop:
 
         self.current_session_id = session_id
 
+        self._refresh_environment_context(
+            state,
+        )
+
+        self.session_store.save(
+            session_id=session_id,
+            state=state,
+            status="running",
+        )
+
         return self._run_session(
             state=state,
             session_id=session_id,
+            started_at=started_at,
             on_event=on_event,
             on_permission=on_permission,
             on_text_delta=on_text_delta,
+        )
+
+    # ============================================================
+    # ENVIRONMENT
+    # ============================================================
+
+    def _refresh_environment_context(
+        self,
+        state: SessionState,
+    ) -> None:
+        """
+        Replace stale environment context with a fresh snapshot.
+
+        Only environment-context system messages are replaced.
+        The actual conversation remains untouched.
+        """
+
+        state.messages = [
+            message
+            for message in state.messages
+            if not self._is_environment_message(
+                message,
+            )
+        ]
+
+        environment_prompt = (
+            self.environment
+            .snapshot()
+            .to_prompt()
+        )
+
+        # Place the fresh environment immediately after the
+        # initial system prompt whenever possible.
+        insert_at = 1 if state.messages else 0
+
+        state.messages.insert(
+            insert_at,
+            {
+                "role": "system",
+                "content": environment_prompt,
+            },
+        )
+
+    @classmethod
+    def _is_environment_message(
+        cls,
+        message: dict[str, Any],
+    ) -> bool:
+        if message.get("role") != "system":
+            return False
+
+        content = str(
+            message.get(
+                "content",
+                "",
+            )
+            or ""
+        )
+
+        return (
+            cls._ENVIRONMENT_MARKER
+            in content
         )
 
     # ============================================================
@@ -280,13 +419,17 @@ class AgentLoop:
         self,
         state: SessionState,
         session_id: str,
+        started_at: float,
         on_event: EventHandler | None,
         on_permission: PermissionHandler | None,
         on_text_delta: TextDeltaHandler | None,
     ) -> str:
-        started_at = time.monotonic()
+        """
+        Execute one task through AgentMainLoop.
 
-        # Fresh progress state for this task execution.
+        AgentProgress is fresh for this task execution.
+        """
+
         progress = AgentProgress()
 
         self.session_store.save(
@@ -308,20 +451,6 @@ class AgentLoop:
                 started_at=started_at,
                 metrics=metrics,
                 progress=progress,
-                on_event=on_event,
-                on_permission=on_permission,
-                on_text_delta=on_text_delta,
-            )
-
-        except TypeError:
-            # Compatibility with an AgentMainLoop version that
-            # does not yet accept progress explicitly.
-            return self.main_loop.run(
-                state=state,
-                session_id=session_id,
-                max_turns=self.max_turns,
-                started_at=started_at,
-                metrics=metrics,
                 on_event=on_event,
                 on_permission=on_permission,
                 on_text_delta=on_text_delta,
@@ -390,8 +519,6 @@ class AgentLoop:
     ) -> Any:
         """
         Start run metrics using the current observability API.
-
-        Keeps this isolated so the public AgentLoop remains simple.
         """
 
         return self.observability.start_run(
