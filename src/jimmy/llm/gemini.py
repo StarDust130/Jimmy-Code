@@ -340,102 +340,132 @@ class GeminiProvider(LLMProvider):
         str | None,
         list[types.Content],
     ]:
+        """
+        Convert Jimmy's provider-neutral history into Gemini history.
+
+        Gemini requires a strict function-calling sequence:
+
+            model(function_call)
+            user(function_response)
+            model(...)
+
+        Therefore tool responses are only emitted immediately after the
+        assistant/model message that contains the corresponding tool calls.
+
+        System messages become Gemini's system_instruction and are not placed
+        inside the conversational content stream.
+        """
+
         system_parts: list[str] = []
         contents: list[types.Content] = []
 
-        pending_tool_responses: list[types.Part] = []
+        index = 0
 
-        def flush_tool_responses() -> None:
-            if not pending_tool_responses:
-                return
+        while index < len(messages):
+            message = messages[index]
 
-            contents.append(
-                types.Content.model_validate(
-                    {
-                        "role": "user",
-                        "parts": pending_tool_responses,
-                    }
-                )
-            )
-
-            pending_tool_responses.clear()
-
-        for message in messages:
             role = message.get("role")
             content = message.get(
                 "content",
                 "",
             )
 
-            # --------------------------------------------------
+            # ======================================================
             # SYSTEM
-            # --------------------------------------------------
+            # ======================================================
 
             if role == "system":
                 if content:
-                    system_parts.append(str(content))
+                    system_parts.append(
+                        str(content),
+                    )
 
+                index += 1
                 continue
 
-            # --------------------------------------------------
+            # ======================================================
             # USER
-            # --------------------------------------------------
+            # ======================================================
 
             if role == "user":
-                flush_tool_responses()
-
                 if content:
                     contents.append(
                         types.Content.model_validate(
                             {
                                 "role": "user",
-                                "parts": [{"text": str(content)}],
+                                "parts": [
+                                    {
+                                        "text": str(content),
+                                    }
+                                ],
                             }
                         )
                     )
 
+                index += 1
                 continue
 
-            # --------------------------------------------------
+            # ======================================================
             # ASSISTANT / MODEL
-            # --------------------------------------------------
+            # ======================================================
 
             if role == "assistant":
-                flush_tool_responses()
-
                 parts: list[types.Part] = []
 
                 if content:
-                    parts.append(types.Part.model_validate({"text": str(content)}))
+                    parts.append(
+                        types.Part.model_validate(
+                            {
+                                "text": str(content),
+                            }
+                        )
+                    )
 
-                for call in message.get(
+                tool_calls = message.get(
                     "tool_calls",
                     [],
+                )
+
+                if not isinstance(
+                    tool_calls,
+                    list,
                 ):
+                    tool_calls = []
+
+                for call in tool_calls:
+                    if not isinstance(
+                        call,
+                        dict,
+                    ):
+                        continue
+
                     function = call.get(
                         "function",
                         {},
                     )
 
-                    name = function.get("name")
+                    if not isinstance(
+                        function,
+                        dict,
+                    ):
+                        continue
+
+                    name = function.get(
+                        "name",
+                    )
 
                     if (
-                        not isinstance(
-                            name,
-                            str,
-                        )
+                        not isinstance(name, str)
                         or not name
                     ):
                         continue
 
-                    raw_arguments = function.get(
-                        "arguments",
-                        {},
+                    arguments = cls._parse_arguments(
+                        function.get(
+                            "arguments",
+                            {},
+                        )
                     )
-
-                    arguments = cls._parse_arguments(raw_arguments)
-
-                    signature = cls._decode_signature(call.get("thought_signature"))
 
                     part_data: dict[str, Any] = {
                         "function_call": {
@@ -444,12 +474,22 @@ class GeminiProvider(LLMProvider):
                         }
                     }
 
-                    # Gemini expects the original thought signature
-                    # bytes on the same Part where they were received.
-                    if signature is not None:
-                        part_data["thought_signature"] = signature
+                    signature = cls._decode_signature(
+                        call.get(
+                            "thought_signature",
+                        )
+                    )
 
-                    parts.append(types.Part.model_validate(part_data))
+                    if signature is not None:
+                        part_data[
+                            "thought_signature"
+                        ] = signature
+
+                    parts.append(
+                        types.Part.model_validate(
+                            part_data,
+                        )
+                    )
 
                 if parts:
                     contents.append(
@@ -461,47 +501,118 @@ class GeminiProvider(LLMProvider):
                         )
                     )
 
-                continue
+                # --------------------------------------------------
+                # If this assistant message contains tool calls,
+                # the following messages MUST be tool responses.
+                # --------------------------------------------------
 
-            # --------------------------------------------------
-            # TOOL RESULT
-            # --------------------------------------------------
+                if tool_calls:
+                    response_parts: list[types.Part] = []
 
-            if role == "tool":
-                tool_name = message.get("name")
+                    next_index = index + 1
 
-                if (
-                    not isinstance(
-                        tool_name,
-                        str,
+                    while next_index < len(messages):
+                        next_message = messages[next_index]
+
+                        if next_message.get("role") != "tool":
+                            break
+
+                        tool_name = next_message.get(
+                            "name",
+                        )
+
+                        if (
+                            not isinstance(
+                                tool_name,
+                                str,
+                            )
+                            or not tool_name
+                        ):
+                            raise ValueError(
+                                "Invalid Gemini tool history: "
+                                "tool response is missing its tool name."
+                            )
+
+                        response_content = str(
+                            next_message.get(
+                                "content",
+                                "",
+                            )
+                            or ""
+                        )
+
+                        response_parts.append(
+                            types.Part.model_validate(
+                                {
+                                    "function_response": {
+                                        "name": tool_name,
+                                        "response": {
+                                            "result": response_content,
+                                        },
+                                    }
+                                }
+                            )
+                        )
+
+                        next_index += 1
+
+                    # --------------------------------------------------
+                    # Gemini must receive at least one response for
+                    # the function-call turn.
+                    # --------------------------------------------------
+
+                    if not response_parts:
+                        raise ValueError(
+                            "Invalid Gemini tool history: "
+                            "a model function-call turn has no "
+                            "immediately following tool response."
+                        )
+
+                    contents.append(
+                        types.Content.model_validate(
+                            {
+                                "role": "user",
+                                "parts": response_parts,
+                            }
+                        )
                     )
-                    or not tool_name
-                ):
+
+                    index = next_index
                     continue
 
-                pending_tool_responses.append(
-                    types.Part.model_validate(
-                        {
-                            "function_response": {
-                                "name": tool_name,
-                                "response": {
-                                    "result": str(content),
-                                },
-                            }
-                        }
-                    )
-                )
-
+                index += 1
                 continue
 
-        flush_tool_responses()
+            # ======================================================
+            # TOOL WITHOUT A PRECEDING ASSISTANT FUNCTION CALL
+            # ======================================================
 
-        system_instruction = "\n\n".join(system_parts) if system_parts else None
+            if role == "tool":
+                raise ValueError(
+                    "Invalid Gemini tool history: "
+                    "orphaned tool response without a preceding "
+                    "assistant function-call turn."
+                )
+
+            # ======================================================
+            # UNKNOWN ROLE
+            # ======================================================
+
+            raise ValueError(
+                f"Unsupported message role for Gemini: {role!r}",
+            )
+
+        system_instruction = (
+            "\n\n".join(system_parts)
+            if system_parts
+            else None
+        )
 
         return (
             system_instruction,
             contents,
         )
+
 
     # ============================================================
     # RESPONSE
