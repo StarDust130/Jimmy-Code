@@ -24,6 +24,8 @@ from jimmy.session.json_store import JsonSessionStore
 from jimmy.session.store import SessionStore
 from jimmy.state.session import SessionState
 from jimmy.tools.registry import ToolRegistry
+from jimmy.agent.task_state import TaskState
+from jimmy.agent.task_state_builder import build_task_state
 
 from ..prompt import SYSTEM_PROMPT
 
@@ -217,10 +219,16 @@ class AgentLoop:
 
         self.current_session_id = session_id
 
+        task_state = build_task_state(
+            task=task,
+            workspace=self.workspace,
+        )
+
         return self._run_session(
             state=state,
             session_id=session_id,
             started_at=started_at,
+            task_state=task_state,
             on_event=on_event,
             on_permission=on_permission,
             on_text_delta=on_text_delta,
@@ -295,10 +303,16 @@ class AgentLoop:
             },
         )
 
+        task_state = build_task_state(
+            task=task,
+            workspace=self.workspace,
+        )
+
         return self._run_session(
             state=state,
             session_id=session_id,
             started_at=started_at,
+            task_state=task_state,
             on_event=on_event,
             on_permission=on_permission,
             on_text_delta=on_text_delta,
@@ -340,10 +354,16 @@ class AgentLoop:
             status="running",
         )
 
+        task_state = build_task_state(
+            task=state.task,
+            workspace=self.workspace,
+        )
+
         return self._run_session(
             state=state,
             session_id=session_id,
             started_at=started_at,
+            task_state=task_state,
             on_event=on_event,
             on_permission=on_permission,
             on_text_delta=on_text_delta,
@@ -420,6 +440,7 @@ class AgentLoop:
         state: SessionState,
         session_id: str,
         started_at: float,
+        task_state: TaskState,
         on_event: EventHandler | None,
         on_permission: PermissionHandler | None,
         on_text_delta: TextDeltaHandler | None,
@@ -451,6 +472,7 @@ class AgentLoop:
                 started_at=started_at,
                 metrics=metrics,
                 progress=progress,
+                task_state=task_state,
                 on_event=on_event,
                 on_permission=on_permission,
                 on_text_delta=on_text_delta,
