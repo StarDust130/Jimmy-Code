@@ -63,6 +63,10 @@ class GeminiProvider(LLMProvider):
             self._convert_messages(messages)
         )
 
+        contents = self._prepare_contents_for_request(
+            contents,
+        )
+
         config = types.GenerateContentConfig(
             system_instruction=system_instruction,
             tools=self._convert_tools(tools) or None,
@@ -98,6 +102,10 @@ class GeminiProvider(LLMProvider):
     ) -> Iterator[str | LLMResponse]:
         system_instruction, contents = (
             self._convert_messages(messages)
+        )
+
+        contents = self._prepare_contents_for_request(
+            contents,
         )
 
         config = types.GenerateContentConfig(
@@ -649,7 +657,13 @@ class GeminiProvider(LLMProvider):
                             )
                         )
 
-                    if tool_message is None:
+                        if tool_message is None:
+                            raise ValueError(
+                                "Invalid Gemini history: "
+                                f"missing tool response for "
+                                f"function call '{call_id}'."
+                            )
+                    else:
                         tool_message = (
                             tool_messages[position]
                         )
@@ -740,6 +754,63 @@ class GeminiProvider(LLMProvider):
             system_instruction,
             contents,
         )
+
+    # ============================================================
+    # REQUEST VALIDATION
+    # ============================================================
+
+    @staticmethod
+    def _prepare_contents_for_request(
+        contents: list[types.Content],
+    ) -> list[types.Content]:
+        """
+        Enforce Gemini's GenerateContent turn contract.
+
+        Gemini rejects requests whose final content item is a model
+        turn. This can happen when Jimmy re-enters the provider after
+        an assistant response.
+
+        A model function-call turn is different: it MUST be followed
+        by its tool response. We never fabricate a response for that
+        case because doing so would corrupt the conversation history.
+        """
+
+        if not contents:
+            return contents
+
+        last = contents[-1]
+
+        if getattr(last, "role", None) != "model":
+            return contents
+
+        parts = getattr(last, "parts", None) or []
+
+        has_function_call = any(
+            getattr(part, "function_call", None) is not None
+            for part in parts
+        )
+
+        if has_function_call:
+            raise ValueError(
+                "Invalid Gemini history: conversation ends with "
+                "a model function call without its tool response."
+            )
+
+        # GenerateContent does not accept a request ending in a model
+        # turn. Add a real user continuation turn instead of sending
+        # a model prefill.
+        contents.append(
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(
+                        text="Continue.",
+                    ),
+                ],
+            )
+        )
+
+        return contents
 
     # ============================================================
     # RESPONSE
@@ -1056,6 +1127,18 @@ class GeminiProvider(LLMProvider):
     def _is_base64(
         value: str,
     ) -> bool:
+        if not value:
+            return False
+
+        if len(value) % 4 == 1:
+            return False
+
+        if not all(
+            char.isalnum() or char in "-_="
+            for char in value
+        ):
+            return False
+
         try:
             padding = "=" * (
                 -len(value) % 4
@@ -1065,7 +1148,18 @@ class GeminiProvider(LLMProvider):
                 value + padding,
             )
 
-            return bool(decoded)
+            if not decoded:
+                return False
+
+            canonical = (
+                base64.urlsafe_b64encode(
+                    decoded,
+                )
+                .decode("ascii")
+                .rstrip("=")
+            )
+
+            return canonical == value.rstrip("=")
 
         except (
             ValueError,
@@ -1088,6 +1182,34 @@ class GeminiProvider(LLMProvider):
         )
 
         if code == 400:
+            error_text = str(exc)
+
+            if (
+                "Requests ending with a model turn "
+                "are not supported"
+                in error_text
+            ):
+                return LLMProviderError(
+                    message=(
+                        "❌ Gemini rejected the request: "
+                        "history ended with a model turn. "
+                        "Jimmy should normalize the history "
+                        "before sending it.\n"
+                        f"{exc}"
+                    ),
+                    code="invalid_history",
+                )
+
+            if "thought_signature" in error_text:
+                return LLMProviderError(
+                    message=(
+                        "❌ Gemini rejected a tool call because "
+                        "its thought signature is missing or invalid.\n"
+                        f"{exc}"
+                    ),
+                    code="invalid_tool_signature",
+                )
+
             return LLMProviderError(
                 message=(
                     "❌ Gemini rejected the request.\n"
