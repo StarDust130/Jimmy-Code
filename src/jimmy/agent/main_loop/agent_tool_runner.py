@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -42,22 +43,19 @@ class AgentToolRunner:
     """
     Execute one model-requested tool call.
 
-    Pipeline:
+    Runtime flow:
 
-        task scope
-        -> tool guard
-        -> progress guard
-        -> tool lookup
-        -> permission
-        -> execution
-        -> result formatting
-        -> observation
-        -> recovery
-        -> state update
+        scope
+        → progress guard
+        → lookup
+        → permission
+        → execute
+        → observe
+        → record
+        → return result
 
-    The runner does not decide what the task means.
-    It only executes the model's chosen tool and enforces
-    deterministic runtime rules.
+    Verification is based on real tool results.
+    The runner never asks another LLM to verify.
     """
 
     def __init__(
@@ -123,7 +121,7 @@ class AgentToolRunner:
         )
 
         # ========================================================
-        # 1. TOOL GUARD
+        # 1. HARD TOOL POLICY
         # ========================================================
 
         guard = self.guard.check(
@@ -170,7 +168,8 @@ class AgentToolRunner:
                 ),
             )
 
-            # Policy rejection is NOT tool execution failure.
+            # IMPORTANT:
+            # A policy rejection is not execution failure.
             return False
 
         # ========================================================
@@ -375,6 +374,48 @@ class AgentToolRunner:
             result=tool_result,
         )
 
+        # ========================================================
+        # 7. REAL VERIFICATION MARKER
+        # ========================================================
+        #
+        # We do not invent verification commands.
+        #
+        # If the model actually runs a test/build/check command,
+        # the command's real exit code becomes the verification fact.
+        #
+        # Example:
+        #
+        # pytest
+        #   exit 0 → [verification:passed]
+        #   exit 1 → [verification:failed]
+        #
+
+        if tool_name == "run_shell":
+            command = str(
+                (tool_result.metadata or {}).get(
+                    "command",
+                    arguments.get(
+                        "command",
+                        "",
+                    ),
+                )
+                or ""
+            )
+
+            if self._is_verification_command(
+                command,
+            ):
+                if tool_result.success:
+                    result_text = (
+                        "[verification:passed]\n"
+                        f"{result_text}"
+                    )
+                else:
+                    result_text = (
+                        "[verification:failed]\n"
+                        f"{result_text}"
+                    )
+
         elapsed = (
             time.monotonic()
             - started_at
@@ -386,7 +427,7 @@ class AgentToolRunner:
         )
 
         # ========================================================
-        # 7. OBSERVE
+        # 8. OBSERVE
         # ========================================================
 
         if tool_result.success:
@@ -404,7 +445,7 @@ class AgentToolRunner:
             )
 
         # ========================================================
-        # 8. FAILURE
+        # 9. FAILURE
         # ========================================================
 
         if not tool_result.success:
@@ -448,6 +489,19 @@ class AgentToolRunner:
                     "error_message": str(failure),
                     "recovery_category": recovery.category.value,
                     "retryable": recovery.retry,
+                    "verification": (
+                        self._is_verification_command(
+                            str(
+                                arguments.get(
+                                    "command",
+                                    "",
+                                )
+                                or ""
+                            )
+                        )
+                        if tool_name == "run_shell"
+                        else False
+                    ),
                 },
             )
 
@@ -469,7 +523,7 @@ class AgentToolRunner:
             return False
 
         # ========================================================
-        # 9. SUCCESS
+        # 10. SUCCESS
         # ========================================================
 
         self._save_tool_message(
@@ -514,6 +568,51 @@ class AgentToolRunner:
         )
 
     # ============================================================
+    # VERIFICATION DETECTION
+    # ============================================================
+
+    @staticmethod
+    def _is_verification_command(
+        command: str,
+    ) -> bool:
+        """
+        Conservative detection of commands whose exit status
+        objectively tells us whether a check passed.
+
+        This does NOT execute anything.
+        """
+
+        normalized = command.strip().lower()
+
+        if not normalized:
+            return False
+
+        patterns = (
+            r"(^|[;&|]\s*)pytest(?:\s|$)",
+            r"(^|[;&|]\s*)python(?:3)?\s+-m\s+pytest(?:\s|$)",
+            r"(^|[;&|]\s*)python(?:3)?\s+-m\s+unittest(?:\s|$)",
+            r"(^|[;&|]\s*)python(?:3)?\s+-m\s+py_compile(?:\s|$)",
+            r"(^|[;&|]\s*)node\s+--check(?:\s|$)",
+            r"(^|[;&|]\s*)npm\s+(?:test|run\s+(?:test|build|lint|check))(?:\s|$)",
+            r"(^|[;&|]\s*)pnpm\s+(?:test|run\s+(?:test|build|lint|check))(?:\s|$)",
+            r"(^|[;&|]\s*)yarn\s+(?:test|build|lint|check)(?:\s|$)",
+            r"(^|[;&|]\s*)cargo\s+test(?:\s|$)",
+            r"(^|[;&|]\s*)go\s+test(?:\s|$)",
+            r"(^|[;&|]\s*)mypy(?:\s|$)",
+            r"(^|[;&|]\s*)ruff\s+(?:check|format\s+--check)(?:\s|$)",
+            r"(^|[;&|]\s*)eslint(?:\s|$)",
+            r"(^|[;&|]\s*)tsc(?:\s|$)",
+        )
+
+        return any(
+            re.search(
+                pattern,
+                normalized,
+            )
+            for pattern in patterns
+        )
+
+    # ============================================================
     # RESULT FORMATTER
     # ============================================================
 
@@ -522,10 +621,6 @@ class AgentToolRunner:
         tool_name: str,
         result: ToolResult,
     ) -> str:
-        """
-        Convert ToolResult into compact, useful model context.
-        """
-
         if result.success:
             output = str(
                 result.output or "",
@@ -560,10 +655,10 @@ class AgentToolRunner:
             "command",
         )
 
-        if (
-            isinstance(command, str)
-            and command.strip()
-        ):
+        if isinstance(
+            command,
+            str,
+        ) and command.strip():
             lines.append(
                 f"Command: {command.strip()}",
             )
@@ -590,10 +685,10 @@ class AgentToolRunner:
             "stdout",
         )
 
-        if (
-            isinstance(stdout, str)
-            and stdout.strip()
-        ):
+        if isinstance(
+            stdout,
+            str,
+        ) and stdout.strip():
             lines.extend(
                 [
                     "STDOUT:",
@@ -605,10 +700,10 @@ class AgentToolRunner:
             "stderr",
         )
 
-        if (
-            isinstance(stderr, str)
-            and stderr.strip()
-        ):
+        if isinstance(
+            stderr,
+            str,
+        ) and stderr.strip():
             lines.extend(
                 [
                     "STDERR:",
@@ -620,10 +715,10 @@ class AgentToolRunner:
             "path",
         )
 
-        if (
-            isinstance(path, str)
-            and path.strip()
-        ):
+        if isinstance(
+            path,
+            str,
+        ) and path.strip():
             lines.append(
                 f"Path: {path}",
             )
