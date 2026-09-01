@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from typing import Final
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from jimmy.tools.base import Tool
 from jimmy.tools.filesystem import Filesystem
@@ -18,15 +18,20 @@ MAX_TIMEOUT: Final[int] = 600
 class RunShellInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    command: str = Field(
-        description=(
-            "Shell command to execute from the workspace root."
-        ),
-    )
+    command: str
+
+    background: bool = False
 
 
 class RunShellTool(Tool):
-    """Run a shell command inside the current workspace."""
+    """
+    Run a shell command inside the workspace.
+
+    Normal commands run in the foreground and return their output.
+
+    Long-running processes such as development servers should be
+    started with background=true.
+    """
 
     def __init__(
         self,
@@ -39,6 +44,7 @@ class RunShellTool(Tool):
             )
 
         self.filesystem = filesystem
+
         self.timeout = min(
             timeout,
             MAX_TIMEOUT,
@@ -51,17 +57,19 @@ class RunShellTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Run a shell command from the workspace root. "
-            "Use this when command execution is actually required: "
-            "tests, builds, linters, formatters, package managers, "
-            "scripts, programs, servers, migrations, and other shell "
-            "operations. "
-            "Do not use run_shell to create or edit source files when "
-            "create_files or edit_file can perform the operation directly. "
-            "For Git mutations, use git_commit instead of git add/commit. "
-            "When a command fails, use its exit code and stdout/stderr "
-            "to diagnose the actual cause before choosing the next command. "
-            "Do not blindly try unrelated commands."
+            "Run a shell command inside the current workspace. "
+            "Use this for tests, builds, linters, formatters, scripts, "
+            "package commands, programs, and other commands that genuinely "
+            "require a shell. "
+            "\n\n"
+            "For commands that are expected to finish, use background=false "
+            "or omit background. "
+            "For long-running processes such as development servers, use "
+            "background=true so Jimmy does not wait for the process to exit. "
+            "\n\n"
+            "Do not use this for creating or editing files when a dedicated "
+            "filesystem tool exists. "
+            "For Git commits, use git_commit instead of git commit."
         )
 
     @property
@@ -70,7 +78,9 @@ class RunShellTool(Tool):
             read_only=False,
             destructive=True,
             requires_confirmation=True,
-            timeout_seconds=float(self.timeout),
+            timeout_seconds=float(
+                self.timeout,
+            ),
         )
 
     @property
@@ -96,6 +106,44 @@ class RunShellTool(Tool):
             command,
         )
 
+        # ======================================================
+        # BACKGROUND PROCESS
+        # ======================================================
+
+        if args.background:
+            try:
+                process = subprocess.Popen(
+                    command,
+                    cwd=self.filesystem.root,
+                    shell=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+
+            except OSError as exc:
+                raise RuntimeError(
+                    f"Failed to start background command: {exc}",
+                ) from exc
+
+            return ToolResult.ok(
+                output=(
+                    "Started background process.\n"
+                    f"PID: {process.pid}\n"
+                    f"Command: {command}"
+                ),
+                metadata={
+                    "command": command,
+                    "background": True,
+                    "pid": process.pid,
+                    "started": True,
+                },
+            )
+
+        # ======================================================
+        # FOREGROUND PROCESS
+        # ======================================================
+
         try:
             result = subprocess.run(
                 command,
@@ -111,7 +159,8 @@ class RunShellTool(Tool):
 
         except subprocess.TimeoutExpired as exc:
             raise TimeoutError(
-                f"Command timed out after {self.timeout} seconds.",
+                f"Command timed out after "
+                f"{self.timeout} seconds."
             ) from exc
 
         except OSError as exc:
@@ -132,6 +181,7 @@ class RunShellTool(Tool):
 
         metadata = {
             "command": command,
+            "background": False,
             "exit_code": result.returncode,
             "timed_out": False,
         }
@@ -147,7 +197,8 @@ class RunShellTool(Tool):
             output=output,
             error_type="ShellCommandFailed",
             error=(
-                f"Command exited with code {result.returncode}."
+                f"Command exited with code "
+                f"{result.returncode}."
             ),
             metadata=metadata,
         )
