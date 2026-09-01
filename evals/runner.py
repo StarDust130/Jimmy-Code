@@ -10,6 +10,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+# Allow direct script execution to import the repository packages.
+if __package__ in {None, ""}:
+    REPO_ROOT = Path(__file__).resolve().parent.parent
+
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+
 from evals.config import EvalConfig
 from evals.graders.graders import (
     capture_git_state,
@@ -20,17 +27,6 @@ from evals.tasks.coding_tasks import TASKS, EvalTask
 from evals.trace import EvalTrace, TraceCollector
 from jimmy.config.settings import Settings
 from jimmy.llm.gemini import GeminiProvider
-
-# Allow:
-#
-#   python evals/runner.py
-#   python -m evals.runner
-#
-if __package__ in {None, ""}:
-    REPO_ROOT = Path(__file__).resolve().parent.parent
-
-    if str(REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(REPO_ROOT))
 
 try:
     from jimmy.agent.main_loop.agent_loop import AgentLoop
@@ -214,7 +210,7 @@ def prepare_post_baseline_changes(
     E09 and E10 need already-dirty files so the agent can commit them.
     """
 
-    if task.id == "E09" or task.id == "E10":
+    if task.id in {"E09", "E10", "E29"}:
         for relative_path in task.files:
             path = workspace / relative_path
 
