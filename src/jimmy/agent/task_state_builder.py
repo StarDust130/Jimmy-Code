@@ -65,6 +65,11 @@ _NAMED_DIRECTORY_PATTERN = re.compile(
     flags=re.IGNORECASE | re.VERBOSE,
 )
 
+_DIRECTORY_NAME_FIRST_PATTERN = re.compile(
+    r"\b(?:create|make|add)\s+(?:a\s+|the\s+)?([A-Za-z0-9_.-]+)\s+(?:folder|directory)\b",
+    flags=re.IGNORECASE,
+)
+
 
 def build_task_state(
     task: str,
@@ -156,6 +161,15 @@ def _extract_explicit_paths(
     named_directories = {
         TaskState.normalize_path(match.group(1))
         for match in _NAMED_DIRECTORY_PATTERN.finditer(task)
+    }
+    named_directories.update(
+        TaskState.normalize_path(match.group(1))
+        for match in _DIRECTORY_NAME_FIRST_PATTERN.finditer(task)
+    )
+    named_directories = {
+        candidate
+        for candidate in named_directories
+        if candidate and candidate.lower() not in _IGNORED_WORDS
     }
     named_directories.discard("")
 
