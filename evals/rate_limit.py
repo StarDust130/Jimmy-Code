@@ -91,6 +91,13 @@ class RateLimitedProvider:
 
 def _is_rate_limit_error(exc: Exception) -> bool:
     code = getattr(exc, "code", None)
+    if code == "quota_exhausted":
+        return False
+
+    retryable = getattr(exc, "retryable", None)
+    if retryable is False:
+        return False
+
     if code in {429, "429", "rate_limit", "resource_exhausted"}:
         return True
 
