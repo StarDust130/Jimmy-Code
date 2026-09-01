@@ -1,28 +1,28 @@
 {
   "summary": {
     "tasks": 20,
-    "passed": 12,
-    "failed": 8,
-    "pass_rate": 0.6,
-    "avg_turns": 3.2,
-    "avg_tool_calls": 2.3,
-    "avg_seconds": 22.735670320750067,
+    "passed": 18,
+    "failed": 2,
+    "pass_rate": 0.9,
+    "avg_turns": 4.05,
+    "avg_tool_calls": 2.65,
+    "avg_seconds": 15.844034002600164,
     "tool_failures": 2,
-    "wrong_tool_attempts": 1,
+    "wrong_tool_attempts": 0,
     "repeated_calls": 0,
-    "rate_limit_waits": 18,
-    "rate_limit_wait_seconds": 95.34387685200345,
-    "total_wall_seconds": 455.12281688799885
+    "rate_limit_waits": 27,
+    "rate_limit_wait_seconds": 174.11027591099412,
+    "total_wall_seconds": 317.3022913540008
   },
   "results": [
     {
       "trace": {
         "eval_id": "E01",
         "task": "Read main.py and tell me what it does.",
-        "workspace": "/tmp/jimmy-eval-e01-6cxy4tbo",
-        "started_at": 11559.234939367,
-        "finished_at": 11563.414376241,
-        "result": "`main.py` simply prints the string `'hello'` to standard output (`print('hello')`).",
+        "workspace": "/tmp/jimmy-eval-e01-soihssgq",
+        "started_at": 14388.812291918,
+        "finished_at": 14391.777758089,
+        "result": "`main.py` is a simple Python script that prints the string `'hello'` to standard output (`print('hello')`).",
         "passed": true,
         "error": null,
         "turns": 2,
@@ -37,12 +37,12 @@
             "arguments": {
               "path": "main.py"
             },
-            "elapsed_seconds": 0.00019838499974866863,
+            "elapsed_seconds": 0.00018932800048787612,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 4.179436874001112
+        "elapsed_seconds": 2.965466170999207
       },
       "grade": {
         "passed": true,
@@ -53,20 +53,20 @@
         "changed_files": [],
         "committed_files": [],
         "uncommitted_files": [],
-        "wall_seconds": 4.1852775150000525,
+        "wall_seconds": 2.9716385539995827,
         "rate_limit_waits": 0,
         "rate_limit_wait_seconds": 0.0,
-        "workspace": "/tmp/jimmy-eval-e01-6cxy4tbo"
+        "workspace": "/tmp/jimmy-eval-e01-soihssgq"
       }
     },
     {
       "trace": {
         "eval_id": "E02",
         "task": "Find where greeting is defined and tell me the file.",
-        "workspace": "/tmp/jimmy-eval-e02-_4kkaiwl",
-        "started_at": 11563.421667832,
-        "finished_at": 11566.763480097,
-        "result": "The function `greeting` is defined in `./main.py` (specifically on line 1).",
+        "workspace": "/tmp/jimmy-eval-e02-x07gm6eu",
+        "started_at": 14391.785278755,
+        "finished_at": 14394.760717183,
+        "result": "`greeting` is defined in `main.py` on line 1.",
         "passed": true,
         "error": null,
         "turns": 2,
@@ -81,12 +81,12 @@
             "arguments": {
               "query": "greeting"
             },
-            "elapsed_seconds": 0.006350829000439262,
+            "elapsed_seconds": 0.004888108000159264,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 3.341812265000044
+        "elapsed_seconds": 2.975438428000416
       },
       "grade": {
         "passed": true,
@@ -97,23 +97,23 @@
         "changed_files": [],
         "committed_files": [],
         "uncommitted_files": [],
-        "wall_seconds": 3.3484395739997126,
+        "wall_seconds": 2.981528120999428,
         "rate_limit_waits": 0,
         "rate_limit_wait_seconds": 0.0,
-        "workspace": "/tmp/jimmy-eval-e02-_4kkaiwl"
+        "workspace": "/tmp/jimmy-eval-e02-x07gm6eu"
       }
     },
     {
       "trace": {
         "eval_id": "E03",
         "task": "Add a comment above greeting in main.py.",
-        "workspace": "/tmp/jimmy-eval-e03-mfxnrera",
-        "started_at": 11566.771093319,
-        "finished_at": 11574.844896847,
-        "result": "I have added a comment above `greeting` in `main.py`.",
+        "workspace": "/tmp/jimmy-eval-e03-wms2a9e_",
+        "started_at": 14394.767627822,
+        "finished_at": 14402.850538028,
+        "result": "",
         "passed": true,
-        "error": null,
-        "turns": 5,
+        "error": "LLMProviderError: ❌ Gemini rejected the request.\n400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Requests ending with a model turn are not supported.', 'status': 'INVALID_ARGUMENT'}}",
+        "turns": 6,
         "tool_calls": 4,
         "failed_tools": 0,
         "repeated_tools": 0,
@@ -127,45 +127,45 @@
             "arguments": {
               "query": "greeting"
             },
-            "elapsed_seconds": 0.006211388001247542,
+            "elapsed_seconds": 0.006510997000077623,
             "success": true,
             "message": "ok"
           },
           {
             "name": "read_file",
             "arguments": {
-              "line_start": 1,
               "line_end": 10,
+              "line_start": 1,
               "path": "main.py"
             },
-            "elapsed_seconds": 0.00028621799901884515,
+            "elapsed_seconds": 0.00025819400070759,
             "success": true,
             "message": "ok"
           },
           {
             "name": "edit_file",
             "arguments": {
+              "new_text": "# This is a greeting function\ndef greeting():",
               "path": "main.py",
-              "new_text": "# Greeting function\ndef greeting():",
               "old_text": "def greeting():"
             },
-            "elapsed_seconds": 0.00036809999983233865,
+            "elapsed_seconds": 0.0004081489987584064,
             "success": true,
             "message": "ok"
           },
           {
             "name": "read_file",
             "arguments": {
-              "line_end": 5,
+              "line_end": 10,
               "path": "main.py",
               "line_start": 1
             },
-            "elapsed_seconds": 0.00024907300030463375,
+            "elapsed_seconds": 0.00029956999969726894,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 8.073803528001008
+        "elapsed_seconds": 8.082910205999724
       },
       "grade": {
         "passed": true,
@@ -183,23 +183,23 @@
         "uncommitted_files": [
           "main.py"
         ],
-        "wall_seconds": 8.079607341000155,
+        "wall_seconds": 8.090424317000725,
         "rate_limit_waits": 0,
         "rate_limit_wait_seconds": 0.0,
-        "workspace": "/tmp/jimmy-eval-e03-mfxnrera"
+        "workspace": "/tmp/jimmy-eval-e03-wms2a9e_"
       }
     },
     {
       "trace": {
         "eval_id": "E04",
         "task": "Create hello.txt containing exactly: hello Jimmy",
-        "workspace": "/tmp/jimmy-eval-e04-a13gah2c",
-        "started_at": 11574.851879047,
-        "finished_at": 11578.5310626,
-        "result": "I have created `hello.txt` containing exactly: `hello Jimmy`",
+        "workspace": "/tmp/jimmy-eval-e04-9mlzrw_s",
+        "started_at": 14402.859521387,
+        "finished_at": 14406.534818338,
+        "result": "",
         "passed": true,
-        "error": null,
-        "turns": 2,
+        "error": "LLMProviderError: ❌ Gemini rejected the request.\n400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Requests ending with a model turn are not supported.', 'status': 'INVALID_ARGUMENT'}}",
+        "turns": 3,
         "tool_calls": 1,
         "failed_tools": 0,
         "repeated_tools": 0,
@@ -213,17 +213,17 @@
             "arguments": {
               "files": [
                 {
-                  "path": "hello.txt",
-                  "content": "hello Jimmy"
+                  "content": "hello Jimmy",
+                  "path": "hello.txt"
                 }
               ]
             },
-            "elapsed_seconds": 0.0003914099997928133,
+            "elapsed_seconds": 0.0005049970004620263,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 3.6791835529984382
+        "elapsed_seconds": 3.6752969509998366
       },
       "grade": {
         "passed": true,
@@ -238,23 +238,23 @@
         "uncommitted_files": [
           "hello.txt"
         ],
-        "wall_seconds": 3.6851944680001907,
+        "wall_seconds": 3.6814535149987933,
         "rate_limit_waits": 0,
         "rate_limit_wait_seconds": 0.0,
-        "workspace": "/tmp/jimmy-eval-e04-a13gah2c"
+        "workspace": "/tmp/jimmy-eval-e04-9mlzrw_s"
       }
     },
     {
       "trace": {
         "eval_id": "E05",
         "task": "Create index.html, style.css, and script.js for a small page.",
-        "workspace": "/tmp/jimmy-eval-e05-o72qnyn3",
-        "started_at": 11578.537871432,
-        "finished_at": 11582.983089471,
-        "result": "I have created `index.html`, `style.css`, and `script.js` for the small page with a clean layout and interactive counter behavior.",
+        "workspace": "/tmp/jimmy-eval-e05-exbu3vwx",
+        "started_at": 14406.542069712,
+        "finished_at": 14450.25803619,
+        "result": "",
         "passed": true,
-        "error": null,
-        "turns": 2,
+        "error": "LLMProviderError: ❌ Gemini rejected the request.\n400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Requests ending with a model turn are not supported.', 'status': 'INVALID_ARGUMENT'}}",
+        "turns": 3,
         "tool_calls": 1,
         "failed_tools": 0,
         "repeated_tools": 0,
@@ -270,25 +270,25 @@
             "arguments": {
               "files": [
                 {
-                  "content": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Interactive Page</title>\n    <link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n    <main class=\"container\">\n        <h1>Welcome</h1>\n        <p>Click the button below to interact with the page.</p>\n        <button id=\"action-btn\" class=\"btn\">Click Me</button>\n        <div id=\"output\" class=\"output\"></div>\n    </main>\n    <script src=\"script.js\"></script>\n</body>\n</html>\n",
+                  "content": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Interactive Page</title>\n    <link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n    <main class=\"container\">\n        <h1>Welcome</h1>\n        <p>This is a small, clean interactive web page.</p>\n        <button id=\"action-btn\" class=\"btn\">Click Me</button>\n        <div id=\"output\" class=\"output\"></div>\n    </main>\n    <script src=\"script.js\"></script>\n</body>\n</html>\n",
                   "path": "index.html"
                 },
                 {
                   "path": "style.css",
-                  "content": "* {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n}\n\nbody {\n    font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;\n    background-color: #f4f4f9;\n    color: #333;\n    display: flex;\n    justify-content: center;\n    align-items: center;\n    min-height: 100vh;\n}\n\n.container {\n    background: #ffffff;\n    padding: 2rem;\n    border-radius: 8px;\n    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);\n    text-align: center;\n    max-width: 400px;\n    width: 100%;\n}\n\nh1 {\n    margin-bottom: 1rem;\n    color: #2c3e50;\n}\n\np {\n    margin-bottom: 1.5rem;\n    color: #666;\n}\n\n.btn {\n    background-color: #3498db;\n    color: white;\n    border: none;\n    padding: 0.75rem 1.5rem;\n    font-size: 1rem;\n    border-radius: 4px;\n    cursor: pointer;\n    transition: background-color 0.2s ease;\n}\n\n.btn:hover {\n    background-color: #2980b9;\n}\n\n.output {\n    margin-top: 1.5rem;\n    font-size: 1.1rem;\n    font-weight: 500;\n    color: #27ae60;\n}\n"
+                  "content": "* {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n}\n\nbody {\n    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;\n    background-color: #f4f7f6;\n    color: #333;\n    display: flex;\n    justify-content: center;\n    align-items: center;\n    min-height: 100vh;\n}\n\n.container {\n    background: #ffffff;\n    padding: 2.5rem;\n    border-radius: 12px;\n    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);\n    text-align: center;\n    max-width: 400px;\n    width: 100%;\n}\n\nh1 {\n    font-size: 1.75rem;\n    margin-bottom: 0.75rem;\n    color: #2c3e50;\n}\n\np {\n    font-size: 1rem;\n    margin-bottom: 1.5rem;\n    color: #666;\n}\n\n.btn {\n    background-color: #3498db;\n    color: white;\n    border: none;\n    padding: 0.75rem 1.5rem;\n    font-size: 1rem;\n    font-weight: 600;\n    border-radius: 6px;\n    cursor: pointer;\n    transition: background-color 0.2s ease, transform 0.1s ease;\n}\n\n.btn:hover {\n    background-color: #2980b9;\n}\n\n.btn:active {\n    transform: scale(0.98);\n}\n\n.output {\n    margin-top: 1.25rem;\n    font-size: 0.95rem;\n    color: #27ae60;\n    font-weight: 500;\n    min-height: 1.5rem;\n}\n"
                 },
                 {
                   "path": "script.js",
-                  "content": "document.addEventListener('DOMContentLoaded', () => {\n    const button = document.getElementById('action-btn');\n    const output = document.getElementById('output');\n    \n    let clickCount = 0;\n\n    button.addEventListener('click', () => {\n        clickCount++;\n        output.textContent = `Button clicked ${clickCount} time${clickCount === 1 ? '' : 's'}!`;\n    });\n});\n"
+                  "content": "document.addEventListener('DOMContentLoaded', () => {\n    const button = document.getElementById('action-btn');\n    const output = document.getElementById('output');\n    \n    let clickCount = 0;\n\n    button.addEventListener('click', () => {\n        clickCount++;\n        if (clickCount === 1) {\n            output.textContent = 'Button clicked 1 time!';\n        } else {\n            output.textContent = `Button clicked ${clickCount} times!`;\n        }\n    });\n});\n"
                 }
               ]
             },
-            "elapsed_seconds": 0.0008140749996528029,
+            "elapsed_seconds": 0.0008156080002663657,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 4.445218038999883
+        "elapsed_seconds": 43.715966477999245
       },
       "grade": {
         "passed": true,
@@ -307,69 +307,79 @@
           "script.js",
           "style.css"
         ],
-        "wall_seconds": 4.4511048610002035,
-        "rate_limit_waits": 0,
-        "rate_limit_wait_seconds": 0.0,
-        "workspace": "/tmp/jimmy-eval-e05-o72qnyn3"
+        "wall_seconds": 43.721420693000255,
+        "rate_limit_waits": 1,
+        "rate_limit_wait_seconds": 38.005107802000566,
+        "workspace": "/tmp/jimmy-eval-e05-exbu3vwx"
       }
     },
     {
       "trace": {
         "eval_id": "E06",
         "task": "Run the test suite.",
-        "workspace": "/tmp/jimmy-eval-e06-iqp481q4",
-        "started_at": 11582.990141458,
-        "finished_at": 11586.364956485,
-        "result": "The test suite was run successfully, with 1 test passed in 0.01s (`test_pass.py`).",
+        "workspace": "/tmp/jimmy-eval-e06-g18_bqzy",
+        "started_at": 14450.26461828,
+        "finished_at": 14454.878888115,
+        "result": "The test suite was run successfully and all tests passed (1 passed).",
         "passed": true,
         "error": null,
-        "turns": 2,
-        "tool_calls": 1,
+        "turns": 3,
+        "tool_calls": 2,
         "failed_tools": 0,
         "repeated_tools": 0,
         "wrong_tool_attempts": 0,
         "changed_files": [],
         "tool_trace": [
           {
+            "name": "search_files",
+            "arguments": {
+              "query": "test"
+            },
+            "elapsed_seconds": 0.00624180399972829,
+            "success": true,
+            "message": "ok"
+          },
+          {
             "name": "run_shell",
             "arguments": {
               "command": "pytest"
             },
-            "elapsed_seconds": 0.2405010759994184,
+            "elapsed_seconds": 0.24064402099975268,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 3.3748150270002952
+        "elapsed_seconds": 4.614269834999504
       },
       "grade": {
         "passed": true,
         "reasons": [],
         "used_tools": [
+          "search_files",
           "run_shell"
         ],
         "changed_files": [],
         "committed_files": [],
         "uncommitted_files": [],
-        "wall_seconds": 3.6281441770006495,
-        "rate_limit_waits": 0,
-        "rate_limit_wait_seconds": 0.0,
-        "workspace": "/tmp/jimmy-eval-e06-iqp481q4"
+        "wall_seconds": 4.867459309998594,
+        "rate_limit_waits": 2,
+        "rate_limit_wait_seconds": 38.39014259999931,
+        "workspace": "/tmp/jimmy-eval-e06-g18_bqzy"
       }
     },
     {
       "trace": {
         "eval_id": "E07",
         "task": "Create a cool tiny browser game using HTML, CSS, and JavaScript.",
-        "workspace": "/tmp/jimmy-eval-e07-s4c0lt0l",
-        "started_at": 11586.619253367,
-        "finished_at": 11653.000730816,
-        "result": "I have created a cool, highly polished cyber-punk themed tiny browser game called **Cyber Dash (Neon Runner 2077)** using HTML5 Canvas, CSS3, and JavaScript!\n\n### Features Included:\n1. **Retro Cyberpunk Aesthetics**: Custom Google Fonts (`Press Start 2P` & `Share Tech Mono`), glowing neon borders, scanlines, floating energy nodes, parallax starfield, and multi-layered city silhouettes.\n2. **Dynamic Runner Mechanics**:\n   - **Double Jump**: Press `Space` or `Up Arrow` once to jump, and press again mid-air for a boosted double jump with a shockwave effect.\n   - **Slide**: Hold `Down Arrow` to slide under low-flying cyber drones and obstacles.\n   - **Pulse Blast**: Press `E` to trigger an EMP pulse that consumes energy, clearing nearby obstacles and collecting off-screen energy nodes.\n3. **Immersive Effects & Polish**:\n   - Particle bursts on jumping, sliding, collecting, and destroying items.\n   - Smooth HUD showing Score, Energy meter, and High Score (persisted via `localStorage`).\n   - Responsive design with touch controls for mobile/tablet screens.\n   - Start and Game Over overlay menus with arcade reboot styling.\n\n### How to Run:\nSimply open `index.html` in any web browser (or serve it via a local static server like `npx serve .` or `python3 -m http.server`).",
+        "workspace": "/tmp/jimmy-eval-e07-9hevnneu",
+        "started_at": 14455.133355732,
+        "finished_at": 14484.364447653,
+        "result": "",
         "passed": false,
-        "error": null,
+        "error": "LLMProviderError: ❌ Gemini rejected the request.\n400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Requests ending with a model turn are not supported.', 'status': 'INVALID_ARGUMENT'}}",
         "turns": 5,
-        "tool_calls": 4,
-        "failed_tools": 1,
+        "tool_calls": 3,
+        "failed_tools": 0,
         "repeated_tools": 0,
         "wrong_tool_attempts": 0,
         "changed_files": [
@@ -379,20 +389,11 @@
         ],
         "tool_trace": [
           {
-            "name": "search_files",
-            "arguments": {
-              "query": "*"
-            },
-            "elapsed_seconds": 0.0033806169994932134,
-            "success": false,
-            "message": "error"
-          },
-          {
             "name": "run_shell",
             "arguments": {
               "command": "ls -la"
             },
-            "elapsed_seconds": 0.00802598700101953,
+            "elapsed_seconds": 0.010889608998695621,
             "success": true,
             "message": "ok"
           },
@@ -401,34 +402,34 @@
             "arguments": {
               "files": [
                 {
-                  "path": "index.html",
-                  "content": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Neon Neon Runner - Cyber Dash</title>\n    <link rel=\"stylesheet\" href=\"style.css\">\n    <!-- Google Fonts for retro/arcade vibe -->\n    <link href=\"https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap\" rel=\"stylesheet\">\n</head>\n<body>\n    <div id=\"game-container\">\n        <!-- Header / HUD -->\n        <div id=\"hud\">\n            <div class=\"hud-item\">\n                <span class=\"label\">SCORE</span>\n                <span id=\"score\" class=\"value\">000000</span>\n            </div>\n            <div class=\"hud-item\">\n                <span class=\"label\">ENERGY</span>\n                <div class=\"energy-bar-container\">\n                    <div id=\"energy-bar\"></div>\n                </div>\n            </div>\n            <div class=\"hud-item\">\n                <span class=\"label\">HIGH</span>\n                <span id=\"high-score\" class=\"value\">000000</span>\n            </div>\n        </div>\n\n        <!-- Canvas -->\n        <canvas id=\"gameCanvas\" width=\"800\" height=\"450\"></canvas>\n\n        <!-- UI Overlays -->\n        <div id=\"start-screen\" class=\"overlay\">\n            <div class=\"title-glow\">CYBER DASH</div>\n            <div class=\"subtitle\">NEON RUNNER 2077</div>\n            <div class=\"instructions-box\">\n                <p><span class=\"key\">SPACE</span> / <span class=\"key\">↑</span> : JUMP (DOUBLE JUMP)</p>\n                <p><span class=\"key\">↓</span> : SLIDE</p>\n                <p><span class=\"key\">E</span> : PULSE BLAST (CLEAR OBSTACLES)</p>\n            </div>\n            <button id=\"start-btn\" class=\"arcade-btn\">PRESS START</button>\n        </div>\n\n        <div id=\"game-over-screen\" class=\"overlay hidden\">\n            <div class=\"title-glow game-over-text\">SYSTEM FAILURE</div>\n            <div class=\"stats-box\">\n                <p>FINAL SCORE: <span id=\"final-score\">0</span></p>\n                <p>DIST: <span id=\"final-distance\">0</span>m</p>\n            </div>\n            <button id=\"restart-btn\" class=\"arcade-btn\">REBOOT SYSTEM</button>\n        </div>\n\n        <!-- Controls helper for mobile / touch -->\n        <div id=\"mobile-controls\">\n            <button id=\"btn-slide\" class=\"mob-btn\">SLIDE</button>\n            <button id=\"btn-pulse\" class=\"mob-btn\">PULSE</button>\n            <button id=\"btn-jump\" class=\"mob-btn\">JUMP</button>\n        </div>\n    </div>\n\n    <script src=\"game.js\"></script>\n</body>\n</html>\n"
+                  "content": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Neon Cyber Runner</title>\n    <link rel=\"stylesheet\" href=\"style.css\">\n    <link href=\"https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap\" rel=\"stylesheet\">\n</head>\n<body>\n    <div class=\"game-container\">\n        <!-- CRT Screen Effect Overlay -->\n        <div class=\"crt\"></div>\n\n        <!-- Header / HUD -->\n        <header class=\"hud\">\n            <div class=\"hud-item\">\n                <span class=\"label\">SCORE</span>\n                <span id=\"scoreVal\" class=\"value\">0</span>\n            </div>\n            <div class=\"hud-item\">\n                <span class=\"label\">HIGH SCORE</span>\n                <span id=\"highScoreVal\" class=\"value\">0</span>\n            </div>\n            <div class=\"hud-item\">\n                <span class=\"label\">SPEED</span>\n                <span id=\"speedVal\" class=\"value\">1.0X</span>\n            </div>\n        </header>\n\n        <!-- Canvas -->\n        <div class=\"canvas-wrapper\">\n            <canvas id=\"gameCanvas\" width=\"800\" height=\"400\"></canvas>\n            \n            <!-- Start / Pause / Game Over Overlays -->\n            <div id=\"menuOverlay\" class=\"overlay\">\n                <div class=\"menu-content\">\n                    <h1 class=\"glitch\" data-text=\"CYBER RUNNER\">CYBER RUNNER</h1>\n                    <p class=\"subtitle\">Dodge data glitches, jump over barriers, and survive the grid!</p>\n                    <div class=\"controls-hint\">\n                        <span>[SPACE] / [↑] JUMP</span>\n                        <span>[↓] SLIDE / FAST DROP</span>\n                        <span>[P] PAUSE</span>\n                    </div>\n                    <button id=\"startBtn\" class=\"cyber-btn\">START GAME</button>\n                </div>\n            </div>\n\n            <div id=\"pauseOverlay\" class=\"overlay hidden\">\n                <div class=\"menu-content\">\n                    <h2>PAUSED</h2>\n                    <button id=\"resumeBtn\" class=\"cyber-btn\">RESUME</button>\n                </div>\n            </div>\n\n            <div id=\"gameOverOverlay\" class=\"overlay hidden\">\n                <div class=\"menu-content\">\n                    <h2 class=\"game-over-title\">SYSTEM CRASH</h2>\n                    <p class=\"final-score-text\">FINAL SCORE: <span id=\"finalScore\">0</span></p>\n                    <button id=\"restartBtn\" class=\"cyber-btn\">REBOOT SYSTEM</button>\n                </div>\n            </div>\n        </div>\n\n        <!-- Mobile / Touch Controls -->\n        <div class=\"mobile-controls\">\n            <button id=\"jumpBtn\" class=\"touch-btn\">JUMP ⬆</button>\n            <button id=\"slideBtn\" class=\"touch-btn\">SLIDE ⬇</button>\n        </div>\n    </div>\n\n    <script src=\"game.js\"></script>\n</body>\n</html>\n",
+                  "path": "index.html"
                 },
                 {
                   "path": "style.css",
-                  "content": "* {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n    user-select: none;\n}\n\nbody {\n    background-color: #05050a;\n    color: #00ffff;\n    font-family: 'Share Tech Mono', monospace;\n    display: flex;\n    justify-content: center;\n    align-items: center;\n    height: 100vh;\n    overflow: hidden;\n    background-image: \n        radial-gradient(circle at 50% 30%, #110022 0%, #05050a 70%),\n        linear-gradient(rgba(0, 255, 255, 0.03) 1px, transparent 1px),\n        linear-gradient(90deg, rgba(0, 255, 255, 0.03) 1px, transparent 1px);\n    background-size: 100% 100%, 40px 40px, 40px 40px;\n}\n\n#game-container {\n    position: relative;\n    width: 800px;\n    height: 450px;\n    background: #080812;\n    border: 3px solid #ff00ff;\n    box-shadow: 0 0 25px rgba(255, 0, 255, 0.5), inset 0 0 20px rgba(0, 255, 255, 0.2);\n    border-radius: 8px;\n    overflow: hidden;\n}\n\n#hud {\n    position: absolute;\n    top: 0;\n    left: 0;\n    width: 100%;\n    height: 50px;\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    padding: 0 20px;\n    background: linear-gradient(to bottom, rgba(5,5,10,0.9), rgba(5,5,10,0));\n    z-index: 10;\n    font-family: 'Press Start 2P', monospace;\n    font-size: 12px;\n}\n\n.hud-item {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n}\n\n.label {\n    font-size: 8px;\n    color: #ff00ff;\n    margin-bottom: 4px;\n    letter-spacing: 1px;\n}\n\n.value {\n    color: #00ffff;\n    text-shadow: 0 0 8px rgba(0, 255, 255, 0.8);\n}\n\n.energy-bar-container {\n    width: 120px;\n    height: 10px;\n    background: #111;\n    border: 2px solid #00ffff;\n    border-radius: 3px;\n    overflow: hidden;\n    position: relative;\n    box-shadow: 0 0 5px rgba(0, 255, 255, 0.5);\n}\n\n#energy-bar {\n    width: 100%;\n    height: 100%;\n    background: linear-gradient(90deg, #00ffff, #ff00ff);\n    transition: width 0.1s linear;\n}\n\ncanvas {\n    display: block;\n    background: #050510;\n}\n\n.overlay {\n    position: absolute;\n    top: 0;\n    left: 0;\n    width: 100%;\n    height: 100%;\n    background: rgba(5, 5, 12, 0.88);\n    display: flex;\n    flex-direction: column;\n    justify-content: center;\n    align-items: center;\n    z-index: 20;\n    backdrop-filter: blur(4px);\n    transition: opacity 0.3s ease;\n}\n\n.overlay.hidden {\n    opacity: 0;\n    pointer-events: none;\n    display: none;\n}\n\n.title-glow {\n    font-family: 'Press Start 2P', monospace;\n    font-size: 32px;\n    color: #00ffff;\n    text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff, 0 0 30px #ff00ff;\n    margin-bottom: 5px;\n    text-align: center;\n    animation: pulseGlow 2s infinite alternate;\n}\n\n.game-over-text {\n    color: #ff0055;\n    text-shadow: 0 0 10px #ff0055, 0 0 20px #ff0055, 0 0 30px #ff0000;\n}\n\n.subtitle {\n    font-family: 'Press Start 2P', monospace;\n    font-size: 10px;\n    color: #ff00ff;\n    letter-spacing: 3px;\n    margin-bottom: 30px;\n}\n\n.instructions-box {\n    background: rgba(0, 255, 255, 0.05);\n    border: 1px dashed rgba(0, 255, 255, 0.4);\n    padding: 15px 25px;\n    border-radius: 5px;\n    margin-bottom: 25px;\n    text-align: center;\n    line-height: 1.8;\n    font-size: 14px;\n}\n\n.key {\n    background: #111;\n    border: 1px solid #00ffff;\n    padding: 2px 6px;\n    border-radius: 3px;\n    color: #00ffff;\n    font-weight: bold;\n    box-shadow: 0 0 5px rgba(0, 255, 255, 0.3);\n}\n\n.stats-box {\n    font-family: 'Press Start 2P', monospace;\n    font-size: 12px;\n    text-align: center;\n    line-height: 2;\n    margin-bottom: 25px;\n    color: #00ffff;\n}\n\n.arcade-btn {\n    font-family: 'Press Start 2P', monospace;\n    font-size: 14px;\n    background: transparent;\n    color: #00ffff;\n    border: 2px solid #00ffff;\n    padding: 12px 24px;\n    cursor: pointer;\n    border-radius: 4px;\n    box-shadow: 0 0 15px rgba(0, 255, 255, 0.4);\n    transition: all 0.2s ease;\n    text-transform: uppercase;\n}\n\n.arcade-btn:hover {\n    background: #00ffff;\n    color: #05050a;\n    box-shadow: 0 0 25px #00ffff, 0 0 50px #ff00ff;\n    transform: scale(1.05);\n}\n\n.arcade-btn:active {\n    transform: scale(0.95);\n}\n\n#mobile-controls {\n    display: none;\n    position: absolute;\n    bottom: 15px;\n    left: 0;\n    width: 100%;\n    justify-content: space-around;\n    padding: 0 20px;\n    z-index: 15;\n}\n\n.mob-btn {\n    font-family: 'Press Start 2P', monospace;\n    font-size: 10px;\n    background: rgba(0, 255, 255, 0.1);\n    color: #00ffff;\n    border: 2px solid #00ffff;\n    padding: 12px 18px;\n    border-radius: 50px;\n    box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);\n}\n\n.mob-btn:active {\n    background: #00ffff;\n    color: #000;\n}\n\n@keyframes pulseGlow {\n    0% {\n        text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff, 0 0 30px #ff00ff;\n    }\n    100% {\n        text-shadow: 0 0 15px #00ffff, 0 0 25px #ff00ff, 0 0 40px #ff00ff;\n    }\n}\n\n@media(max-width: 850px) {\n    #game-container {\n        width: 100vw;\n        height: 100vh;\n        border: none;\n        border-radius: 0;\n    }\n    canvas {\n        width: 100vw;\n        height: calc(100vh - 50px);\n    }\n    #mobile-controls {\n        display: flex;\n    }\n}\n"
+                  "content": "* {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n}\n\nbody {\n    background-color: #05050a;\n    color: #00ffff;\n    font-family: 'Orbitron', sans-serif;\n    display: flex;\n    justify-content: center;\n    align-items: center;\n    min-height: 100vh;\n    overflow: hidden;\n}\n\n.game-container {\n    position: relative;\n    width: 840px;\n    background: #0b0b16;\n    border: 2px solid #00ffff;\n    border-radius: 8px;\n    box-shadow: 0 0 25px rgba(0, 255, 255, 0.4), inset 0 0 15px rgba(0, 255, 255, 0.2);\n    padding: 20px;\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n}\n\n/* CRT Scanline Effect */\n.crt {\n    position: absolute;\n    top: 0; left: 0; width: 100%; height: 100%;\n    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));\n    background-size: 100% 4px, 6px 100%;\n    pointer-events: none;\n    z-index: 10;\n    border-radius: 6px;\n}\n\n.hud {\n    width: 100%;\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    margin-bottom: 15px;\n    padding: 0 10px;\n}\n\n.hud-item {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n}\n\n.hud-item .label {\n    font-size: 0.75rem;\n    color: #ff007f;\n    letter-spacing: 2px;\n    margin-bottom: 2px;\n}\n\n.hud-item .value {\n    font-size: 1.25rem;\n    font-weight: 700;\n    color: #00ffff;\n    text-shadow: 0 0 8px rgba(0, 255, 255, 0.6);\n}\n\n.canvas-wrapper {\n    position: relative;\n    width: 800px;\n    height: 400px;\n    border: 1px solid #ff007f;\n    border-radius: 4px;\n    overflow: hidden;\n    background: #020205;\n    box-shadow: inset 0 0 20px rgba(255, 0, 127, 0.3);\n}\n\ncanvas {\n    display: block;\n    width: 800px;\n    height: 400px;\n}\n\n/* Overlays */\n.overlay {\n    position: absolute;\n    top: 0; left: 0; width: 100%; height: 100%;\n    background: rgba(5, 5, 10, 0.88);\n    display: flex;\n    justify-content: center;\n    align-items: center;\n    z-index: 20;\n    backdrop-filter: blur(3px);\n    transition: opacity 0.3s ease;\n}\n\n.overlay.hidden {\n    opacity: 0;\n    pointer-events: none;\n}\n\n.menu-content {\n    text-align: center;\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 15px;\n    padding: 20px;\n}\n\n/* Glitch Title Effect */\n.glitch {\n    font-size: 2.5rem;\n    font-weight: 900;\n    color: #00ffff;\n    position: relative;\n    letter-spacing: 3px;\n    text-shadow: 0 0 10px rgba(0, 255, 255, 0.8);\n    animation: pulseGlow 2s infinite alternate;\n}\n\n.subtitle {\n    font-size: 0.85rem;\n    color: #a0a0c0;\n    max-width: 450px;\n    line-height: 1.4;\n}\n\n.controls-hint {\n    display: flex;\n    gap: 15px;\n    font-size: 0.7rem;\n    color: #ff007f;\n    background: rgba(255, 0, 127, 0.1);\n    border: 1px dashed #ff007f;\n    padding: 8px 12px;\n    border-radius: 4px;\n    margin: 5px 0 15px 0;\n}\n\n.game-over-title {\n    font-size: 2.2rem;\n    color: #ff0055;\n    text-shadow: 0 0 15px rgba(255, 0, 85, 0.8);\n    letter-spacing: 2px;\n}\n\n.final-score-text {\n    font-size: 1.1rem;\n    color: #fff;\n    margin-bottom: 10px;\n}\n\n/* Cyber Button */\n.cyber-btn {\n    background: transparent;\n    color: #00ffff;\n    border: 2px solid #00ffff;\n    padding: 12px 30px;\n    font-family: 'Orbitron', sans-serif;\n    font-size: 1rem;\n    font-weight: 700;\n    letter-spacing: 2px;\n    cursor: pointer;\n    border-radius: 4px;\n    position: relative;\n    overflow: hidden;\n    transition: all 0.2s ease;\n    box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);\n}\n\n.cyber-btn:hover {\n    background: #00ffff;\n    color: #05050a;\n    box-shadow: 0 0 20px rgba(0, 255, 255, 0.8);\n    transform: translateY(-2px);\n}\n\n.cyber-btn:active {\n    transform: translateY(0);\n}\n\n/* Mobile Controls */\n.mobile-controls {\n    display: none;\n    width: 100%;\n    justify-content: space-between;\n    margin-top: 15px;\n    gap: 10px;\n}\n\n.touch-btn {\n    flex: 1;\n    background: rgba(0, 255, 255, 0.1);\n    border: 1px solid #00ffff;\n    color: #00ffff;\n    padding: 12px;\n    font-family: 'Orbitron', sans-serif;\n    font-weight: 700;\n    border-radius: 4px;\n    cursor: pointer;\n}\n\n.touch-btn:active {\n    background: rgba(0, 255, 255, 0.3);\n}\n\n@keyframes pulseGlow {\n    0% { text-shadow: 0 0 10px rgba(0, 255, 255, 0.8), 0 0 20px rgba(0, 255, 255, 0.4); }\n    100% { text-shadow: 0 0 15px rgba(255, 0, 127, 0.8), 0 0 30px rgba(255, 0, 127, 0.6); }\n}\n\n@media (max-width: 860px) {\n    .game-container {\n        width: 100%;\n        max-width: 840px;\n        padding: 10px;\n    }\n    .canvas-wrapper {\n        width: 100%;\n        height: auto;\n    }\n    canvas {\n        width: 100%;\n        height: auto;\n    }\n    .mobile-controls {\n        display: flex;\n    }\n}\n"
                 },
                 {
                   "path": "game.js",
-                  "content": "// ==========================================\n// CYBER DASH - NEON RUNNER 2077\n// ==========================================\n\nconst canvas = document.getElementById('gameCanvas');\nconst ctx = canvas.getContext('2d');\n\n// DOM Elements\nconst scoreEl = document.getElementById('score');\nconst highScoreEl = document.getElementById('high-score');\nconst energyBar = document.getElementById('energy-bar');\nconst startScreen = document.getElementById('start-screen');\nconst gameOverScreen = document.getElementById('game-over-screen');\nconst startBtn = document.getElementById('start-btn');\nconst restartBtn = document.getElementById('restart-btn');\nconst finalScoreEl = document.getElementById('final-score');\nconst finalDistanceEl = document.getElementById('final-distance');\n\n// Mobile Controls\nconst btnJump = document.getElementById('btn-jump');\nconst btnSlide = document.getElementById('btn-slide');\nconst btnPulse = document.getElementById('btn-pulse');\n\n// Game States\nconst STATE = {\n    START: 0,\n    PLAYING: 1,\n    GAMEOVER: 2\n};\nlet gameState = STATE.START;\n\n// Game Variables\nlet score = 0;\nlet highScore = localStorage.getItem('cyberDashHighScore') || 0;\nlet distance = 0;\nlet gameSpeed = 6;\nlet baseSpeed = 6;\nlet gravity = 0.6;\nlet groundY = 370;\n\nhighScoreEl.textContent = String(highScore).padStart(6, '0');\n\n// Input tracking\nconst keys = {};\n\n// Background Elements (Parallax layers)\nlet stars = [];\nlet gridLines = [];\nlet buildingsFar = [];\nlet buildingsNear = [];\nlet particles = [];\nlet floatingTexts = [];\nlet shockwaves = [];\n\n// Player Object\nconst player = {\n    x: 100,\n    y: groundY,\n    width: 36,\n    height: 52,\n    vy: 0,\n    jumpPower: -12.5,\n    jumps: 0,\n    maxJumps: 2,\n    isSliding: false,\n    slideTimer: 0,\n    slideDuration: 30, // frames\n    normalHeight: 52,\n    slideHeight: 28,\n    color: '#00ffff',\n    glowColor: 'rgba(0, 255, 255, 0.8)',\n    energy: 100,\n    maxEnergy: 100,\n    isInvincible: false,\n    invincibleTimer: 0,\n    trail: []\n};\n\n// Entities\nlet obstacles = [];\nlet collectibles = [];\nlet spawnTimer = 0;\nlet spawnInterval = 90; // frames\n\n// Initialize Parallax Environments\nfunction initEnvironment() {\n    stars = [];\n    for (let i = 0; i < 60; i++) {\n        stars.push({\n            x: Math.random() * canvas.width,\n            y: Math.random() * (groundY - 50),\n            size: Math.random() * 2,\n            speed: 0.2 + Math.random() * 0.5\n        });\n    }\n\n    buildingsFar = [];\n    let xFar = 0;\n    while (xFar < canvas.width + 200) {\n        let w = 60 + Math.random() * 80;\n        let h = 100 + Math.random() * 120;\n        buildingsFar.push({ x: xFar, width: w, height: h, color: '#120a2a' });\n        xFar += w + 10;\n    }\n\n    buildingsNear = [];\n    let xNear = 0;\n    while (xNear < canvas.width + 200) {\n        let w = 40 + Math.random() * 60;\n        let h = 60 + Math.random() * 90;\n        buildingsNear.push({ \n            x: xNear, \n            width: w, \n            height: h, \n            color: '#1a0b36',\n            windows: Math.random() > 0.5 \n        });\n        xNear += w + 20;\n    }\n\n    gridLines = [];\n    for (let i = 0; i < 20; i++) {\n        gridLines.push(i * 50);\n    }\n}\n\n// Reset Game State\nfunction resetGame() {\n    score = 0;\n    distance = 0;\n    gameSpeed = baseSpeed;\n    obstacles = [];\n    collectibles = [];\n    particles = [];\n    floatingTexts = [];\n    shockwaves = [];\n    spawnTimer = 0;\n    spawnInterval = 90;\n    player.y = groundY - player.height;\n    player.vy = 0;\n    player.jumps = 0;\n    player.isSliding = false;\n    player.energy = 100;\n    player.height = player.normalHeight;\n    player.isInvincible = false;\n    player.invincibleTimer = 0;\n    player.trail = [];\n    initEnvironment();\n}\n\n// Event Listeners\nwindow.addEventListener('keydown', e => {\n    if (['Space', 'ArrowUp', 'ArrowDown', 'KeyE'].includes(e.code)) {\n        e.preventDefault(); // Prevent page scroll\n    }\n    keys[e.code] = true;\n\n    if (gameState === STATE.PLAYING) {\n        if ((e.code === 'Space' || e.code === 'ArrowUp') && !player.isSliding) {\n            jump();\n        }\n        if (e.code === 'ArrowDown') {\n            slide(true);\n        }\n        if (e.code === 'KeyE') {\n            triggerPulse();\n        }\n    } else if (gameState === STATE.START && (e.code === 'Space' || e.code === 'Enter')) {\n        startGame();\n    } else if (gameState === STATE.GAMEOVER && (e.code === 'Space' || e.code === 'Enter')) {\n        startGame();\n    }\n});\n\nwindow.addEventListener('keyup', e => {\n    keys[e.code] = false;\n    if (e.code === 'ArrowDown') {\n        slide(false);\n    }\n});\n\n// Mobile button listeners\nbtnJump.addEventListener('touchstart', (e) => { e.preventDefault(); if(gameState === STATE.PLAYING) jump(); });\nbtnSlide.addEventListener('touchstart', (e) => { e.preventDefault(); if(gameState === STATE.PLAYING) slide(true); });\nbtnSlide.addEventListener('touchend', (e) => { e.preventDefault(); if(gameState === STATE.PLAYING) slide(false); });\nbtnPulse.addEventListener('touchstart', (e) => { e.preventDefault(); if(gameState === STATE.PLAYING) triggerPulse(); });\n\nstartBtn.addEventListener('click', startGame);\nrestartBtn.addEventListener('click', startGame);\n\nfunction startGame() {\n    resetGame();\n    gameState = STATE.PLAYING;\n    startScreen.classList.add('hidden');\n    gameOverScreen.classList.add('hidden');\n}\n\nfunction gameOver() {\n    gameState = STATE.GAMEOVER;\n    finalScoreEl.textContent = Math.floor(score);\n    finalDistanceEl.textContent = Math.floor(distance);\n    if (score > highScore) {\n        highScore = Math.floor(score);\n        localStorage.setItem('cyberDashHighScore', highScore);\n        highScoreEl.textContent = String(highScore).padStart(6, '0');\n    }\n    gameOverScreen.classList.remove('hidden');\n}\n\n// Player Actions\nfunction jump() {\n    if (player.jumps < player.maxJumps) {\n        if (player.isSliding) {\n            player.isSliding = false;\n            player.height = player.normalHeight;\n            player.y = groundY - player.height;\n        }\n        player.vy = player.jumpPower;\n        player.jumps++;\n        \n        // Create jump particles\n        createParticles(player.x + player.width/2, player.y + player.height, 12, '#00ffff');\n        \n        // Second jump extra boost & effect\n        if (player.jumps === 2) {\n            player.vy = player.jumpPower * 0.9;\n            createShockwave(player.x + player.width/2, player.y + player.height/2, '#ff00ff');\n            addFloatingText(\"DOUBLE JUMP!\", player.x, player.y - 20, '#ff00ff');\n        }\n    }\n}\n\nfunction slide(activate) {\n    if (activate && player.jumps === 0) {\n        if (!player.isSliding) {\n            player.isSliding = true;\n            player.height = player.slideHeight;\n            player.y = groundY - player.height;\n            createParticles(player.x + player.width/2, groundY, 8, '#ff0055');\n        }\n    } else if (!activate && player.isSliding) {\n        player.isSliding = false;\n        player.height = player.normalHeight;\n        player.y = groundY - player.height;\n    }\n}\n\nfunction triggerPulse() {\n    if (player.energy >= 35) {\n        player.energy -= 35;\n        createShockwave(player.x + player.width/2, player.y + player.height/2, '#00ffff');\n        addFloatingText(\"PULSE BLAST!\", player.x, player.y - 30, '#00ffff');\n        \n        // Destroy obstacles in proximity\n        obstacles.forEach(obs => {\n            let dist = Math.hypot((obs.x + obs.width/2) - (player.x + player.width/2), (obs.y + obs.height/2) - (player.y + player.height/2));\n            if (dist < 220) {\n                obs.destroyed = true;\n                createParticles(obs.x + obs.width/2, obs.y + obs.height/2, 20, '#00ffff');\n                score += 150;\n            }\n        });\n        obstacles = obstacles.filter(obs => !obs.destroyed);\n\n        // Collect items in proximity\n        collectibles.forEach(item => {\n            item.collected = true;\n            player.energy = Math.min(player.maxEnergy, player.energy + 25);\n            score += 100;\n            createParticles(item.x, item.y, 10, '#ffff00');\n        });\n        collectibles = collectibles.filter(item => !item.collected);\n    }\n}\n\n// Particle & Effect Generators\nfunction createParticles(x, y, count, color) {\n    for (let i = 0; i < count; i++) {\n        particles.push({\n            x: x,\n            y: y,\n            vx: (Math.random() - 0.5) * 8,\n            vy: (Math.random() - 0.5) * 8,\n            size: 2 + Math.random() * 3,\n            color: color,\n            alpha: 1,\n            decay: 0.03 + Math.random() * 0.04\n        });\n    }\n}\n\nfunction createShockwave(x, y, color) {\n    shockwaves.push({\n        x: x,\n        y: y,\n        radius: 10,\n        maxRadius: 180,\n        color: color,\n        alpha: 1\n    });\n}\n\nfunction addFloatingText(text, x, y, color) {\n    floatingTexts.push({\n        text: text,\n        x: x,\n        y: y,\n        vy: -1.5,\n        alpha: 1,\n        color: color\n    });\n}\n\n// Spawner logic\nfunction spawnEntity() {\n    let rand = Math.random();\n    \n    if (rand < 0.65) {\n        // Obstacles\n        let obsType = Math.random();\n        if (obsType < 0.4) {\n            // Ground drone / barrier\n            obstacles.push({\n                type: 'ground',\n                x: canvas.width + 50,\n                y: groundY - 40,\n                width: 32,\n                height: 40,\n                color: '#ff0055'\n            });\n        } else if (obsType < 0.75) {\n            // Flying drone (requires slide or low jump)\n            obstacles.push({\n                type: 'flying',\n                x: canvas.width + 50,\n                y: groundY - 95,\n                width: 40,\n                height: 24,\n                color: '#ffaa00',\n                oscillation: Math.random() * Math.PI\n            });\n        } else {\n            // Tall laser barrier\n            obstacles.push({\n                type: 'laser',\n                x: canvas.width + 50,\n                y: groundY - 110,\n                width: 16,\n                height: 110,\n                color: '#ff00ff'\n            });\n        }\n    } else {\n        // Collectible Energy Node\n        collectibles.push({\n            x: canvas.width + 50,\n            y: groundY - (Math.random() > 0.5 ? 60 : 130),\n            radius: 12,\n            bobOffset: Math.random() * Math.PI\n        });\n    }\n}\n\n// Update Loop\nfunction update(dt) {\n    if (gameState !== STATE.PLAYING) return;\n\n    // Increase game speed & distance\n    gameSpeed += 0.001;\n    distance += gameSpeed * 0.1;\n    score += gameSpeed * 0.2;\n\n    // Passive energy regeneration / drain\n    player.energy = Math.min(player.maxEnergy, player.energy + 0.05);\n\n    // Update Player physics\n    player.vy += gravity;\n    player.y += player.vy;\n\n    // Ground collision\n    if (player.y >= groundY - player.height) {\n        player.y = groundY - player.height;\n        player.vy = 0;\n        player.jumps = 0;\n    }\n\n    // Sliding timer\n    if (player.isSliding) {\n        player.slideTimer++;\n        if (player.slideTimer > player.slideDuration) {\n            // Check if ceiling is clear before standing up\n            player.isSliding = false;\n            player.height = player.normalHeight;\n            player.y = groundY - player.height;\n            player.slideTimer = 0;\n        }\n    }\n\n    // Player trail effect\n    if (Math.random() < 0.5) {\n        player.trail.push({\n            x: player.x,\n            y: player.y,\n            width: player.width,\n            height: player.height,\n            alpha: 0.4\n        });\n        if (player.trail.length > 8) player.trail.shift();\n    }\n    player.trail.forEach(t => t.alpha -= 0.05);\n\n    // Invincibility timer\n    if (player.isInvincible) {\n        player.invincibleTimer--;\n        if (player.invincibleTimer <= 0) player.isInvincible = false;\n    }\n\n    // Spawner timer\n    spawnTimer++;\n    if (spawnTimer >= spawnInterval) {\n        spawnEntity();\n        spawnTimer = 0;\n        // Gradually decrease spawn interval for higher difficulty\n        spawnInterval = Math.max(50, 90 - Math.floor(distance / 150));\n    }\n\n    // Update Obstacles\n    for (let i = obstacles.length - 1; i >= 0; i--) {\n        let obs = obstacles[i];\n        obs.x -= gameSpeed;\n\n        if (obs.type === 'flying') {\n            obs.oscillation += 0.1;\n            obs.y += Math.sin(obs.oscillation) * 1.5;\n        }\n\n        // Collision Check (AABB with slight padding for fairness)\n        let pad = 6;\n        if (\n            player.x + pad < obs.x + obs.width - pad &&\n            player.x + player.width - pad > obs.x + pad &&\n            player.y + pad < obs.y + obs.height - pad &&\n            player.y + player.height - pad > obs.y + pad\n        ) {\n            if (!player.isInvincible) {\n                createParticles(player.x + player.width/2, player.y + player.height/2, 25, '#ff0055');\n                gameOver();\n                return;\n            }\n        }\n\n        // Remove offscreen obstacles\n        if (obs.x + obs.width < -50) {\n            obstacles.splice(i, 1);\n            score += 25;\n        }\n    }\n\n    // Update Collectibles\n    for (let i = collectibles.length - 1; i >= 0; i--) {\n        let item = collectibles[i];\n        item.x -= gameSpeed;\n        item.bobOffset += 0.08;\n        let currentY = item.y + Math.sin(item.bobOffset) * 6;\n\n        // Player collision with collectible\n        let dist = Math.hypot((player.x + player.width/2) - item.x, (player.y + player.height/2) - currentY);\n        if (dist < player.width/2 + item.radius) {\n            player.energy = Math.min(player.maxEnergy, player.energy + 30);\n            score += 150;\n            addFloatingText(\"+ENERGY\", item.x, item.y - 15, '#00ffff');\n            createParticles(item.x, currentY, 12, '#ffff00');\n            collectibles.splice(i, 1);\n            continue;\n        }\n\n        if (item.x < -50) {\n            collectibles.splice(i, 1);\n        }\n    }\n\n    // Update Particles\n    particles.forEach(p => {\n        p.x += p.vx;\n        p.y += p.vy;\n        p.alpha -= p.decay;\n    });\n    particles = particles.filter(p => p.alpha > 0);\n\n    // Update Shockwaves\n    shockwaves.forEach(sw => {\n        sw.radius += 6;\n        sw.alpha -= 0.04;\n    });\n    shockwaves = shockwaves.filter(sw => sw.alpha > 0);\n\n    // Update Floating Texts\n    floatingTexts.forEach(ft => {\n        ft.y += ft.vy;\n        ft.alpha -= 0.02;\n    });\n    floatingTexts = floatingTexts.filter(ft => ft.alpha > 0);\n\n    // Update Parallax & Grid\n    stars.forEach(s => {\n        s.x -= s.speed;\n        if (s.x < 0) s.x = canvas.width;\n    });\n\n    buildingsFar.forEach(b => {\n        b.x -= gameSpeed * 0.2;\n        if (b.x + b.width < 0) {\n            b.x = canvas.width + Math.random() * 50;\n            b.width = 60 + Math.random() * 80;\n            b.height = 100 + Math.random() * 120;\n        }\n    });\n\n    buildingsNear.forEach(b => {\n        b.x -= gameSpeed * 0.5;\n        if (b.x + b.width < 0) {\n            b.x = canvas.width + Math.random() * 80;\n            b.width = 40 + Math.random() * 60;\n            b.height = 60 + Math.random() * 90;\n        }\n    });\n\n    gridLines.forEach((gl, idx) => {\n        gridLines[idx] -= gameSpeed;\n        if (gridLines[idx] < 0) {\n            gridLines[idx] = canvas.width;\n        }\n    });\n\n    // HUD update\n    scoreEl.textContent = String(Math.floor(score)).padStart(6, '0');\n    energyBar.style.width = `${(player.energy / player.maxEnergy) * 100}%`;\n}\n\n// Render Loop\nfunction render() {\n    // Clear canvas\n    ctx.fillStyle = '#050510';\n    ctx.fillRect(0, 0, canvas.width, canvas.height);\n\n    // Render Stars\n    ctx.fillStyle = '#ffffff';\n    stars.forEach(s => {\n        ctx.globalAlpha = 0.6;\n        ctx.fillRect(s.x, s.y, s.size, s.size);\n    });\n    ctx.globalAlpha = 1;\n\n    // Render Far Buildings (Silhouette)\n    ctx.fillStyle = '#0d071a';\n    buildingsFar.forEach(b => {\n        ctx.fillRect(b.x, groundY - b.height, b.width, b.height);\n    });\n\n    // Render Near Buildings with Neon Windows\n    buildingsNear.forEach(b => {\n        ctx.fillStyle = '#140b2b';\n        ctx.fillRect(b.x, groundY - b.height, b.width, b.height);\n        \n        // Neon top edge accent\n        ctx.strokeStyle = '#ff00ff22';\n        ctx.lineWidth = 2;\n        ctx.strokeRect(b.x, groundY - b.height, b.width, b.height);\n\n        // Windows\n        if (b.windows) {\n            ctx.fillStyle = 'rgba(0, 255, 255, 0.15)';\n            for (let wx = b.x + 8; wx < b.x + b.width - 10; wx += 14) {\n                for (let wy = groundY - b.height + 10; wy < groundY - 20; wy += 20) {\n                    ctx.fillRect(wx, wy, 6, 10);\n                }\n            }\n        }\n    });\n\n    // Render Horizon Neon Glow Line\n    ctx.strokeStyle = '#ff00ff';\n    ctx.shadowColor = '#ff00ff';\n    ctx.shadowBlur = 12;\n    ctx.lineWidth = 2;\n    ctx.beginPath();\n    ctx.moveTo(0, groundY);\n    ctx.lineTo(canvas.width, groundY);\n    ctx.stroke();\n    ctx.shadowBlur = 0; // reset\n\n    // Render Perspective Cyber Ground Grid Lines (Moving vertical markers)\n    ctx.strokeStyle = 'rgba(0, 255, 255, 0.25)';\n    ctx.lineWidth = 1;\n    gridLines.forEach(gl => {\n        ctx.beginPath();\n        ctx.moveTo(gl, groundY);\n        ctx.lineTo(gl + (gl - canvas.width/2) * 0.6, canvas.height);\n        ctx.stroke();\n    });\n\n    // Render Ground Fill\n    ctx.fillStyle = '#05050f';\n    ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);\n\n    // Render Player Trail\n    player.trail.forEach(t => {\n        ctx.fillStyle = player.color;\n        ctx.globalAlpha = t.alpha;\n        ctx.fillRect(t.x, t.y, t.width, t.height);\n    });\n    ctx.globalAlpha = 1;\n\n    // Render Player (Cyber Runner Avatar with Visor & Neon Glow)\n    ctx.shadowColor = player.color;\n    ctx.shadowBlur = 15;\n    ctx.fillStyle = '#080816';\n    ctx.fillRect(player.x, player.y, player.width, player.height);\n\n    ctx.strokeStyle = player.color;\n    ctx.lineWidth = 2;\n    ctx.strokeRect(player.x, player.y, player.width, player.height);\n\n    // Player Visor / Cyber details\n    if (!player.isSliding) {\n        // Visor glowing eye\n        ctx.fillStyle = '#ff00ff';\n        ctx.fillRect(player.x + 18, player.y + 10, 14, 6);\n        // Jacket neon stripes\n        ctx.fillStyle = '#00ffff';\n        ctx.fillRect(player.x + 6, player.y + 22, 24, 4);\n    } else {\n        // Slide posture visor\n        ctx.fillStyle = '#ff00ff';\n        ctx.fillRect(player.x + 16, player.y + 6, 14, 4);\n    }\n    ctx.shadowBlur = 0; // reset\n\n    // Render Obstacles\n    obstacles.forEach(obs => {\n        ctx.shadowColor = obs.color;\n        ctx.shadowBlur = 12;\n        ctx.fillStyle = '#110515';\n        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);\n\n        ctx.strokeStyle = obs.color;\n        ctx.lineWidth = 2;\n        ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);\n\n        // Internal details per obstacle type\n        if (obs.type === 'drone' || obs.type === 'flying') {\n            ctx.fillStyle = '#ffffff';\n            ctx.fillRect(obs.x + 8, obs.y + 8, obs.width - 16, 4);\n        } else if (obs.type === 'laser') {\n            ctx.fillStyle = 'rgba(255, 0, 255, 0.4)';\n            ctx.fillRect(obs.x + 4, obs.y, 8, obs.height);\n        }\n        ctx.shadowBlur = 0;\n    });\n\n    // Render Collectibles (Energy Nodes)\n    collectibles.forEach(item => {\n        let currentY = item.y + Math.sin(item.bobOffset) * 6;\n        ctx.shadowColor = '#ffff00';\n        ctx.shadowBlur = 15;\n        \n        ctx.fillStyle = '#ffff00';\n        ctx.beginPath();\n        ctx.arc(item.x, currentY, item.radius, 0, Math.PI * 2);\n        ctx.fill();\n\n        ctx.fillStyle = '#050510';\n        ctx.beginPath();\n        ctx.arc(item.x, currentY, item.radius - 4, 0, Math.PI * 2);\n        ctx.fill();\n\n        ctx.shadowBlur = 0;\n    });\n\n    // Render Shockwaves\n    shockwaves.forEach(sw => {\n        ctx.strokeStyle = sw.color;\n        ctx.globalAlpha = sw.alpha;\n        ctx.lineWidth = 3;\n        ctx.shadowColor = sw.color;\n        ctx.shadowBlur = 15;\n        ctx.beginPath();\n        ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);\n        ctx.stroke();\n        ctx.shadowBlur = 0;\n    });\n    ctx.globalAlpha = 1;\n\n    // Render Particles\n    particles.forEach(p => {\n        ctx.fillStyle = p.color;\n        ctx.globalAlpha = p.alpha;\n        ctx.shadowColor = p.color;\n        ctx.shadowBlur = 8;\n        ctx.fillRect(p.x, p.y, p.size, p.size);\n    });\n    ctx.globalAlpha = 1;\n    ctx.shadowBlur = 0;\n\n    // Render Floating Texts\n    floatingTexts.forEach(ft => {\n        ctx.font = '10px \"Press Start 2P\"';\n        ctx.fillStyle = ft.color;\n        ctx.globalAlpha = ft.alpha;\n        ctx.shadowColor = ft.color;\n        ctx.shadowBlur = 10;\n        ctx.fillText(ft.text, ft.x - 20, ft.y);\n    });\n    ctx.globalAlpha = 1;\n    ctx.shadowBlur = 0;\n}\n\n// Game Loop\nlet lastTime = 0;\nfunction gameLoop(timestamp) {\n    let dt = timestamp - lastTime;\n    lastTime = timestamp;\n\n    update(dt);\n    render();\n\n    requestAnimationFrame(gameLoop);\n}\n\n// Initial setup\ninitEnvironment();\nrender();\nrequestAnimationFrame(gameLoop);\n"
+                  "content": "// --- CANVAS & CONTEXT ---\nconst canvas = document.getElementById('gameCanvas');\nconst ctx = canvas.getContext('2d');\n\n// --- UI ELEMENTS ---\nconst scoreEl = document.getElementById('scoreVal');\nconst highScoreEl = document.getElementById('highScoreVal');\nconst speedEl = document.getElementById('speedVal');\nconst finalScoreEl = document.getElementById('finalScore');\n\nconst menuOverlay = document.getElementById('menuOverlay');\nconst pauseOverlay = document.getElementById('pauseOverlay');\nconst gameOverOverlay = document.getElementById('gameOverOverlay');\n\nconst startBtn = document.getElementById('startBtn');\nconst resumeBtn = document.getElementById('resumeBtn');\nconst restartBtn = document.getElementById('restartBtn');\nconst jumpBtn = document.getElementById('jumpBtn');\nconst slideBtn = document.getElementById('slideBtn');\n\n// --- GAME STATES ---\nconst GAME_STATE = {\n    MENU: 'MENU',\n    PLAYING: 'PLAYING',\n    PAUSED: 'PAUSED',\n    GAMEOVER: 'GAMEOVER'\n};\nlet currentState = GAME_STATE.MENU;\n\n// --- GAME VARIABLES ---\nlet score = 0;\nlet highScore = localStorage.getItem('cyber_runner_highscore') || 0;\nlet gameSpeed = 5;\nlet baseSpeed = 5;\nlet maxSpeed = 14;\nlet speedIncrement = 0.0008;\nlet gravity = 0.8;\n\nhighScoreEl.textContent = Math.floor(highScore);\n\n// --- PLAYER OBJECT ---\nconst player = {\n    x: 80,\n    y: 280,\n    width: 36,\n    height: 52,\n    baseHeight: 52,\n    slideHeight: 28,\n    vy: 0,\n    jumpForce: -13.5,\n    isJumping: false,\n    isSliding: false,\n    color: '#00ffff',\n    glowColor: 'rgba(0, 255, 255, 0.8)',\n    trail: []\n};\n\n// --- WORLD ARRAYS ---\nlet obstacles = [];\nlet particles = [];\nlet floatingTexts = [];\nlet powerUps = [];\nlet groundY = 328;\n\n// Shield power-up state\nlet hasShield = false;\nlet shieldTimer = 0;\n\n// --- BACKGROUND GRID & NEON SCENERY ---\nlet gridOffset = 0;\nlet buildings = [];\nlet stars = [];\n\n// Initialize background buildings\nfor (let i = 0; i < 10; i++) {\n    buildings.push({\n        x: i * 90,\n        width: 70 + Math.random() * 50,\n        height: 120 + Math.random() * 150,\n        speedFactor: 0.3,\n        color: Math.random() > 0.5 ? '#120b29' : '#180e38'\n    });\n}\n\n// Initialize stars / dust\nfor (let i = 0; i < 40; i++) {\n    stars.push({\n        x: Math.random() * canvas.width,\n        y: Math.random() * (groundY - 50),\n        size: Math.random() * 2,\n        speedFactor: 0.1 + Math.random() * 0.2\n    });\n}\n\n// --- INPUT LISTENERS ---\nwindow.addEventListener('keydown', (e) => {\n    if (e.code === 'Space' || e.code === 'ArrowUp') {\n        e.preventDefault();\n        if (currentState === GAME_STATE.PLAYING) {\n            jump();\n        } else if (currentState === GAME_STATE.MENU) {\n            startGame();\n        } else if (currentState === GAME_STATE.GAMEOVER) {\n            resetGame();\n        }\n    }\n    if (e.code === 'ArrowDown') {\n        e.preventDefault();\n        if (currentState === GAME_STATE.PLAYING) {\n            slide(true);\n        }\n    }\n    if (e.code === 'KeyP') {\n        if (currentState === GAME_STATE.PLAYING) {\n            pauseGame();\n        } else if (currentState === GAME_STATE.PAUSED) {\n            resumeGame();\n        }\n    }\n});\n\nwindow.addEventListener('keyup', (e) => {\n    if (e.code === 'ArrowDown') {\n        if (currentState === GAME_STATE.PLAYING) {\n            slide(false);\n        }\n    }\n});\n\nstartBtn.addEventListener('click', startGame);\nresumeBtn.addEventListener('click', resumeGame);\nrestartBtn.addEventListener('click', resetGame);\n\n// Touch controls for mobile\njumpBtn.addEventListener('touchstart', (e) => {\n    e.preventDefault();\n    if (currentState === GAME_STATE.PLAYING) jump();\n});\nslideBtn.addEventListener('touchstart', (e) => {\n    e.preventDefault();\n    if (currentState === GAME_STATE.PLAYING) slide(true);\n});\nslideBtn.addEventListener('touchend', (e) => {\n    e.preventDefault();\n    if (currentState === GAME_STATE.PLAYING) slide(false);\n});\n\n// --- GAME LOGIC FUNCTIONS ---\n\nfunction startGame() {\n    currentState = GAME_STATE.PLAYING;\n    menuOverlay.classList.add('hidden');\n    score = 0;\n    gameSpeed = baseSpeed;\n    obstacles = [];\n    particles = [];\n    floatingTexts = [];\n    powerUps = [];\n    hasShield = false;\n    player.y = groundY - player.height;\n    player.vy = 0;\n    player.isJumping = false;\n    player.isSliding = false;\n}\n\nfunction pauseGame() {\n    currentState = GAME_STATE.PAUSED;\n    pauseOverlay.classList.remove('hidden');\n}\n\nfunction resumeGame() {\n    currentState = GAME_STATE.PLAYING;\n    pauseOverlay.classList.add('hidden');\n}\n\nfunction gameOver() {\n    currentState = GAME_STATE.GAMEOVER;\n    finalScoreEl.textContent = Math.floor(score);\n    if (score > highScore) {\n        highScore = score;\n        localStorage.setItem('cyber_runner_highscore', highScore);\n        highScoreEl.textContent = Math.floor(highScore);\n    }\n    gameOverOverlay.classList.remove('hidden');\n}\n\nfunction resetGame() {\n    gameOverOverlay.classList.add('hidden');\n    startGame();\n}\n\nfunction jump() {\n    if (!player.isJumping) {\n        if (player.isSliding) {\n            slide(false); // Cancel slide if jumping\n        }\n        player.vy = player.jumpForce;\n        player.isJumping = true;\n        createParticles(player.x + player.width / 2, groundY, '#00ffff', 10);\n    }\n}\n\nfunction slide(isDown) {\n    if (isDown && !player.isJumping) {\n        if (!player.isSliding) {\n            player.isSliding = true;\n            player.height = player.slideHeight;\n            player.y = groundY - player.height;\n        }\n    } else {\n        if (player.isSliding) {\n            player.isSliding = false;\n            player.height = player.baseHeight;\n            player.y = groundY - player.height;\n        }\n    }\n}\n\n// --- SPAWNING ENTITIES ---\nlet obstacleTimer = 0;\nlet obstacleInterval = 90;\n\nfunction spawnObstacle() {\n    const rand = Math.random();\n    let type = 'ground';\n    let height = 40 + Math.random() * 25;\n    let width = 24 + Math.random() * 16;\n    let y = groundY - height;\n    let color = '#ff0055';\n\n    if (rand < 0.35) {\n        // High barrier (Player must slide)\n        type = 'high';\n        height = 30;\n        width = 45;\n        y = groundY - 78; // floating above ground\n        color = '#ff9900';\n    } else if (rand < 0.65) {\n        // Tall drone / obstacle\n        type = 'tall';\n        height = 65;\n        width = 28;\n        y = groundY - height;\n        color = '#bf00ff';\n    } else {\n        // Standard ground spike / block\n        type = 'ground';\n        height = 42;\n        width = 30;\n        y = groundY - height;\n        color = '#ff0055';\n    }\n\n    obstacles.push({\n        x: canvas.width + 50,\n        y: y,\n        width: width,\n        height: height,\n        type: type,\n        color: color,\n        passed: false\n    });\n}\n\n// Spawn Powerups periodically\nlet powerUpTimer = 0;\nlet powerUpInterval = 450;\n\nfunction spawnPowerUp() {\n    const types = ['shield', 'points'];\n    const selectedType = types[Math.floor(Math.random() * types.length)];\n    powerUps.push({\n        x: canvas.width + 50,\n        y: groundY - 90 - Math.random() * 60,\n        width: 26,\n        height: 26,\n        type: selectedType,\n        angle: 0\n    });\n}\n\n// --- PARTICLE EFFECTS ---\nfunction createParticles(x, y, color, count) {\n    for (let i = 0; i < count; i++) {\n        particles.push({\n            x: x,\n            y: y,\n            vx: (Math.random() - 0.5) * 6,\n            vy: (Math.random() - 0.5) * 6,\n            size: 2 + Math.random() * 3,\n            color: color,\n            alpha: 1,\n            decay: 0.03 + Math.random() * 0.04\n        });\n    }\n}\n\nfunction addFloatingText(text, x, y, color = '#00ffff') {\n    floatingTexts.push({\n        text: text,\n        x: x,\n        y: y,\n        vy: -1.5,\n        alpha: 1,\n        color: color\n    });\n}\n\n// --- MAIN UPDATE LOOP ---\nfunction update() {\n    if (currentState !== GAME_STATE.PLAYING) return;\n\n    // Increment speed & score\n    gameSpeed = Math.min(maxSpeed, baseSpeed + (score * speedIncrement));\n    score += 0.1 * (gameSpeed / baseSpeed);\n\n    speedEl.textContent = (gameSpeed / baseSpeed).toFixed(1) + 'X';\n    scoreEl.textContent = Math.floor(score);\n\n    // Shield timer\n    if (hasShield) {\n        shieldTimer--;\n        if (shieldTimer <= 0) {\n            hasShield = false;\n        }\n    }\n\n    // Player Physics\n    player.vy += gravity;\n    player.y += player.vy;\n\n    // Ground collision\n    if (player.y >= groundY - player.height) {\n        player.y = groundY - player.height;\n        player.vy = 0;\n        player.isJumping = false;\n    }\n\n    // Running trail effect\n    if (!player.isJumping && Math.random() > 0.4) {\n        player.trail.push({ x: player.x, y: player.y, height: player.height, alpha: 0.5 });\n    }\n    for (let i = player.trail.length - 1; i >= 0; i--) {\n        player.trail[i].x -= gameSpeed * 0.5;\n        player.trail[i].alpha -= 0.05;\n        if (player.trail[i].alpha <= 0) {\n            player.trail.splice(i, 1);\n        }\n    }\n\n    // Background grid & scenery scroll\n    gridOffset = (gridOffset + gameSpeed) % 40;\n\n    buildings.forEach(b => {\n        b.x -= gameSpeed * b.speedFactor;\n        if (b.x + b.width < 0) {\n            b.x = canvas.width + Math.random() * 50;\n            b.height = 120 + Math.random() * 150;\n        }\n    });\n\n    stars.forEach(s => {\n        s.x -= gameSpeed * s.speedFactor;\n        if (s.x < 0) s.x = canvas.width;\n    });\n\n    // Obstacles Management\n    obstacleTimer++;\n    if (obstacleTimer >= obstacleInterval / (gameSpeed / baseSpeed)) {\n        spawnObstacle();\n        obstacleTimer = 0;\n        // Randomize next interval slightly\n        obstacleInterval = 70 + Math.random() * 60;\n    }\n\n    for (let i = obstacles.length - 1; i >= 0; i--) {\n        let obs = obstacles[i];\n        obs.x -= gameSpeed;\n\n        // Collision Check (AABB with slight padding for fairness)\n        let padding = 6;\n        if (\n            player.x + padding < obs.x + obs.width - padding &&\n            player.x + player.width - padding > obs.x + padding &&\n            player.y + padding < obs.y + obs.height - padding &&\n            player.y + player.height - padding > obs.y + padding\n        ) {\n            if (hasShield) {\n                hasShield = false;\n                createParticles(obs.x + obs.width / 2, obs.y + obs.height / 2, '#00ffff', 25);\n                addFloatingText('SHIELD BREAK!', obs.x, obs.y - 10, '#00ffff');\n                obstacles.splice(i, 1);\n                continue;\n            } else {\n                createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff0055', 30);\n                gameOver();\n                return;\n            }\n        }\n\n        // Remove offscreen obstacles\n        if (obs.x + obs.width < 0) {\n            obstacles.splice(i, 1);\n        }\n    }\n\n    // Power-ups Management\n    powerUpTimer++;\n    if (powerUpTimer >= powerUpInterval) {\n        spawnPowerUp();\n        powerUpTimer = 0;\n        powerUpInterval = 400 + Math.random() * 300;\n    }\n\n    for (let i = powerUps.length - 1; i >= 0; i--) {\n        let p = powerUps[i];\n        p.x -= gameSpeed;\n        p.angle += 0.05;\n\n        // Collision with player\n        if (\n            player.x < p.x + p.width &&\n            player.x + player.width > p.x &&\n            player.y < p.y + p.height &&\n            player.y + player.height > p.y\n        ) {\n            if (p.type === 'shield') {\n                hasShield = true;\n                shieldTimer = 400; // duration frames\n                createParticles(p.x, p.y, '#00ffff', 15);\n                addFloatingText('SHIELD ACTIVATED!', p.x, p.y - 15, '#00ffff');\n            } else if (p.type === 'points') {\n                score += 250;\n                createParticles(p.x, p.y, '#ff00ff', 15);\n                addFloatingText('+250 PTS', p.x, p.y - 15, '#ff00ff');\n            }\n            powerUps.splice(i, 1);\n            continue;\n        }\n\n        if (p.x + p.width < 0) {\n            powerUps.splice(i, 1);\n        }\n    }\n\n    // Particles Update\n    for (let i = particles.length - 1; i >= 0; i--) {\n        let pt = particles[i];\n        pt.x += pt.vx;\n        pt.y += pt.vy;\n        pt.alpha -= pt.decay;\n        if (pt.alpha <= 0) {\n            particles.splice(i, 1);\n        }\n    }\n\n    // Floating Text Update\n    for (let i = floatingTexts.length - 1; i >= 0; i--) {\n        let ft = floatingTexts[i];\n        ft.y += ft.vy;\n        ft.alpha -= 0.02;\n        if (ft.alpha <= 0) {\n            floatingTexts.splice(i, 1);\n        }\n    }\n}\n\n// --- MAIN RENDER LOOP ---\nfunction draw() {\n    // Clear Canvas\n    ctx.clearRect(0, 0, canvas.width, canvas.height);\n\n    // 1. Draw Background Space / Deep Cyber Sky\n    let gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);\n    gradient.addColorStop(0, '#05030a');\n    gradient.addColorStop(1, '#0c071e');\n    ctx.fillStyle = gradient;\n    ctx.fillRect(0, 0, canvas.width, canvas.height);\n\n    // 2. Draw Stars / Dust\n    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';\n    stars.forEach(s => {\n        ctx.fillRect(s.x, s.y, s.size, s.size);\n    });\n\n    // 3. Draw Background Buildings (Cyber Skyline)\n    buildings.forEach(b => {\n        ctx.fillStyle = b.color;\n        ctx.fillRect(b.x, groundY - b.height, b.width, b.height);\n        \n        // Windows grid glow\n        ctx.fillStyle = 'rgba(0, 255, 255, 0.08)';\n        for (let wy = groundY - b.height + 10; wy < groundY - 15; wy += 20) {\n            for (let wx = b.x + 8; wx < b.x + b.width - 8; wx += 14) {\n                if ((wx + wy) % 3 === 0) {\n                    ctx.fillRect(wx, wy, 6, 10);\n                }\n            }\n        }\n    });\n\n    // 4. Draw Perspective Floor Grid\n    ctx.strokeStyle = 'rgba(255, 0, 127, 0.25)';\n    ctx.lineWidth = 1;\n\n    // Horizontal grid lines\n    ctx.beginPath();\n    ctx.moveTo(0, groundY);\n    ctx.lineTo(canvas.width, groundY);\n    ctx.stroke();\n\n    // Moving vertical grid lines\n    for (let x = -gridOffset; x < canvas.width; x += 40) {\n        ctx.beginPath();\n        ctx.moveTo(x, groundY);\n        ctx.lineTo(x - 60, canvas.height);\n        ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';\n        ctx.stroke();\n    }\n\n    // Ground solid line neon glow\n    ctx.strokeStyle = '#00ffff';\n    ctx.shadowColor = '#00ffff';\n    ctx.shadowBlur = 10;\n    ctx.beginPath();\n    ctx.moveTo(0, groundY);\n    ctx.lineTo(canvas.width, groundY);\n    ctx.stroke();\n    ctx.shadowBlur = 0; // reset shadow\n\n    // 5. Draw Player Trail\n    player.trail.forEach(t => {\n        ctx.fillStyle = `rgba(0, 255, 255, ${t.alpha})`;\n        ctx.fillRect(t.x, t.y, player.width, t.height);\n    });\n\n    // 6. Draw Player (Cyber Runner Avatar)\n    ctx.save();\n    ctx.shadowColor = player.color;\n    ctx.shadowBlur = 12;\n    ctx.fillStyle = player.color;\n    \n    // Body\n    ctx.fillRect(player.x, player.y, player.width, player.height);\n    \n    // Visor / Helmet Glow\n    ctx.fillStyle = '#ff007f';\n    if (!player.isSliding) {\n        ctx.fillRect(player.x + player.width - 14, player.y + 8, 10, 6);\n    } else {\n        ctx.fillRect(player.x + player.width - 12, player.y + 6, 8, 4);\n    }\n\n    // Shield Aura if active\n    if (hasShield) {\n        ctx.strokeStyle = '#00ffff';\n        ctx.lineWidth = 2;\n        ctx.shadowColor = '#00ffff';\n        ctx.shadowBlur = 15;\n        ctx.strokeRect(player.x - 5, player.y - 5, player.width + 10, player.height + 10);\n    }\n    ctx.restore();\n\n    // 7. Draw Obstacles\n    obstacles.forEach(obs => {\n        ctx.save();\n        ctx.shadowColor = obs.color;\n        ctx.shadowBlur = 12;\n        ctx.fillStyle = obs.color;\n\n        if (obs.type === 'high') {\n            // Floating barrier / laser bar\n            ctx.fillRect(obs.x, obs.y, obs.width, obs.height);\n            // Core glowing stripe\n            ctx.fillStyle = '#ffffff';\n            ctx.fillRect(obs.x, obs.y + obs.height / 2 - 2, obs.width, 4);\n        } else if (obs.type === 'tall') {\n            // Tall server stack / glitch pillar\n            ctx.fillRect(obs.x, obs.y, obs.width, obs.height);\n            // Glitch lines\n            ctx.fillStyle = '#00ffff';\n            ctx.fillRect(obs.x + 4, obs.y + 10, obs.width - 8, 4);\n            ctx.fillRect(obs.x + 4, obs.y + 30, obs.width - 8, 4);\n        } else {\n            // Ground spike / firewall block\n            ctx.beginPath();\n            ctx.moveTo(obs.x, obs.y + obs.height);\n            ctx.lineTo(obs.x + obs.width / 2, obs.y);\n            ctx.lineTo(obs.x + obs.width, obs.y + obs.height);\n            ctx.closePath();\n            ctx.fill();\n        }\n        ctx.restore();\n    });\n\n    // 8. Draw Power-Ups\n    powerUps.forEach(p => {\n        ctx.save();\n        ctx.translate(p.x + p.width / 2, p.y + p.height / 2);\n        ctx.rotate(p.angle);\n        ctx.shadowColor = p.type === 'shield' ? '#00ffff' : '#ff00ff';\n        ctx.shadowBlur = 12;\n        ctx.strokeStyle = p.type === 'shield' ? '#00ffff' : '#ff00ff';\n        ctx.lineWidth = 3;\n        \n        if (p.type === 'shield') {\n            ctx.strokeRect(-p.width / 2, -p.height / 2, p.width, p.height);\n            ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';\n            ctx.fillRect(-p.width / 2, -p.height / 2, p.width, p.height);\n        } else {\n            // Star or diamond for points\n            ctx.beginPath();\n            ctx.moveTo(0, -p.height / 2);\n            ctx.lineTo(p.width / 2, 0);\n            ctx.lineTo(0, p.height / 2);\n            ctx.lineTo(-p.width / 2, 0);\n            ctx.closePath();\n            ctx.fillStyle = 'rgba(255, 0, 255, 0.4)';\n            ctx.fill();\n            ctx.stroke();\n        }\n        ctx.restore();\n    });\n\n    // 9. Draw Particles\n    particles.forEach(pt => {\n        ctx.save();\n        ctx.globalAlpha = pt.alpha;\n        ctx.fillStyle = pt.color;\n        ctx.shadowColor = pt.color;\n        ctx.shadowBlur = 6;\n        ctx.fillRect(pt.x, pt.y, pt.size, pt.size);\n        ctx.restore();\n    });\n\n    // 10. Draw Floating Texts\n    floatingTexts.forEach(ft => {\n        ctx.save();\n        ctx.globalAlpha = ft.alpha;\n        ctx.font = '700 14px Orbitron';\n        ctx.fillStyle = ft.color;\n        ctx.shadowColor = ft.color;\n        ctx.shadowBlur = 8;\n        ctx.fillText(ft.text, ft.x, ft.y);\n        ctx.restore();\n    });\n}\n\n// --- GAME LOOP ---\nfunction gameLoop() {\n    update();\n    draw();\n    requestAnimationFrame(gameLoop);\n}\n\n// Start loop\nrequestAnimationFrame(gameLoop);\n"
                 }
               ]
             },
-            "elapsed_seconds": 0.0017249869997613132,
+            "elapsed_seconds": 0.0017193059993587667,
             "success": true,
             "message": "ok"
           },
           {
             "name": "run_shell",
             "arguments": {
-              "command": "git status"
+              "command": "ls -la"
             },
-            "elapsed_seconds": 0.005128630999024608,
+            "elapsed_seconds": 0.006182806000651908,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 66.38147744900016
+        "elapsed_seconds": 29.23109192100128
       },
       "grade": {
         "passed": false,
@@ -436,7 +437,6 @@
           "expected file missing: script.js"
         ],
         "used_tools": [
-          "search_files",
           "run_shell",
           "create_files",
           "run_shell"
@@ -452,24 +452,24 @@
           "index.html",
           "style.css"
         ],
-        "wall_seconds": 66.38742714399996,
-        "rate_limit_waits": 3,
-        "rate_limit_wait_seconds": 33.13527308199991,
-        "workspace": "/tmp/jimmy-eval-e07-s4c0lt0l"
+        "wall_seconds": 29.237679885000034,
+        "rate_limit_waits": 2,
+        "rate_limit_wait_seconds": 38.39014259999931,
+        "workspace": "/tmp/jimmy-eval-e07-9hevnneu"
       }
     },
     {
       "trace": {
         "eval_id": "E08",
         "task": "Improve the existing browser game by adding double jump and better styling.",
-        "workspace": "/tmp/jimmy-eval-e08-00ijey6r",
-        "started_at": 11653.007899146,
-        "finished_at": 11684.402187038,
-        "result": "I have successfully improved the browser game into a polished **Neon Runner** game with double jump mechanics and modern styling.\n\n### Summary of Improvements:\n1. **Double Jump Mechanics (`script.js`)**:\n   - Added `maxJumps = 2` and jump state tracking.\n   - Players can press Space, Up Arrow, or click/tap once to jump from the ground and a second time mid-air to double jump.\n   - Added glowing particle effects on jump and double jump.\n\n2. **Modern Synthwave Neon Styling (`style.css`)**:\n   - Implemented a clean futuristic dashboard layout with scoreboard, high score persistence (`localStorage`), animated glowing borders, and backdrop blur overlay screens for Start and Game Over.\n\n3. **Enhanced Gameplay & Visuals (`index.html` & `script.js`)**:\n   - Added parallax starry background, neon grid synthwave ground, obstacle types (spikes, tall barriers, and floating obstacles), player trail effects, dynamic speed scaling with score progression, and collision explosion effects.",
+        "workspace": "/tmp/jimmy-eval-e08-69jalm02",
+        "started_at": 14484.372278927,
+        "finished_at": 14522.756812149,
+        "result": "",
         "passed": true,
-        "error": null,
-        "turns": 12,
-        "tool_calls": 11,
+        "error": "LLMProviderError: ❌ Gemini rejected the request.\n400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Please ensure that function call turn comes immediately after a user turn or after a function response turn.', 'status': 'INVALID_ARGUMENT'}}",
+        "turns": 10,
+        "tool_calls": 9,
         "failed_tools": 0,
         "repeated_tools": 0,
         "wrong_tool_attempts": 0,
@@ -482,100 +482,36 @@
           {
             "name": "search_files",
             "arguments": {
-              "query": "html"
-            },
-            "elapsed_seconds": 0.005668052999681095,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "search_files",
-            "arguments": {
               "query": "jump"
             },
-            "elapsed_seconds": 0.005313056000886718,
+            "elapsed_seconds": 0.006507567000880954,
             "success": true,
             "message": "ok"
           },
           {
             "name": "read_file",
             "arguments": {
-              "line_start": 1,
-              "line_end": null,
+              "path": "script.js"
+            },
+            "elapsed_seconds": 0.00022297999930742662,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "read_file",
+            "arguments": {
               "path": "index.html"
             },
-            "elapsed_seconds": 0.00026443100068718195,
+            "elapsed_seconds": 0.00026388600053905975,
             "success": true,
             "message": "ok"
           },
           {
             "name": "read_file",
             "arguments": {
-              "line_start": 1,
-              "path": "script.js"
+              "path": "style.css"
             },
-            "elapsed_seconds": 0.0003200780010956805,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "run_shell",
-            "arguments": {
-              "command": "ls -la"
-            },
-            "elapsed_seconds": 0.00953407899942249,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "read_file",
-            "arguments": {
-              "path": "style.css",
-              "line_start": 1
-            },
-            "elapsed_seconds": 0.00023658200007048436,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "search_files",
-            "arguments": {
-              "query": "canvas"
-            },
-            "elapsed_seconds": 0.00653209399933985,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "edit_file",
-            "arguments": {
-              "old_text": "<!doctype html>\n<html><body><script src='script.js'></script></body></html>",
-              "path": "index.html",
-              "new_text": "<!doctype html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Neon Runner - Double Jump Edition</title>\n  <link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n  <div id=\"game-container\">\n    <header>\n      <h1>NEON RUNNER</h1>\n      <div id=\"scoreboard\">\n        <span>Score: <strong id=\"score\">0</strong></span>\n        <span>High Score: <strong id=\"high-score\">0</strong></span>\n      </div>\n    </header>\n    <div id=\"canvas-wrapper\">\n      <canvas id=\"gameCanvas\" width=\"800\" height=\"400\"></canvas>\n      <div id=\"start-screen\" class=\"overlay\">\n        <h2>NEON RUNNER</h2>\n        <p>Press <strong>Space</strong> or <strong>Up Arrow</strong> or <strong>Tap</strong> to Jump & Double Jump!</p>\n        <p>Avoid obstacles and survive as long as you can.</p>\n        <button id=\"start-btn\">PLAY GAME</button>\n      </div>\n      <div id=\"game-over-screen\" class=\"overlay hidden\">\n        <h2>GAME OVER</h2>\n        <p>Your Score: <span id=\"final-score\">0</span></p>\n        <button id=\"restart-btn\">PLAY AGAIN</button>\n      </div>\n    </div>\n    <footer>\n      <p>Controls: Space / Up Arrow / Click / Tap to Jump (Double Jump supported!)</p>\n    </footer>\n  </div>\n  <script src=\"script.js\"></script>\n</body>\n</html>\n"
-            },
-            "elapsed_seconds": 0.00038646500070171896,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "edit_file",
-            "arguments": {
-              "path": "style.css",
-              "new_text": "* {\n  box-sizing: border-box;\n  margin: 0;\n  padding: 0;\n}\n\nbody {\n  background: radial-gradient(circle at center, #1a1a2e 0%, #0f0f1a 100%);\n  color: #fff;\n  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n  min-height: 100vh;\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  overflow: hidden;\n}\n\n#game-container {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 15px;\n  background: rgba(20, 20, 35, 0.85);\n  padding: 25px;\n  border-radius: 16px;\n  box-shadow: 0 0 30px rgba(0, 243, 255, 0.2), inset 0 0 15px rgba(255, 0, 128, 0.1);\n  border: 1px solid rgba(0, 243, 255, 0.3);\n  max-width: 860px;\n  width: 100%;\n}\n\nheader {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  width: 100%;\n  padding: 0 10px;\n}\n\nh1 {\n  font-size: 1.8rem;\n  letter-spacing: 2px;\n  background: linear-gradient(90deg, #00f3ff, #ff007f);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);\n}\n\n#scoreboard {\n  display: flex;\n  gap: 20px;\n  font-size: 1.1rem;\n  background: rgba(0, 0, 0, 0.4);\n  padding: 8px 16px;\n  border-radius: 8px;\n  border: 1px solid rgba(255, 255, 255, 0.1);\n}\n\n#scoreboard strong {\n  color: #00f3ff;\n}\n\n#canvas-wrapper {\n  position: relative;\n  width: 800px;\n  height: 400px;\n  border-radius: 10px;\n  overflow: hidden;\n  box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);\n  border: 2px solid #00f3ff;\n}\n\ncanvas {\n  display: block;\n  background: #0a0a16;\n}\n\n.overlay {\n  position: absolute;\n  top: 0;\n  left: 0;\n  width: 100%;\n  height: 100%;\n  background: rgba(10, 10, 22, 0.85);\n  backdrop-filter: blur(5px);\n  display: flex;\n  flex-direction: column;\n  justify-content: center;\n  align-items: center;\n  gap: 20px;\n  z-index: 10;\n  transition: opacity 0.3s ease;\n}\n\n.overlay.hidden {\n  opacity: 0;\n  pointer-events: none;\n}\n\n.overlay h2 {\n  font-size: 2.5rem;\n  color: #ff007f;\n  text-shadow: 0 0 15px rgba(255, 0, 127, 0.6);\n  letter-spacing: 3px;\n}\n\n.overlay p {\n  font-size: 1.1rem;\n  color: #a0a0c0;\n  text-align: center;\n  max-width: 500px;\n  line-height: 1.5;\n}\n\n.overlay strong {\n  color: #00f3ff;\n}\n\nbutton {\n  background: linear-gradient(135deg, #00f3ff, #0066ff);\n  color: #0a0a16;\n  border: none;\n  padding: 12px 30px;\n  font-size: 1.1rem;\n  font-weight: bold;\n  border-radius: 30px;\n  cursor: pointer;\n  box-shadow: 0 0 15px rgba(0, 243, 255, 0.5);\n  transition: all 0.2s ease;\n  letter-spacing: 1px;\n}\n\nbutton:hover {\n  transform: translateY(-2px);\n  box-shadow: 0 0 25px rgba(0, 243, 255, 0.8);\n  background: linear-gradient(135deg, #33f5ff, #3385ff);\n}\n\nbutton:active {\n  transform: translateY(1px);\n}\n\nfooter {\n  font-size: 0.85qrem;\n  color: #707090;\n  text-align: center;\n}\n",
-              "old_text": "body { background: #000; }"
-            },
-            "elapsed_seconds": 0.00041073599822993856,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "edit_file",
-            "arguments": {
-              "old_text": "let jumps = 1;",
-              "new_text": "const canvas = document.getElementById('gameCanvas');\nconst ctx = canvas.getContext('2d');\n\nconst scoreEl = document.getElementById('score');\nconst highScoreEl = document.getElementById('high-score');\nconst finalScoreEl = document.getElementById('final-score');\nconst startScreen = document.getElementById('start-screen');\nconst gameOverScreen = document.getElementById('game-over-screen');\nconst startBtn = document.getElementById('start-btn');\nconst restartBtn = document.getElementById('restart-btn');\n\nlet score = 0;\nlet highScore = localStorage.getItem('neon_runner_highscore') || 0;\nhighScoreEl.textContent = highScore;\n\nlet gameState = 'START'; // START, PLAYING, GAMEOVER\n\n// Game configuration & objects\nlet gameSpeed = 5;\nlet gravity = 0.6;\n\nconst player = {\n  x: 80,\n  y: 280,\n  width: 40,\n  height: 50,\n  vy: 0,\n  jumpStrength: -11,\n  doubleJumpStrength: -9.5,\n  jumps: 0,\n  maxJumps: 2,\n  grounded: false,\n  color: '#00f3ff',\n  trail: []\n};\n\nlet obstacles = [];\nlet particles = [];\nlet stars = [];\nlet groundX = 0;\n\n// Initialize background stars\nfor (let i = 0; i < 50; i++) {\n  stars.push({\n    x: Math.random() * canvas.width,\n    y: Math.random() * (canvas.height - 80),\n    size: Math.random() * 2 + 1,\n    speed: Math.random() * 0.5 + 0.2\n  });\n}\n\nfunction spawnObstacle() {\n  const types = ['spike', 'tall', 'floating'];\n  const type = types[Math.floor(Math.random() * types.length)];\n  \n  let obs = {\n    x: canvas.width + 50,\n    width: 30,\n    height: 40,\n    y: 330 - 40,\n    color: '#ff007f',\n    type: type\n  };\n\n  if (type === 'tall') {\n    obs.width = 35;\n    obs.height = 70;\n    obs.y = 330 - 70;\n    obs.color = '#ffaa00';\n  } else if (type === 'floating') {\n    obs.width = 40;\n    obs.height = 30;\n    obs.y = 230; // floating above player jump height range\n    obs.color = '#bf00ff';\n  }\n\n  obstacles.push(obs);\n}\n\nlet spawnTimer = 0;\nlet spawnInterval = 100;\n\nfunction jump() {\n  if (gameState !== 'PLAYING') return;\n\n  if (player.grounded) {\n    player.vy = player.jumpStrength;\n    player.grounded = false;\n    player.jumps = 1;\n    createJumpParticles(player.x + player.width / 2, player.y + player.height);\n  } else if (player.jumps < player.maxJumps) {\n    player.vy = player.doubleJumpStrength;\n    player.jumps++;\n    createJumpParticles(player.x + player.width / 2, player.y + player.height, '#ff007f');\n  }\n}\n\nfunction createJumpParticles(x, y, color = '#00f3ff') {\n  for (let i = 0; i < 12; i++) {\n    particles.push({\n      x: x,\n      y: y,\n      vx: (Math.random() - 0.5) * 6,\n      vy: (Math.random() - 0.5) * 6 - 2,\n      radius: Math.random() * 3 + 1,\n      color: color,\n      alpha: 1,\n      decay: Math.random() * 0.03 + 0.02\n    });\n  }\n}\n\nfunction createExplosion(x, y) {\n  for (let i = 0; i < 40; i++) {\n    particles.push({\n      x: x,\n      y: y,\n      vx: (Math.random() - 0.5) * 10,\n      vy: (Math.random() - 0.5) * 10,\n      radius: Math.random() * 4 + 2,\n      color: Math.random() > 0.5 ? '#ff007f' : '#00f3ff',\n      alpha: 1,\n      decay: Math.random() * 0.02 + 0.01\n    });\n  }\n}\n\n// Input listeners\nwindow.addEventListener('keydown', (e) => {\n  if (['Space', 'ArrowUp', 'KeyW'].includes(e.code)) {\n    e.preventDefault();\n    if (gameState === 'PLAYING') {\n      jump();\n    } else if (gameState === 'START') {\n      startGame();\n    } else if (gameState === 'GAMEOVER') {\n      resetGame();\n    }\n  }\n});\n\ncanvas.addEventListener('click', () => {\n  if (gameState === 'PLAYING') {\n    jump();\n  }\n});\n\nstartBtn.addEventListener('click', startGame);\nrestartBtn.addEventListener('click', resetGame);\n\nfunction startGame() {\n  gameState = 'PLAYING';\n  startScreen.classList.add('hidden');\n  score = 0;\n  gameSpeed = 5;\n  obstacles = [];\n  particles = [];\n  spawnTimer = 0;\n  player.y = 280;\n  player.vy = 0;\n  player.jumps = 0;\n  player.grounded = true;\n}\n\nfunction resetGame() {\n  gameState = 'PLAYING';\n  gameOverScreen.classList.add('hidden');\n  score = 0;\n  gameSpeed = 5;\n  obstacles = [];\n  particles = [];\n  spawnTimer = 0;\n  player.y = 280;\n  player.vy = 0;\n  player.jumps = 0;\n  player.grounded = true;\n}\n\nfunction gameOver() {\n  gameState = 'GAMEOVER';\n  createExplosion(player.x + player.width / 2, player.y + player.height / 2);\n  finalScoreEl.textContent = Math.floor(score);\n  if (score > highScore) {\n    highScore = Math.floor(score);\n    localStorage.setItem('neon_runner_highscore', highScore);\n    highScoreEl.textContent = highScore;\n  }\n  setTimeout(() => {\n    gameOverScreen.classList.remove('hidden');\n  }, 400);\n}\n\nfunction update() {\n  if (gameState !== 'PLAYING') return;\n\n  // Score & speed progression\n  score += 0.1;\n  scoreEl.textContent = Math.floor(score);\n  gameSpeed = 5 + Math.floor(score / 100) * 0.5;\n\n  // Player physics\n  player.vy += gravity;\n  player.y += player.vy;\n\n  // Ground collision\n  const floorY = 330 - player.height;\n  if (player.y >= floorY) {\n    player.y = floorY;\n    player.vy = 0;\n    player.grounded = true;\n    player.jumps = 0;\n  }\n\n  // Player trail effect\n  player.trail.push({ x: player.x, y: player.y });\n  if (player.trail.length > 5) {\n    player.trail.shift();\n  }\n\n  // Ground movement\n  groundX = (groundX + gameSpeed) % 40;\n\n  // Stars parallax\n  stars.forEach(star => {\n    star.x -= star.speed;\n    if (star.x < 0) star.x = canvas.width;\n  });\n\n  // Obstacle spawning\n  spawnTimer++;\n  if (spawnTimer >= Math.max(50, spawnInterval - Math.floor(score / 50) * 5)) {\n    spawnObstacle();\n    spawnTimer = 0;\n    spawnInterval = Math.floor(Math.random() * 40) + 80;\n  }\n\n  // Update obstacles\n  for (let i = obstacles.length - 1; i >= 0; i--) {\n    let obs = obstacles[i];\n    obs.x -= gameSpeed;\n\n    // AABB Collision Detection with slight padding for fairness\n    const padding = 6;\n    if (\n      player.x + padding < obs.x + obs.width - padding &&\n      player.x + player.width - padding > obs.x + padding &&\n      player.y + padding < obs.y + obs.height - padding &&\n      player.y + player.height - padding > obs.y + padding\n    ) {\n      gameOver();\n    }\n\n    // Remove off-screen obstacles\n    if (obs.x + obs.width < 0) {\n      obstacles.splice(i, 1);\n    }\n  }\n\n  // Update particles\n  for (let i = particles.length - 1; i >= 0; i--) {\n    let p = particles[i];\n    p.x += p.vx;\n    p.y += p.vy;\n    p.alpha -= p.decay;\n    if (p.alpha <= 0) {\n      particles.splice(i, 1);\n    }\n  }\n}\n\nfunction draw() {\n  // Clear canvas\n  ctx.fillStyle = '#0a0a16';\n  ctx.fillRect(0, 0, canvas.width, canvas.height);\n\n  // Draw background stars\n  ctx.fillStyle = '#ffffff';\n  stars.forEach(star => {\n    ctx.globalAlpha = Math.random() * 0.5 + 0.5;\n    ctx.fillRect(star.x, star.y, star.size, star.size);\n  });\n  ctx.globalAlpha = 1;\n\n  // Draw grid lines in background for synthwave neon vibe\n  ctx.strokeStyle = 'rgba(0, 243, 255, 0.05)';\n  ctx.lineWidth = 1;\n  for (let x = 0; x < canvas.width; x += 40) {\n    ctx.beginPath();\n    ctx.moveTo(x, 0);\n    ctx.lineTo(x, 330);\n    ctx.stroke();\n  }\n\n  // Draw Ground\n  ctx.fillStyle = '#12122b';\n  ctx.fillRect(0, 330, canvas.width, canvas.height - 330);\n\n  // Neon Ground Top Line\n  ctx.strokeStyle = '#00f3ff';\n  ctx.shadowColor = '#00f3ff';\n  ctx.shadowBlur = 10;\n  ctx.lineWidth = 3;\n  ctx.beginPath();\n  ctx.moveTo(0, 330);\n  ctx.lineTo(canvas.width, 330);\n  ctx.stroke();\n\n  // Ground dash marks\n  ctx.strokeStyle = '#ff007f';\n  ctx.shadowColor = '#ff007f';\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (let x = -groundX; x < canvas.width; x += 40) {\n    ctx.moveTo(x, 345);\n    ctx.lineTo(x + 20, 345);\n  }\n  ctx.stroke();\n  ctx.shadowBlur = 0; // reset shadow\n\n  // Draw Player Trail\n  player.trail.forEach((pos, index) => {\n    const alpha = (index + 1) / player.trail.length * 0.3;\n    ctx.fillStyle = player.color;\n    ctx.globalAlpha = alpha;\n    ctx.fillRect(pos.x, pos.y, player.width, player.height);\n  });\n  ctx.globalAlpha = 1;\n\n  // Draw Player\n  ctx.shadowColor = player.color;\n  ctx.shadowBlur = 15;\n  ctx.fillStyle = player.color;\n  ctx.fillRect(player.x, player.y, player.width, player.height);\n\n  // Player visor / inner detail\n  ctx.fillStyle = '#ffffff';\n  ctx.fillRect(player.x + 20, player.y + 10, 14, 8);\n  ctx.shadowBlur = 0;\n\n  // Draw Obstacles\n  obstacles.forEach(obs => {\n    ctx.shadowColor = obs.color;\n    ctx.shadowBlur = 15;\n    ctx.fillStyle = obs.color;\n    ctx.fillRect(obs.x, obs.y, obs.width, obs.height);\n\n    // Inner glow core\n    ctx.fillStyle = '#ffffff';\n    ctx.fillRect(obs.x + 4, obs.y + 4, obs.width - 8, 4);\n    ctx.shadowBlur = 0;\n  });\n\n  // Draw Particles\n  particles.forEach(p => {\n    ctx.save();\n    ctx.globalAlpha = p.alpha;\n    ctx.shadowColor = p.color;\n    ctx.shadowBlur = 8;\n    ctx.fillStyle = p.color;\n    ctx.beginPath();\n    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);\n    ctx.fill();\n    ctx.restore();\n  });\n}\n\nfunction loop() {\n  update();\n  draw();\n  requestAnimationFrame(loop);\n}\n\nloop();\n",
-              "path": "script.js"
-            },
-            "elapsed_seconds": 0.0004779450009664288,
+            "elapsed_seconds": 0.0002304440004081698,
             "success": true,
             "message": "ok"
           },
@@ -584,24 +520,64 @@
             "arguments": {
               "command": "git status"
             },
-            "elapsed_seconds": 0.005136555999342818,
+            "elapsed_seconds": 0.00566823199915234,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "edit_file",
+            "arguments": {
+              "path": "index.html",
+              "new_text": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Cyber Runner - Double Jump Edition</title>\n    <link rel=\"stylesheet\" href=\"style.css\">\n    <link href=\"https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap\" rel=\"stylesheet\">\n</head>\n<body>\n    <div id=\"game-container\">\n        <div id=\"ui\">\n            <div id=\"score-board\">Score: <span id=\"score\">0</span></div>\n            <div id=\"high-score-board\">High Score: <span id=\"high-score\">0</span></div>\n        </div>\n        <canvas id=\"gameCanvas\" width=\"800\" height=\"400\"></canvas>\n        <div id=\"instructions\">\n            <p>Press <strong>SPACEBAR</strong> or <strong>UP ARROW</strong> or <strong>CLICK</strong> to Jump & Double Jump!</p>\n            <p>Press <strong>R</strong> or Click Restart when Game Over.</p>\n        </div>\n        <div id=\"game-over-screen\" class=\"hidden\">\n            <h2>GAME OVER</h2>\n            <p>Final Score: <span id=\"final-score\">0</span></p>\n            <button id=\"restart-btn\">PLAY AGAIN</button>\n        </div>\n    </div>\n    <script src=\"script.js\"></script>\n</body>\n</html>",
+              "old_text": "<!doctype html>\n<html><body><script src='script.js'></script></body></html>"
+            },
+            "elapsed_seconds": 0.0003923030017176643,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "edit_file",
+            "arguments": {
+              "path": "style.css",
+              "old_text": "body { background: #000; }",
+              "new_text": "* {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n}\n\nbody {\n    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);\n    color: #fff;\n    font-family: 'Press Start 2P', monospace, sans-serif;\n    display: flex;\n    justify-content: center;\n    align-items: center;\n    min-height: 100vh;\n    overflow: hidden;\n}\n\n#game-container {\n    position: relative;\n    text-align: center;\n    background: rgba(15, 15, 35, 0.85);\n    padding: 20px;\n    border-radius: 16px;\n    box-shadow: 0 0 30px rgba(0, 255, 204, 0.2), inset 0 0 15px rgba(0, 255, 204, 0.1);\n    border: 2px solid #00ffcc;\n}\n\n#ui {\n    display: flex;\n    justify-content: space-between;\n    width: 800px;\n    margin-bottom: 15px;\n    font-size: 14px;\n    text-shadow: 0 0 8px rgba(0, 255, 204, 0.8);\n}\n\n#score-board {\n    color: #00ffcc;\n}\n\n#high-score-board {\n    color: #ff007f;\n}\n\ncanvas {\n    background: linear-gradient(to bottom, #111122, #1a1a3a);\n    display: block;\n    border-radius: 8px;\n    border: 2px solid #333366;\n    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);\n}\n\n#instructions {\n    margin-top: 15px;\n    font-size: 9px;\n    color: #aaa;\n    line-height: 1.6;\n    text-shadow: 0 0 4px rgba(255, 255, 255, 0.2);\n}\n\n#instructions strong {\n    color: #00ffcc;\n}\n\n#game-over-screen {\n    position: absolute;\n    top: 50%;\n    left: 50%;\n    transform: translate(-50%, -50%);\n    background: rgba(10, 10, 25, 0.95);\n    padding: 35px 50px;\n    border-radius: 12px;\n    border: 3px solid #ff007f;\n    box-shadow: 0 0 40px rgba(255, 0, 127, 0.5);\n    text-align: center;\n    z-index: 10;\n}\n\n#game-over-screen.hidden {\n    display: none;\n}\n\n#game-over-screen h2 {\n    color: #ff007f;\n    font-size: 24px;\n    margin-bottom: 20px;\n    text-shadow: 0 0 10px rgba(255, 0, 127, 0.8);\n}\n\n#game-over-screen p {\n    font-size: 12px;\n    margin-bottom: 25px;\n    color: #fff;\n}\n\n#restart-btn {\n    background: linear-gradient(135deg, #ff007f, #7f00ff);\n    color: white;\n    border: none;\n    padding: 12px 24px;\n    font-family: 'Press Start 2P', monospace, sans-serif;\n    font-size: 11px;\n    border-radius: 6px;\n    cursor: pointer;\n    box-shadow: 0 0 15px rgba(255, 0, 127, 0.6);\n    transition: all 0.2s ease;\n}\n\n#restart-btn:hover {\n    transform: scale(1.05);\n    box-shadow: 0 0 25px rgba(255, 0, 127, 0.9);\n    background: linear-gradient(135deg, #ff3399, #9933ff);\n}\n"
+            },
+            "elapsed_seconds": 0.00037083300048834644,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "edit_file",
+            "arguments": {
+              "path": "script.js",
+              "new_text": "const canvas = document.getElementById('gameCanvas');\nconst ctx = canvas.getContext('2d');\n\nconst scoreEl = document.getElementById('score');\nconst highScoreEl = document.getElementById('high-score');\nconst finalScoreEl = document.getElementById('final-score');\nconst gameOverScreen = document.getElementById('game-over-screen');\nconst restartBtn = document.getElementById('restart-btn');\n\n// Game variables\nlet score = 0;\nlet highScore = localStorage.getItem('cyberRunnerHighScore') || 0;\nhighScoreEl.textContent = highScore;\n\nlet gameSpeed = 5;\nlet isGameOver = false;\nlet frameCount = 0;\n\n// Player (Cyber Runner)\nconst player = {\n    x: 80,\n    y: 280,\n    width: 36,\n    height: 48,\n    dy: 0,\n    jumpPower: -11,\n    gravity: 0.6,\n    grounded: false,\n    jumpsLeft: 2,\n    maxJumps: 2,\n    color: '#00ffcc',\n    trail: []\n};\n\n// Obstacles array\nlet obstacles = [];\n\n// Particles array for jump / effects\nlet particles = [];\n\n// Stars/Grid background elements\nlet stars = [];\nfor (let i = 0; i < 50; i++) {\n    stars.push({\n        x: Math.random() * canvas.width,\n        y: Math.random() * (canvas.height - 80),\n        size: Math.random() * 2 + 1,\n        speed: Math.random() * 1.5 + 0.5\n    });\n}\n\nfunction spawnObstacle() {\n    const types = ['spike', 'tall', 'drone'];\n    const type = types[Math.floor(Math.random() * types.length)];\n    \n    let obs = {\n        x: canvas.width,\n        width: 30,\n        height: 40,\n        y: 288,\n        color: '#ff007f',\n        type: type\n    };\n\n    if (type === 'tall') {\n        obs.width = 34;\n        obs.height = 65;\n        obs.y = 263;\n        obs.color = '#7f00ff';\n    } else if (type === 'drone') {\n        obs.width = 40;\n        obs.height = 25;\n        obs.y = 200 + (Math.random() > 0.5 ? 0 : -40); // floating drone\n        obs.color = '#ffaa00';\n    }\n\n    obstacles.push(obs);\n}\n\nfunction createParticles(x, y, color, count = 10) {\n    for (let i = 0; i < count; i++) {\n        particles.push({\n            x: x,\n            y: y,\n            dx: (Math.random() - 0.5) * 6,\n            dy: (Math.random() - 0.5) * 6,\n            radius: Math.random() * 3 + 1,\n            color: color,\n            life: 30\n        });\n    }\n}\n\nfunction jump() {\n    if (isGameOver) return;\n\n    if (player.jumpsLeft > 0) {\n        player.dy = player.jumpPower;\n        player.grounded = false;\n        player.jumpsLeft--;\n        \n        // Spawn jump particles / effects\n        const pColor = player.jumpsLeft === 1 ? '#00ffcc' : '#ff007f';\n        createParticles(player.x + player.width / 2, player.y + player.height, pColor, 12);\n    }\n}\n\n// Input listeners\nwindow.addEventListener('keydown', (e) => {\n    if (e.code === 'Space' || e.code === 'ArrowUp') {\n        e.preventDefault();\n        jump();\n    }\n    if ((e.code === 'KeyR' || e.code === 'Enter') && isGameOver) {\n        resetGame();\n    }\n});\n\ncanvas.addEventListener('mousedown', () => {\n    if (isGameOver) {\n        resetGame();\n    } else {\n        jump();\n    }\n});\n\nrestartBtn.addEventListener('click', (e) => {\n    e.stopPropagation();\n    resetGame();\n});\n\nfunction resetGame() {\n    score = 0;\n    scoreEl.textContent = score;\n    gameSpeed = 5;\n    obstacles = [];\n    particles = [];\n    player.y = 280;\n    player.dy = 0;\n    player.jumpsLeft = player.maxJumps;\n    player.grounded = true;\n    isGameOver = false;\n    gameOverScreen.classList.add('hidden');\n    frameCount = 0;\n}\n\nfunction update() {\n    if (isGameOver) return;\n\n    frameCount++;\n    score += 0.1;\n    scoreEl.textContent = Math.floor(score);\n\n    // Increase speed gradually\n    if (frameCount % 500 === 0) {\n        gameSpeed += 0.5;\n    }\n\n    // Player physics\n    player.dy += player.gravity;\n    player.y += player.dy;\n\n    // Ground collision\n    const groundLevel = 328 - player.height;\n    if (player.y > groundLevel) {\n        player.y = groundLevel;\n        player.dy = 0;\n        player.grounded = true;\n        player.jumpsLeft = player.maxJumps;\n    }\n\n    // Player trail\n    if (frameCount % 3 === 0) {\n        player.trail.push({ x: player.x, y: player.y, alpha: 0.5 });\n        if (player.trail.length > 5) {\n            player.trail.shift();\n        }\n    }\n    player.trail.forEach(t => t.alpha -= 0.1);\n\n    // Background stars movement\n    stars.forEach(star => {\n        star.x -= star.speed * (gameSpeed / 4);\n        if (star.x < 0) star.x = canvas.width;\n    });\n\n    // Spawn obstacles\n    if (frameCount % Math.max(70, Math.floor(140 - gameSpeed * 8)) === 0) {\n        spawnObstacle();\n    }\n\n    // Update obstacles\n    for (let i = obstacles.length - 1; i >= 0; i--) {\n        let obs = obstacles[i];\n        obs.x -= gameSpeed;\n\n        // Collision detection (AABB with slight padding for fairness)\n        const padding = 6;\n        if (\n            player.x + padding < obs.x + obs.width - padding &&\n            player.x + player.width - padding > obs.x + padding &&\n            player.y + padding < obs.y + obs.height - padding &&\n            player.y + player.height - padding > obs.y + padding\n        ) {\n            isGameOver = true;\n            createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff007f', 30);\n            \n            if (Math.floor(score) > highScore) {\n                highScore = Math.floor(score);\n                localStorage.setItem('cyberRunnerHighScore', highScore);\n                highScoreEl.textContent = highScore;\n            }\n            finalScoreEl.textContent = Math.floor(score);\n            gameOverScreen.classList.remove('hidden');\n        }\n\n        // Remove offscreen obstacles\n        if (obs.x + obs.width < 0) {\n            obstacles.splice(i, 1);\n        }\n    }\n\n    // Update particles\n    for (let i = particles.length - 1; i >= 0; i--) {\n        let p = particles[i];\n        p.x += p.dx;\n        p.y += p.dy;\n        p.life--;\n        if (p.life <= 0) {\n            particles.splice(i, 1);\n        }\n    }\n}\n\nfunction draw() {\n    // Clear canvas\n    ctx.clearRect(0, 0, canvas.width, canvas.height);\n\n    // Draw background stars/grid\n    ctx.fillStyle = '#ffffff';\n    stars.forEach(star => {\n        ctx.globalAlpha = Math.random() * 0.5 + 0.3;\n        ctx.fillRect(star.x, star.y, star.size, star.size);\n    });\n    ctx.globalAlpha = 1.0;\n\n    // Draw futuristic horizon grid lines\n    ctx.strokeStyle = 'rgba(0, 255, 204, 0.15)';\n    ctx.lineWidth = 1;\n    ctx.beginPath();\n    ctx.moveTo(0, 328);\n    ctx.lineTo(canvas.width, 328);\n    ctx.stroke();\n\n    // Moving ground line\n    ctx.strokeStyle = '#00ffcc';\n    ctx.lineWidth = 3;\n    ctx.shadowBlur = 10;\n    ctx.shadowColor = '#00ffcc';\n    ctx.beginPath();\n    ctx.moveTo(0, 328);\n    ctx.lineTo(canvas.width, 328);\n    ctx.stroke();\n    ctx.shadowBlur = 0; // reset shadow\n\n    // Draw player trail\n    player.trail.forEach(t => {\n        ctx.fillStyle = `rgba(0, 255, 204, ${t.alpha})`;\n        ctx.fillRect(t.x, t.y, player.width, player.height);\n    });\n\n    // Draw player (Cyber Runner character)\n    ctx.fillStyle = player.color;\n    ctx.shadowBlur = 12;\n    ctx.shadowColor = player.color;\n    ctx.fillRect(player.x, player.y, player.width, player.height);\n    \n    // Player visor / neon detail\n    ctx.fillStyle = '#ffffff';\n    ctx.fillRect(player.x + 18, player.y + 10, 12, 6);\n    ctx.shadowBlur = 0;\n\n    // Draw obstacles\n    obstacles.forEach(obs => {\n        ctx.fillStyle = obs.color;\n        ctx.shadowBlur = 10;\n        ctx.shadowColor = obs.color;\n        \n        if (obs.type === 'drone') {\n            // Draw drone shape\n            ctx.beginPath();\n            ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2);\n            ctx.fill();\n            // Drone eye\n            ctx.fillStyle = '#ffffff';\n            ctx.fillRect(obs.x + 12, obs.y + 8, 16, 6);\n        } else {\n            // Draw spike / barrier\n            ctx.fillRect(obs.x, obs.y, obs.width, obs.height);\n            // Inner highlight\n            ctx.fillStyle = '#ffffff';\n            ctx.fillRect(obs.x + 4, obs.y + 4, 4, obs.height - 8);\n        }\n        ctx.shadowBlur = 0;\n    });\n\n    // Draw particles\n    particles.forEach(p => {\n        ctx.fillStyle = p.color;\n        ctx.globalAlpha = p.life / 30;\n        ctx.beginPath();\n        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);\n        ctx.fill();\n    });\n    ctx.globalAlpha = 1.0;\n}\n\nfunction gameLoop() {\n    update();\n    draw();\n    requestAnimationFrame(gameLoop);\n}\n\ngameLoop();\n",
+              "old_text": "let jumps = 1;"
+            },
+            "elapsed_seconds": 0.0004664900006901007,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "run_shell",
+            "arguments": {
+              "command": "git status"
+            },
+            "elapsed_seconds": 0.00528026400024828,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 31.394287892000648
+        "elapsed_seconds": 38.384533222000755
       },
       "grade": {
         "passed": true,
         "reasons": [],
         "used_tools": [
           "search_files",
-          "search_files",
+          "read_file",
           "read_file",
           "read_file",
           "run_shell",
-          "read_file",
-          "search_files",
           "edit_file",
           "edit_file",
           "edit_file",
@@ -618,20 +594,20 @@
           "script.js",
           "style.css"
         ],
-        "wall_seconds": 31.400357248001455,
-        "rate_limit_waits": 4,
-        "rate_limit_wait_seconds": 33.34523608800009,
-        "workspace": "/tmp/jimmy-eval-e08-00ijey6r"
+        "wall_seconds": 38.39136122200034,
+        "rate_limit_waits": 3,
+        "rate_limit_wait_seconds": 54.500749764998545,
+        "workspace": "/tmp/jimmy-eval-e08-69jalm02"
       }
     },
     {
       "trace": {
         "eval_id": "E09",
         "task": "Commit main.py only.",
-        "workspace": "/tmp/jimmy-eval-e09-xu82awvn",
-        "started_at": 11684.409642964,
-        "finished_at": 11685.848054869,
-        "result": "Created commit: ✨ update main.py\nCommit: 8b0eb90\nFiles: main.py",
+        "workspace": "/tmp/jimmy-eval-e09-ckrgepuw",
+        "started_at": 14522.765369887,
+        "finished_at": 14524.043215608,
+        "result": "Created commit: ✨ update main.py\nCommit: a940a35\nFiles: main.py",
         "passed": true,
         "error": null,
         "turns": 1,
@@ -649,14 +625,15 @@
               "paths": [
                 "main.py"
               ],
-              "mode": "single"
+              "mode": "single",
+              "finish": true
             },
-            "elapsed_seconds": 0.02471446600065974,
+            "elapsed_seconds": 0.025312908999694628,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 1.4384119050009758
+        "elapsed_seconds": 1.2778457210006309
       },
       "grade": {
         "passed": true,
@@ -673,57 +650,46 @@
         "uncommitted_files": [
           "other.py"
         ],
-        "wall_seconds": 1.446927211000002,
-        "rate_limit_waits": 4,
-        "rate_limit_wait_seconds": 33.34523608800009,
-        "workspace": "/tmp/jimmy-eval-e09-xu82awvn"
+        "wall_seconds": 1.286479859998508,
+        "rate_limit_waits": 3,
+        "rate_limit_wait_seconds": 54.500749764998545,
+        "workspace": "/tmp/jimmy-eval-e09-ckrgepuw"
       }
     },
     {
       "trace": {
         "eval_id": "E10",
         "task": "Commit all changed files one by one.",
-        "workspace": "/tmp/jimmy-eval-e10-yhqaolpc",
-        "started_at": 11685.857904915,
-        "finished_at": 11711.741402699,
-        "result": "Created 3 commit(s):\n\n- 🔧 update a (613a54a)\n- 🔧 update b (1c2e322)\n- 🔧 update c (9c9fe05)",
-        "passed": false,
+        "workspace": "/tmp/jimmy-eval-e10-di77h6uk",
+        "started_at": 14524.053195818,
+        "finished_at": 14525.48060767,
+        "result": "Created 3 commit(s):\n\n- 🔧 update a (4070cda)\n- 🔧 update b (342b852)\n- 🔧 update c (679c831)",
+        "passed": true,
         "error": null,
-        "turns": 2,
-        "tool_calls": 2,
+        "turns": 1,
+        "tool_calls": 1,
         "failed_tools": 0,
         "repeated_tools": 0,
-        "wrong_tool_attempts": 1,
+        "wrong_tool_attempts": 0,
         "changed_files": [],
         "tool_trace": [
           {
-            "name": "run_shell",
-            "arguments": {
-              "command": "git status"
-            },
-            "elapsed_seconds": 0.005098657999042189,
-            "success": true,
-            "message": "ok"
-          },
-          {
             "name": "git_commit",
             "arguments": {
+              "finish": true,
               "mode": "each"
             },
-            "elapsed_seconds": 0.06271449800078699,
+            "elapsed_seconds": 0.05941063899990695,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 25.88349778400152
+        "elapsed_seconds": 1.4274118520006596
       },
       "grade": {
-        "passed": false,
-        "reasons": [
-          "forbidden tools used: run_shell"
-        ],
+        "passed": true,
+        "reasons": [],
         "used_tools": [
-          "run_shell",
           "git_commit"
         ],
         "changed_files": [],
@@ -733,25 +699,25 @@
           "c.py"
         ],
         "uncommitted_files": [],
-        "wall_seconds": 25.907679345998986,
-        "rate_limit_waits": 5,
-        "rate_limit_wait_seconds": 56.028376596999806,
-        "workspace": "/tmp/jimmy-eval-e10-yhqaolpc"
+        "wall_seconds": 1.4534880399987742,
+        "rate_limit_waits": 3,
+        "rate_limit_wait_seconds": 54.500749764998545,
+        "workspace": "/tmp/jimmy-eval-e10-di77h6uk"
       }
     },
     {
       "trace": {
         "eval_id": "E11",
         "task": "Add a comment to main.py. Do not commit anything.",
-        "workspace": "/tmp/jimmy-eval-e11-6hppu777",
-        "started_at": 11711.766556059,
-        "finished_at": 11721.875172224,
-        "result": "I have added a comment to `main.py` as requested. As instructed, I did not commit anything.",
+        "workspace": "/tmp/jimmy-eval-e11-2868qv3t",
+        "started_at": 14525.508324122,
+        "finished_at": 14546.557284412,
+        "result": "",
         "passed": true,
-        "error": null,
-        "turns": 6,
-        "tool_calls": 5,
-        "failed_tools": 1,
+        "error": "LLMProviderError: ❌ Gemini rejected the request.\n400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Requests ending with a model turn are not supported.', 'status': 'INVALID_ARGUMENT'}}",
+        "turns": 5,
+        "tool_calls": 3,
+        "failed_tools": 0,
         "repeated_tools": 0,
         "wrong_tool_attempts": 0,
         "changed_files": [
@@ -759,29 +725,24 @@
         ],
         "tool_trace": [
           {
-            "name": "search_files",
+            "name": "read_file",
             "arguments": {
-              "query": "main.py"
+              "line_start": 1,
+              "path": "main.py",
+              "line_end": null
             },
-            "elapsed_seconds": 0.006462022000050638,
+            "elapsed_seconds": 0.00024645499979669694,
             "success": true,
             "message": "ok"
           },
           {
-            "name": "search_files",
+            "name": "edit_file",
             "arguments": {
-              "query": "*main*"
+              "old_text": "print('hello')",
+              "new_text": "# This is a comment added to main.py\nprint('hello')",
+              "path": "main.py"
             },
-            "elapsed_seconds": 0.0035500140002113767,
-            "success": false,
-            "message": "error"
-          },
-          {
-            "name": "run_shell",
-            "arguments": {
-              "command": "find . -name \"main.py\""
-            },
-            "elapsed_seconds": 0.007118830999388592,
+            "elapsed_seconds": 0.0004100009991816478,
             "success": true,
             "message": "ok"
           },
@@ -790,33 +751,20 @@
             "arguments": {
               "path": "main.py"
             },
-            "elapsed_seconds": 0.0003363679988979129,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "edit_file",
-            "arguments": {
-              "new_text": "# Main entry point of the application\nprint('hello')",
-              "old_text": "print('hello')",
-              "path": "main.py"
-            },
-            "elapsed_seconds": 0.00039120399924286176,
+            "elapsed_seconds": 0.00024685599964868743,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 10.108616165000058
+        "elapsed_seconds": 21.04896028999974
       },
       "grade": {
         "passed": true,
         "reasons": [],
         "used_tools": [
-          "search_files",
-          "search_files",
-          "run_shell",
           "read_file",
-          "edit_file"
+          "edit_file",
+          "read_file"
         ],
         "changed_files": [
           "main.py"
@@ -825,23 +773,23 @@
         "uncommitted_files": [
           "main.py"
         ],
-        "wall_seconds": 10.115911675999087,
-        "rate_limit_waits": 8,
-        "rate_limit_wait_seconds": 57.519696887999814,
-        "workspace": "/tmp/jimmy-eval-e11-6hppu777"
+        "wall_seconds": 21.056485719000193,
+        "rate_limit_waits": 5,
+        "rate_limit_wait_seconds": 69.17318502399758,
+        "workspace": "/tmp/jimmy-eval-e11-2868qv3t"
       }
     },
     {
       "trace": {
         "eval_id": "E12",
         "task": "Create app.py with a hello command.",
-        "workspace": "/tmp/jimmy-eval-e12-fozzo1fj",
-        "started_at": 11721.88364371,
-        "finished_at": 11725.563920734,
-        "result": "I have created `app.py` with a hello command.",
+        "workspace": "/tmp/jimmy-eval-e12-ihdiks4d",
+        "started_at": 14546.566305442,
+        "finished_at": 14550.999860915,
+        "result": "",
         "passed": true,
-        "error": null,
-        "turns": 2,
+        "error": "LLMProviderError: ❌ Gemini rejected the request.\n400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Requests ending with a model turn are not supported.', 'status': 'INVALID_ARGUMENT'}}",
+        "turns": 3,
         "tool_calls": 1,
         "failed_tools": 0,
         "repeated_tools": 0,
@@ -855,17 +803,17 @@
             "arguments": {
               "files": [
                 {
-                  "path": "app.py",
-                  "content": "def hello():\n    print(\"Hello, World!\")\n\nif __name__ == \"__main__\":\n    hello()\n"
+                  "content": "def hello():\n    print(\"Hello, world!\")\n\nif __name__ == \"__main__\":\n    hello()\n",
+                  "path": "app.py"
                 }
               ]
             },
-            "elapsed_seconds": 0.0004341590010881191,
+            "elapsed_seconds": 0.0004077140001754742,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 3.680277023999224
+        "elapsed_seconds": 4.433555473000524
       },
       "grade": {
         "passed": true,
@@ -880,24 +828,24 @@
         "uncommitted_files": [
           "app.py"
         ],
-        "wall_seconds": 3.686492458999055,
-        "rate_limit_waits": 10,
-        "rate_limit_wait_seconds": 58.21401366500031,
-        "workspace": "/tmp/jimmy-eval-e12-fozzo1fj"
+        "wall_seconds": 4.4388755279996985,
+        "rate_limit_waits": 6,
+        "rate_limit_wait_seconds": 69.22318502399757,
+        "workspace": "/tmp/jimmy-eval-e12-ihdiks4d"
       }
     },
     {
       "trace": {
         "eval_id": "E13",
         "task": "Add a function to utils.py without changing anything else.",
-        "workspace": "/tmp/jimmy-eval-e13-q6xxv4gu",
-        "started_at": 11725.571275039,
-        "finished_at": 11781.054044054,
-        "result": "I have added a new function (`helper`) to `utils.py` without modifying anything else in the workspace.",
+        "workspace": "/tmp/jimmy-eval-e13-iq8mb1g2",
+        "started_at": 14551.006246918,
+        "finished_at": 14582.641616678,
+        "result": "",
         "passed": true,
-        "error": null,
-        "turns": 12,
-        "tool_calls": 11,
+        "error": "LLMProviderError: ❌ Gemini rejected the request.\n400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Requests ending with a model turn are not supported.', 'status': 'INVALID_ARGUMENT'}}",
+        "turns": 5,
+        "tool_calls": 3,
         "failed_tools": 0,
         "repeated_tools": 0,
         "wrong_tool_attempts": 0,
@@ -906,29 +854,11 @@
         ],
         "tool_trace": [
           {
-            "name": "search_files",
+            "name": "read_file",
             "arguments": {
-              "query": "utils.py"
+              "path": "README.md"
             },
-            "elapsed_seconds": 0.0066878609995910665,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "search_files",
-            "arguments": {
-              "query": "utils"
-            },
-            "elapsed_seconds": 0.0065598189994489076,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "run_shell",
-            "arguments": {
-              "command": "find . -maxdepth 3 -not -path '*/.*'"
-            },
-            "elapsed_seconds": 0.005648488000588259,
+            "elapsed_seconds": 0.00023142300051404163,
             "success": true,
             "message": "ok"
           },
@@ -937,93 +867,31 @@
             "arguments": {
               "path": "utils.py"
             },
-            "elapsed_seconds": 0.0002764729997579707,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "read_file",
-            "arguments": {
-              "path": "README.md"
-            },
-            "elapsed_seconds": 0.00022559399985766504,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "search_files",
-            "arguments": {
-              "query": "def "
-            },
-            "elapsed_seconds": 0.006200452000484802,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "search_files",
-            "arguments": {
-              "query": "utils"
-            },
-            "elapsed_seconds": 0.005811901999550173,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "run_shell",
-            "arguments": {
-              "command": "git status"
-            },
-            "elapsed_seconds": 0.005507269999725395,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "run_shell",
-            "arguments": {
-              "command": "git log -n 5"
-            },
-            "elapsed_seconds": 0.005482757000208949,
+            "elapsed_seconds": 0.0002756099984253524,
             "success": true,
             "message": "ok"
           },
           {
             "name": "edit_file",
             "arguments": {
-              "old_text": "def existing():\n    return 1",
-              "new_text": "def existing():\n    return 1\n\n\ndef helper():\n    return 42",
-              "path": "utils.py"
+              "path": "utils.py",
+              "new_text": "def existing():\n    return 1\n\n\ndef new_function():\n    return 2",
+              "old_text": "def existing():\n    return 1"
             },
-            "elapsed_seconds": 0.00034844000037992373,
-            "success": true,
-            "message": "ok"
-          },
-          {
-            "name": "run_shell",
-            "arguments": {
-              "command": "git diff"
-            },
-            "elapsed_seconds": 0.005585267001151806,
+            "elapsed_seconds": 0.00033816599898273125,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 55.482769015001395
+        "elapsed_seconds": 31.635369760000685
       },
       "grade": {
         "passed": true,
         "reasons": [],
         "used_tools": [
-          "search_files",
-          "search_files",
-          "run_shell",
           "read_file",
           "read_file",
-          "search_files",
-          "search_files",
-          "run_shell",
-          "run_shell",
-          "edit_file",
-          "run_shell"
+          "edit_file"
         ],
         "changed_files": [
           "utils.py"
@@ -1032,20 +900,20 @@
         "uncommitted_files": [
           "utils.py"
         ],
-        "wall_seconds": 55.48914636900008,
-        "rate_limit_waits": 17,
-        "rate_limit_wait_seconds": 94.16706522600252,
-        "workspace": "/tmp/jimmy-eval-e13-q6xxv4gu"
+        "wall_seconds": 31.641398494000896,
+        "rate_limit_waits": 9,
+        "rate_limit_wait_seconds": 94.08345881499626,
+        "workspace": "/tmp/jimmy-eval-e13-iq8mb1g2"
       }
     },
     {
       "trace": {
         "eval_id": "E14",
         "task": "Tell me the current Git status.",
-        "workspace": "/tmp/jimmy-eval-e14-3e32fyzn",
-        "started_at": 11781.061529207,
-        "finished_at": 11784.131527348,
-        "result": "The current Git status is:\n- On branch `master`\n- Nothing to commit, working tree clean",
+        "workspace": "/tmp/jimmy-eval-e14-3axvmt4w",
+        "started_at": 14582.648471264,
+        "finished_at": 14585.09909905,
+        "result": "The current Git status is:\n- On branch `master`\n- Working tree clean (nothing to commit)",
         "passed": true,
         "error": null,
         "turns": 2,
@@ -1060,12 +928,12 @@
             "arguments": {
               "command": "git status"
             },
-            "elapsed_seconds": 0.0052698660001624376,
+            "elapsed_seconds": 0.004938591000609449,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 3.0699981409998145
+        "elapsed_seconds": 2.450627786000041
       },
       "grade": {
         "passed": true,
@@ -1076,22 +944,161 @@
         "changed_files": [],
         "committed_files": [],
         "uncommitted_files": [],
-        "wall_seconds": 3.0749618299996655,
-        "rate_limit_waits": 17,
-        "rate_limit_wait_seconds": 94.16706522600252,
-        "workspace": "/tmp/jimmy-eval-e14-3e32fyzn"
+        "wall_seconds": 2.456231680000201,
+        "rate_limit_waits": 11,
+        "rate_limit_wait_seconds": 94.25824554799401,
+        "workspace": "/tmp/jimmy-eval-e14-3axvmt4w"
       }
     },
     {
       "trace": {
         "eval_id": "E15",
         "task": "Fix this typo in README.md: 'teh' should become 'the'.",
-        "workspace": "/tmp/jimmy-eval-e15-l9f6yxr6",
-        "started_at": 11784.137353067,
-        "finished_at": 11824.871946586,
+        "workspace": "/tmp/jimmy-eval-e15-058110o_",
+        "started_at": 14585.106088196,
+        "finished_at": 14606.773414158,
+        "result": "",
+        "passed": true,
+        "error": "LLMProviderError: ❌ Gemini rejected the request.\n400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Requests ending with a model turn are not supported.', 'status': 'INVALID_ARGUMENT'}}",
+        "turns": 5,
+        "tool_calls": 3,
+        "failed_tools": 0,
+        "repeated_tools": 0,
+        "wrong_tool_attempts": 0,
+        "changed_files": [
+          "README.md"
+        ],
+        "tool_trace": [
+          {
+            "name": "search_files",
+            "arguments": {
+              "query": "teh"
+            },
+            "elapsed_seconds": 0.0063754469993000384,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "read_file",
+            "arguments": {
+              "line_end": 10,
+              "path": "README.md",
+              "line_start": 1
+            },
+            "elapsed_seconds": 0.0003043529995920835,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "edit_file",
+            "arguments": {
+              "new_text": "This is the project.",
+              "old_text": "This is teh project.",
+              "path": "README.md"
+            },
+            "elapsed_seconds": 0.00044750000051863026,
+            "success": true,
+            "message": "ok"
+          }
+        ],
+        "elapsed_seconds": 21.667325962000177
+      },
+      "grade": {
+        "passed": true,
+        "reasons": [],
+        "used_tools": [
+          "search_files",
+          "read_file",
+          "edit_file"
+        ],
+        "changed_files": [
+          "README.md"
+        ],
+        "committed_files": [],
+        "uncommitted_files": [
+          "README.md"
+        ],
+        "wall_seconds": 21.67340955399959,
+        "rate_limit_waits": 14,
+        "rate_limit_wait_seconds": 109.6471269309939,
+        "workspace": "/tmp/jimmy-eval-e15-058110o_"
+      }
+    },
+    {
+      "trace": {
+        "eval_id": "E16",
+        "task": "Create a simple Python package with __init__.py and calculator.py.",
+        "workspace": "/tmp/jimmy-eval-e16-i4_62l_f",
+        "started_at": 14606.780305535,
+        "finished_at": 14611.279202321,
         "result": "",
         "passed": false,
-        "error": "LLMProviderError: ⚠️ Gemini rate limit reached.\nPlease try again later.",
+        "error": "LLMProviderError: ❌ Gemini rejected the request.\n400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Requests ending with a model turn are not supported.', 'status': 'INVALID_ARGUMENT'}}",
+        "turns": 3,
+        "tool_calls": 1,
+        "failed_tools": 0,
+        "repeated_tools": 0,
+        "wrong_tool_attempts": 0,
+        "changed_files": [
+          "__init__.py",
+          "calculator.py"
+        ],
+        "tool_trace": [
+          {
+            "name": "create_files",
+            "arguments": {
+              "files": [
+                {
+                  "path": "calculator.py",
+                  "content": "# calculator.py\n\nclass Calculator:\n    \"\"\"A simple calculator class.\"\"\"\n\n    def add(self, a: float, b: float) -> float:\n        \"\"\"Add two numbers.\"\"\"\n        return a + b\n\n    def subtract(self, a: float, b: float) -> float:\n        \"\"\"Subtract b from a.\"\"\"\n        return a - b\n\n    def multiply(self, a: float, b: float) -> float:\n        \"\"\"Multiply two numbers.\"\"\"\n        return a * b\n\n    def divide(self, a: float, b: float) -> float:\n        \"\"\"Divide a by b.\"\"\"\n        if b == 0:\n            raise ValueError(\"Division by zero is not allowed.\")\n        return a / b\n"
+                },
+                {
+                  "path": "__init__.py",
+                  "content": "# __init__.py\n\nfrom .calculator import Calculator\n\n__all__ = [\"Calculator\"]\n"
+                }
+              ]
+            },
+            "elapsed_seconds": 0.000587009999435395,
+            "success": true,
+            "message": "ok"
+          }
+        ],
+        "elapsed_seconds": 4.4988967860008415
+      },
+      "grade": {
+        "passed": false,
+        "reasons": [
+          "expected file missing: mypkg/__init__.py",
+          "expected file missing: mypkg/calculator.py"
+        ],
+        "used_tools": [
+          "create_files"
+        ],
+        "changed_files": [
+          "__init__.py",
+          "calculator.py"
+        ],
+        "committed_files": [],
+        "uncommitted_files": [
+          "__init__.py",
+          "calculator.py"
+        ],
+        "wall_seconds": 4.506069828999898,
+        "rate_limit_waits": 15,
+        "rate_limit_wait_seconds": 109.84058584399536,
+        "workspace": "/tmp/jimmy-eval-e16-i4_62l_f"
+      }
+    },
+    {
+      "trace": {
+        "eval_id": "E17",
+        "task": "Read config.py and tell me which setting controls the port.",
+        "workspace": "/tmp/jimmy-eval-e17-z4d_q80d",
+        "started_at": 14611.2872549,
+        "finished_at": 14630.304791047,
+        "result": "Based on `config.py`, the setting that controls the port is `PORT` (currently set to `8000`).",
+        "passed": true,
+        "error": null,
         "turns": 2,
         "tool_calls": 1,
         "failed_tools": 0,
@@ -1100,207 +1107,319 @@
         "changed_files": [],
         "tool_trace": [
           {
-            "name": "search_files",
+            "name": "read_file",
             "arguments": {
-              "query": "teh"
+              "path": "config.py"
             },
-            "elapsed_seconds": 0.0067729879992839415,
+            "elapsed_seconds": 0.00022789800095779356,
             "success": true,
             "message": "ok"
           }
         ],
-        "elapsed_seconds": 40.734593518998736
+        "elapsed_seconds": 19.01753614699919
       },
       "grade": {
-        "passed": false,
-        "reasons": [
-          "missing expected tools: edit_file"
-        ],
+        "passed": true,
+        "reasons": [],
         "used_tools": [
-          "search_files"
+          "read_file"
         ],
         "changed_files": [],
         "committed_files": [],
         "uncommitted_files": [],
-        "wall_seconds": 40.73920152400024,
-        "rate_limit_waits": 18,
-        "rate_limit_wait_seconds": 95.34387685200345,
-        "workspace": "/tmp/jimmy-eval-e15-l9f6yxr6"
-      }
-    },
-    {
-      "trace": {
-        "eval_id": "E16",
-        "task": "Create a simple Python package with __init__.py and calculator.py.",
-        "workspace": "/tmp/jimmy-eval-e16-d2k1ae5b",
-        "started_at": 11824.877139235,
-        "finished_at": 11863.166285217,
-        "result": "",
-        "passed": false,
-        "error": "LLMProviderError: ⚠️ Gemini rate limit reached.\nPlease try again later.",
-        "turns": 1,
-        "tool_calls": 0,
-        "failed_tools": 0,
-        "repeated_tools": 0,
-        "wrong_tool_attempts": 0,
-        "changed_files": [],
-        "tool_trace": [],
-        "elapsed_seconds": 38.289145981998445
-      },
-      "grade": {
-        "passed": false,
-        "reasons": [
-          "missing expected tools: create_files",
-          "expected file missing: mypkg/__init__.py",
-          "expected file missing: mypkg/calculator.py"
-        ],
-        "used_tools": [],
-        "changed_files": [],
-        "committed_files": [],
-        "uncommitted_files": [],
-        "wall_seconds": 38.29449241700058,
-        "rate_limit_waits": 18,
-        "rate_limit_wait_seconds": 95.34387685200345,
-        "workspace": "/tmp/jimmy-eval-e16-d2k1ae5b"
-      }
-    },
-    {
-      "trace": {
-        "eval_id": "E17",
-        "task": "Read config.py and tell me which setting controls the port.",
-        "workspace": "/tmp/jimmy-eval-e17-fzxvq6wa",
-        "started_at": 11863.172711305,
-        "finished_at": 11900.898805612,
-        "result": "",
-        "passed": false,
-        "error": "LLMProviderError: ⚠️ Gemini rate limit reached.\nPlease try again later.",
-        "turns": 1,
-        "tool_calls": 0,
-        "failed_tools": 0,
-        "repeated_tools": 0,
-        "wrong_tool_attempts": 0,
-        "changed_files": [],
-        "tool_trace": [],
-        "elapsed_seconds": 37.726094306999585
-      },
-      "grade": {
-        "passed": false,
-        "reasons": [
-          "missing expected tools: read_file"
-        ],
-        "used_tools": [],
-        "changed_files": [],
-        "committed_files": [],
-        "uncommitted_files": [],
-        "wall_seconds": 37.732050476999575,
-        "rate_limit_waits": 18,
-        "rate_limit_wait_seconds": 95.34387685200345,
-        "workspace": "/tmp/jimmy-eval-e17-fzxvq6wa"
+        "wall_seconds": 19.023590736000187,
+        "rate_limit_waits": 16,
+        "rate_limit_wait_seconds": 126.17504352299402,
+        "workspace": "/tmp/jimmy-eval-e17-z4d_q80d"
       }
     },
     {
       "trace": {
         "eval_id": "E18",
         "task": "Create a README.md with a title and one sentence.",
-        "workspace": "/tmp/jimmy-eval-e18-c88hpc95",
-        "started_at": 11900.905628894,
-        "finished_at": 11939.136337299,
+        "workspace": "/tmp/jimmy-eval-e18-py06bz38",
+        "started_at": 14630.312349842,
+        "finished_at": 14643.027475179,
         "result": "",
-        "passed": false,
-        "error": "LLMProviderError: ⚠️ Gemini rate limit reached.\nPlease try again later.",
-        "turns": 1,
-        "tool_calls": 0,
+        "passed": true,
+        "error": "LLMProviderError: ❌ Gemini rejected the request.\n400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Requests ending with a model turn are not supported.', 'status': 'INVALID_ARGUMENT'}}",
+        "turns": 3,
+        "tool_calls": 1,
         "failed_tools": 0,
         "repeated_tools": 0,
         "wrong_tool_attempts": 0,
-        "changed_files": [],
-        "tool_trace": [],
-        "elapsed_seconds": 38.23070840500077
+        "changed_files": [
+          "README.md"
+        ],
+        "tool_trace": [
+          {
+            "name": "create_files",
+            "arguments": {
+              "files": [
+                {
+                  "content": "# Project\n\nThis is a project repository.\n",
+                  "path": "README.md"
+                }
+              ]
+            },
+            "elapsed_seconds": 0.00043839600039063953,
+            "success": true,
+            "message": "ok"
+          }
+        ],
+        "elapsed_seconds": 12.715125337001155
       },
       "grade": {
-        "passed": false,
-        "reasons": [
-          "missing expected tools: create_files",
-          "expected file missing: README.md"
+        "passed": true,
+        "reasons": [],
+        "used_tools": [
+          "create_files"
         ],
-        "used_tools": [],
-        "changed_files": [],
+        "changed_files": [
+          "README.md"
+        ],
         "committed_files": [],
-        "uncommitted_files": [],
-        "wall_seconds": 38.23615499600055,
+        "uncommitted_files": [
+          "README.md"
+        ],
+        "wall_seconds": 12.720706385000085,
         "rate_limit_waits": 18,
-        "rate_limit_wait_seconds": 95.34387685200345,
-        "workspace": "/tmp/jimmy-eval-e18-c88hpc95"
+        "rate_limit_wait_seconds": 135.10092708599478,
+        "workspace": "/tmp/jimmy-eval-e18-py06bz38"
       }
     },
     {
       "trace": {
         "eval_id": "E19",
         "task": "Run the tests, and if they fail fix the failure then run them again.",
-        "workspace": "/tmp/jimmy-eval-e19-xuehqqlu",
-        "started_at": 11939.142775401,
-        "finished_at": 11976.923663841,
-        "result": "",
-        "passed": false,
-        "error": "LLMProviderError: ⚠️ Gemini rate limit reached.\nPlease try again later.",
-        "turns": 1,
-        "tool_calls": 0,
-        "failed_tools": 0,
+        "workspace": "/tmp/jimmy-eval-e19-wqfv44g8",
+        "started_at": 14643.033904537,
+        "finished_at": 14667.429013836,
+        "result": "I have run the tests, found that `add` in `math_utils.py` was subtracting instead of adding (`a - b` instead of `a + b`), fixed the failure, and re-ran the tests successfully (`1 passed`).",
+        "passed": true,
+        "error": null,
+        "turns": 7,
+        "tool_calls": 6,
+        "failed_tools": 2,
         "repeated_tools": 0,
         "wrong_tool_attempts": 0,
-        "changed_files": [],
-        "tool_trace": [],
-        "elapsed_seconds": 37.780888440000126
+        "changed_files": [
+          "math_utils.py"
+        ],
+        "tool_trace": [
+          {
+            "name": "run_shell",
+            "arguments": {
+              "command": "pytest"
+            },
+            "elapsed_seconds": 0.2524100989994622,
+            "success": false,
+            "message": "error"
+          },
+          {
+            "name": "run_shell",
+            "arguments": {
+              "command": "python3 -m pytest"
+            },
+            "elapsed_seconds": 0.256249960999412,
+            "success": false,
+            "message": "error"
+          },
+          {
+            "name": "read_file",
+            "arguments": {
+              "path": "test_math.py"
+            },
+            "elapsed_seconds": 0.0002318400001968257,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "read_file",
+            "arguments": {
+              "path": "math_utils.py"
+            },
+            "elapsed_seconds": 0.00026511600117373746,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "edit_file",
+            "arguments": {
+              "new_text": "def add(a, b):\n    return a + b",
+              "old_text": "def add(a, b):\n    return a - b",
+              "path": "math_utils.py"
+            },
+            "elapsed_seconds": 0.00038913100070203654,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "run_shell",
+            "arguments": {
+              "command": "pytest"
+            },
+            "elapsed_seconds": 0.25206502199944225,
+            "success": true,
+            "message": "ok"
+          }
+        ],
+        "elapsed_seconds": 24.39510929899916
       },
       "grade": {
-        "passed": false,
-        "reasons": [
-          "missing expected tools: run_shell",
-          "no test command was executed",
-          "math_utils.py was not fixed"
+        "passed": true,
+        "reasons": [],
+        "used_tools": [
+          "run_shell",
+          "run_shell",
+          "read_file",
+          "read_file",
+          "edit_file",
+          "run_shell"
         ],
-        "used_tools": [],
-        "changed_files": [],
+        "changed_files": [
+          "math_utils.py"
+        ],
         "committed_files": [],
-        "uncommitted_files": [],
-        "wall_seconds": 37.78715429499971,
-        "rate_limit_waits": 18,
-        "rate_limit_wait_seconds": 95.34387685200345,
-        "workspace": "/tmp/jimmy-eval-e19-xuehqqlu"
+        "uncommitted_files": [
+          "math_utils.py"
+        ],
+        "wall_seconds": 24.402240068000538,
+        "rate_limit_waits": 22,
+        "rate_limit_wait_seconds": 149.36822883499627,
+        "workspace": "/tmp/jimmy-eval-e19-wqfv44g8"
       }
     },
     {
       "trace": {
         "eval_id": "E20",
         "task": "Read main.py and continue from the current state.",
-        "workspace": "/tmp/jimmy-eval-e20-isxub3jc",
-        "started_at": 11976.931410175,
-        "finished_at": 12014.349781276,
+        "workspace": "/tmp/jimmy-eval-e20-gmvfbglf",
+        "started_at": 14667.437969079,
+        "finished_at": 14706.105911506,
         "result": "",
-        "passed": false,
-        "error": "LLMProviderError: ⚠️ Gemini rate limit reached.\nPlease try again later.",
-        "turns": 1,
-        "tool_calls": 0,
+        "passed": true,
+        "error": "LLMProviderError: ❌ Gemini rejected the request.\n400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Please ensure that function call turn comes immediately after a user turn or after a function response turn.', 'status': 'INVALID_ARGUMENT'}}",
+        "turns": 10,
+        "tool_calls": 9,
         "failed_tools": 0,
         "repeated_tools": 0,
         "wrong_tool_attempts": 0,
-        "changed_files": [],
-        "tool_trace": [],
-        "elapsed_seconds": 37.41837110099914
+        "changed_files": [
+          "main.py"
+        ],
+        "tool_trace": [
+          {
+            "name": "read_file",
+            "arguments": {
+              "path": "main.py"
+            },
+            "elapsed_seconds": 0.00022110799909569323,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "search_files",
+            "arguments": {
+              "query": "resume me"
+            },
+            "elapsed_seconds": 0.006873238999105524,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "run_shell",
+            "arguments": {
+              "command": "git status"
+            },
+            "elapsed_seconds": 0.005014025999116711,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "run_shell",
+            "arguments": {
+              "command": "git log -n 5"
+            },
+            "elapsed_seconds": 0.0052589079987228615,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "run_shell",
+            "arguments": {
+              "command": "git show 9c9641493ce3c724d66c78e42376279a246f88ff"
+            },
+            "elapsed_seconds": 0.0052564359993994,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "run_shell",
+            "arguments": {
+              "command": "pytest || python3 -m pytest || python3 main.py"
+            },
+            "elapsed_seconds": 0.4876681120003923,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "run_shell",
+            "arguments": {
+              "command": "python3 main.py"
+            },
+            "elapsed_seconds": 0.019039156000872026,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "edit_file",
+            "arguments": {
+              "new_text": "def main():\n    print('resumed successfully')\n\nif __name__ == '__main__':\n    main()",
+              "path": "main.py",
+              "old_text": "def main():\n    print('resume me')"
+            },
+            "elapsed_seconds": 0.0003543269995134324,
+            "success": true,
+            "message": "ok"
+          },
+          {
+            "name": "run_shell",
+            "arguments": {
+              "command": "python3 main.py"
+            },
+            "elapsed_seconds": 0.019225652000386617,
+            "success": true,
+            "message": "ok"
+          }
+        ],
+        "elapsed_seconds": 38.667942427000526
       },
       "grade": {
-        "passed": false,
-        "reasons": [
-          "missing expected tools: read_file"
+        "passed": true,
+        "reasons": [],
+        "used_tools": [
+          "read_file",
+          "search_files",
+          "run_shell",
+          "run_shell",
+          "run_shell",
+          "run_shell",
+          "run_shell",
+          "edit_file",
+          "run_shell"
         ],
-        "used_tools": [],
-        "changed_files": [],
+        "changed_files": [
+          "main.py"
+        ],
         "committed_files": [],
-        "uncommitted_files": [],
-        "wall_seconds": 37.424928391999856,
-        "rate_limit_waits": 18,
-        "rate_limit_wait_seconds": 95.34387685200345,
-        "workspace": "/tmp/jimmy-eval-e20-isxub3jc"
+        "uncommitted_files": [
+          "main.py"
+        ],
+        "wall_seconds": 38.67483697999887,
+        "rate_limit_waits": 27,
+        "rate_limit_wait_seconds": 174.11027591099412,
+        "workspace": "/tmp/jimmy-eval-e20-gmvfbglf"
       }
     }
   ]
