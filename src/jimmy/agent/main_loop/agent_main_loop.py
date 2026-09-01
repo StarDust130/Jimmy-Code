@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import re
@@ -8,6 +9,7 @@ from typing import Any
 from jimmy.agent.events import AgentEvent
 from jimmy.agent.executor import ToolExecutor
 from jimmy.agent.main_loop.agent_progress import AgentProgress
+from jimmy.agent.task_state import TaskState
 from jimmy.agent.main_loop.agent_tool_runner import AgentToolRunner
 from jimmy.agent.main_loop.agent_turn import AgentTurn
 from jimmy.agent.observer import Observer
@@ -103,6 +105,7 @@ class AgentMainLoop:
         started_at: float,
         metrics: RunMetrics,
         progress: AgentProgress | None = None,
+        task_state: TaskState | None = None,
         on_event: EventHandler | None = None,
         on_permission: PermissionHandler | None = None,
         on_text_delta: TextDeltaHandler | None = None,
@@ -235,6 +238,7 @@ class AgentMainLoop:
                     metrics=metrics,
                     tool_call=tool_call,
                     progress=progress,
+                    task_state=task_state,
                     task_turn=task_turn,
                     on_event=on_event,
                     on_permission=on_permission,
@@ -495,3 +499,4 @@ class AgentMainLoop:
                     message=message,
                 ),
             )
+
