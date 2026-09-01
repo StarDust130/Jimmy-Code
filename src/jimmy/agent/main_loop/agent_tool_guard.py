@@ -21,16 +21,10 @@ class ToolGuardDecision:
 
 class ToolGuard:
     """
-    Deterministic runtime policy guard.
+    Small deterministic runtime guard.
 
-    This guard does NOT:
-    - choose tools
-    - plan tasks
-    - call the LLM
-    - decide whether the task is complete
-    - infer complex natural-language intent
-
-    It only enforces hard runtime rules.
+    The model chooses the action.
+    This guard only enforces hard runtime rules.
     """
 
     def __init__(
@@ -57,10 +51,7 @@ class ToolGuard:
         del state
 
         if (
-            not isinstance(
-                tool_name,
-                str,
-            )
+            not isinstance(tool_name, str)
             or not tool_name.strip()
         ):
             return self._deny(
@@ -68,7 +59,7 @@ class ToolGuard:
             )
 
         # -----------------------------------------------------
-        # TASK-LEVEL BOUNDARIES
+        # TASK SCOPE
         # -----------------------------------------------------
 
         if task_state is not None:
@@ -82,7 +73,7 @@ class ToolGuard:
                 return decision
 
         # -----------------------------------------------------
-        # TOOL-SPECIFIC VALIDATION
+        # TOOL-SPECIFIC CHECKS
         # -----------------------------------------------------
 
         if tool_name == "run_shell":
@@ -115,11 +106,9 @@ class ToolGuard:
         task_state: TaskState,
     ) -> ToolGuardDecision:
         """
-        Enforce explicit user task boundaries.
+        Enforce only explicit user boundaries.
 
-        The model still decides what action to take.
-        This guard only blocks actions that violate
-        explicit boundaries.
+        The model still decides what to do.
         """
 
         # -----------------------------------------------------
@@ -132,29 +121,30 @@ class ToolGuard:
                     "Git commit was not requested by the user.",
                 )
 
-            # No explicit file/path scope:
+            # No explicit paths means the user did not restrict
+            # the commit to particular files.
             #
             # Example:
             #   "Commit all changed files one by one."
             #
-            # In this case the model/tool is allowed to determine
-            # the complete commit set.
+            # That remains allowed.
             if not task_state.requested_paths:
                 return ToolGuardDecision(
                     allowed=True,
                 )
 
-            commit_paths = self._extract_commit_paths(
+            commit_paths = self._commit_paths(
                 arguments,
             )
 
-            # When the user gave explicit scope, an omitted path
-            # list is unsafe because it could mean "commit everything".
+            # The git_commit tool treats omitted paths as
+            # "all changed files". That is unsafe when the user
+            # explicitly restricted the task to certain files.
             if not commit_paths:
                 return self._deny(
                     (
                         "This task has an explicit file scope. "
-                        "git_commit must specify the requested path(s)."
+                        "git_commit must specify the requested file path(s)."
                     ),
                 )
 
@@ -181,7 +171,7 @@ class ToolGuard:
             "edit_file",
             "create_files",
         }:
-            # No explicit scope means do not invent one.
+            # No explicit path scope.
             if not task_state.requested_paths:
                 return ToolGuardDecision(
                     allowed=True,
@@ -192,7 +182,7 @@ class ToolGuard:
                 arguments=arguments,
             )
 
-            # Let the actual tool validate missing/invalid arguments.
+            # Let the tool itself report malformed arguments.
             if not paths:
                 return ToolGuardDecision(
                     allowed=True,
@@ -205,7 +195,7 @@ class ToolGuard:
                     return self._deny(
                         (
                             f"Path '{path}' is outside "
-                            "the explicit scope of the current task."
+                            "the explicit task scope."
                         ),
                     )
 
@@ -214,48 +204,36 @@ class ToolGuard:
         )
 
     # =========================================================
-    # COMMIT PATHS
+    # GIT PATHS
     # =========================================================
 
     @staticmethod
-    def _extract_commit_paths(
+    def _commit_paths(
         arguments: dict[str, Any],
     ) -> list[str]:
         """
-        Extract explicit paths supplied to git_commit.
-
-        Supported form:
-
-            {
-                "paths": ["main.py"]
-            }
+        Read explicit paths from git_commit arguments.
         """
 
-        paths = arguments.get(
+        value = arguments.get(
             "paths",
         )
 
-        if paths is None:
+        if value is None:
             return []
 
         if not isinstance(
-            paths,
+            value,
             list,
         ):
             return []
 
-        result: list[str] = []
-
-        for path in paths:
-            if isinstance(
-                path,
-                str,
-            ) and path.strip():
-                result.append(
-                    path,
-                )
-
-        return result
+        return [
+            path.strip()
+            for path in value
+            if isinstance(path, str)
+            and path.strip()
+        ]
 
     # =========================================================
     # MUTATION PATHS
@@ -267,7 +245,7 @@ class ToolGuard:
         arguments: dict[str, Any],
     ) -> list[str]:
         """
-        Extract file paths from mutation tool arguments.
+        Extract paths from file mutation tool arguments.
         """
 
         if tool_name == "edit_file":
@@ -348,10 +326,7 @@ class ToolGuard:
                 "run_shell requires a non-empty command.",
             )
 
-        # Git mutations belong to the dedicated git_commit tool.
-        #
-        # Normal shell commands remain available for:
-        # tests, builds, package managers, scripts, servers, etc.
+        # Git mutations belong to git_commit.
         if self._is_git_mutation(
             command,
         ):
@@ -510,12 +485,6 @@ class ToolGuard:
     def _is_git_mutation(
         command: str,
     ) -> bool:
-        """
-        Detect Git commands that mutate repository state.
-
-        Read-only Git commands remain allowed.
-        """
-
         return bool(
             re.search(
                 r"(?i)"
