@@ -1226,14 +1226,20 @@ class GeminiProvider(LLMProvider):
             )
 
         if code == 429:
-            retry_after = cls._retry_after_seconds(str(exc))
+            error_text = str(exc)
+            daily_quota = GeminiProvider._is_daily_quota_error(error_text)
+            retry_after = (
+                None
+                if daily_quota
+                else GeminiProvider._retry_after_seconds(error_text)
+            )
             return LLMProviderError(
                 message=(
                     "⚠️ Gemini rate limit reached.\n"
-                    f"{exc}"
+                    f"{error_text}"
                 ),
-                code="rate_limit",
-                retryable=True,
+                code="quota_exhausted" if daily_quota else "rate_limit",
+                retryable=not daily_quota,
                 retry_after=retry_after,
             )
 
@@ -1275,11 +1281,29 @@ class GeminiProvider(LLMProvider):
         normalized = error_text.lower()
         return "resource_exhausted" in normalized or "rate limit" in normalized or "quota exceeded" in normalized
 
+    @staticmethod
+    def _is_daily_quota_error(error_text: str) -> bool:
+        normalized = error_text.lower()
+        return any(
+            marker in normalized
+            for marker in (
+                "per day",
+                "daily quota",
+                "generaterequestsperday",
+                "quotavalue",
+            )
+        )
+
     @classmethod
     def _rate_limit_error(cls, error_text: str) -> LLMProviderError:
+        daily_quota = cls._is_daily_quota_error(error_text)
         return LLMProviderError(
             message="⚠️ Gemini rate limit reached.\n" + error_text,
-            code="rate_limit",
-            retryable=True,
-            retry_after=cls._retry_after_seconds(error_text),
+            code="quota_exhausted" if daily_quota else "rate_limit",
+            retryable=not daily_quota,
+            retry_after=(
+                None
+                if daily_quota
+                else cls._retry_after_seconds(error_text)
+            ),
         )
