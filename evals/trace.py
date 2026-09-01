@@ -52,6 +52,7 @@ class TraceCollector:
             started_at=time.monotonic(),
         )
         self._last_signature: str | None = None
+        self._last_tool_outcome: str | None = None
 
     def on_event(self, event: Any) -> None:
         kind = getattr(event, "kind", None)
@@ -68,9 +69,13 @@ class TraceCollector:
             args = dict(getattr(event, "arguments", {}) or {})
             signature = f"{name}:{args}"
 
-            if signature == self._last_signature:
+            if (
+                signature == self._last_signature
+                and self._last_tool_outcome not in {"blocked", "denied", "approval required"}
+            ):
                 self.trace.repeated_tools += 1
             self._last_signature = signature
+            self._last_tool_outcome = None
 
             self.trace.tool_calls += 1
             self.trace.tool_trace.append(
@@ -87,11 +92,25 @@ class TraceCollector:
             current = self.trace.tool_trace[-1]
             current.elapsed_seconds = float(getattr(event, "elapsed", 0.0) or 0.0)
             current.message = str(getattr(event, "message", "") or "")
+            normalized_message = current.message.lower()
+            self._last_tool_outcome = normalized_message
 
-            if current.message.lower() in {"ok", "success"}:
+            if normalized_message in {"ok", "success"}:
                 current.success = True
-            elif current.message.lower() in {"error", "failed", "denied"}:
+                self._last_signature = f"{current.name}:{current.arguments}"
+            elif normalized_message in {"error", "failed", "denied"}:
                 self.trace.failed_tools += 1
+                self._last_signature = f"{current.name}:{current.arguments}"
+            elif normalized_message == "blocked":
+                self.trace.failed_tools += 1
+                if self.trace.repeated_tools > 0 and self.trace.tool_trace[-2:]:
+                    signature = f"{current.name}:{current.arguments}"
+                    if self.trace.tool_trace[-2].name == current.name and self.trace.tool_trace[-2].arguments == current.arguments:
+                        self.trace.repeated_tools -= 1
+                self._last_signature = self._last_signature
+            elif normalized_message == "approval required":
+                self.trace.failed_tools += 1
+                self._last_signature = self._last_signature
 
     def fail(self, exc: Exception) -> None:
         self.trace.error = f"{type(exc).__name__}: {exc}"
