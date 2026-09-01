@@ -12,6 +12,8 @@ class SearchFilesInput(BaseModel):
 
     query: str
 
+    path: str | None = None
+
 
 class SearchFilesTool(Tool):
     """Search text across files in the workspace."""
@@ -25,7 +27,10 @@ class SearchFilesTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Search for text or code patterns inside the current workspace."
+        return (
+            "Search text or code patterns. Set path to a known project folder "
+            "to avoid searching unrelated parent-repository files."
+        )
 
     @property
     def metadata(self) -> ToolMetadata:
@@ -51,6 +56,36 @@ class SearchFilesTool(Tool):
         if not query:
             raise ValueError("'query' must be a non-empty string.")
 
+        search_root = "."
+        if args.path is not None and args.path.strip():
+            search_root = args.path.strip()
+            path = self.filesystem.resolve_path(search_root)
+            if not path.is_dir():
+                raise FileNotFoundError(
+                    f"Search path is not a directory: {search_root}"
+                )
+
+        # Models sometimes use '*' to mean "show me the files".  Passing it
+        # to ripgrep as a regex produces a confusing parser failure and burns
+        # another model turn.  Make that intent deterministic and read-only.
+        if query in {"*", "."}:
+            result = subprocess.run(
+                ["rg", "--files", "--hidden", "--glob", "!.git", search_root],
+                cwd=self.filesystem.root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or "File listing failed.")
+            return ToolResult.ok(
+                output=result.stdout or "No files found.",
+                metadata={"query": query, "path": search_root, "exit_code": result.returncode},
+            )
+
         result = subprocess.run(
             [
                 "rg",
@@ -59,7 +94,7 @@ class SearchFilesTool(Tool):
                 "--glob",
                 "!.git",
                 query,
-                ".",
+                search_root,
             ],
             cwd=self.filesystem.root,
             capture_output=True,
@@ -75,6 +110,7 @@ class SearchFilesTool(Tool):
                 output="No matches found.",
                 metadata={
                     "query": query,
+                    "path": search_root,
                     "exit_code": 1,
                 },
             )
@@ -86,6 +122,7 @@ class SearchFilesTool(Tool):
             output=result.stdout,
             metadata={
                 "query": query,
+                "path": search_root,
                 "exit_code": result.returncode,
             },
         )
