@@ -182,13 +182,9 @@ class ContextManager:
         """
         Group logically inseparable messages.
 
-        Normal message:
+        A real user turn and the model/tool activity it caused:
 
-            [user]
-
-        Function call exchange:
-
-            [assistant(tool_calls), tool, tool, ...]
+            [user, assistant(tool_calls), tool, tool, ...]
 
         The group is never split by compaction or size trimming.
         """
@@ -201,22 +197,22 @@ class ContextManager:
             message = messages[index]
 
             # -------------------------------------------------
-            # Assistant function-call block
+            # User turns anchor all following model/tool messages until the
+            # next user turn. Gemini requires function calls to follow a
+            # real user or function-response turn, so compaction may never
+            # retain a call exchange without its user anchor.
             # -------------------------------------------------
 
-            if (
-                message.get("role") == "assistant"
-                and message.get("tool_calls")
-            ):
+            if message.get("role") == "user":
                 group = [message]
 
                 index += 1
 
-                while index < len(messages):
+                while (
+                    index < len(messages)
+                    and messages[index].get("role") != "user"
+                ):
                     next_message = messages[index]
-
-                    if next_message.get("role") != "tool":
-                        break
 
                     group.append(
                         next_message,
