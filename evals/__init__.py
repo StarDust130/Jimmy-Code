@@ -1,1 +1,0 @@
-"""Jimmy evaluation harness."""
