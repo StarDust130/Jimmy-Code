@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Jimmy Code - a terminal-native coding agent"
 readme = "README.md"
 requires-python = ">=3.11"
+
 dependencies = [
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
@@ -11,24 +12,27 @@ dependencies = [
     "rich>=13.0",
     "typer>=0.16.0",
     "groq>=1.6.0",
-    "pytest>=9.1.1",
     "textual>=8.2.8",
     "pyperclip>=1.11.0",
     "google-genai>=2.19.0",
+    "zai-sdk",
 ]
 
 [project.scripts]
-jimmy = "jimmy.cli.main:app"
+jimmy = "jimmy.main:app"
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
-    "ruff>=0.12.0",
+    "ruff>=0.16.4",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jimmy"]
 
 [tool.ruff]
 line-length = 100
@@ -36,8 +40,3 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[tool.uv]
-dev-dependencies = [
-    "ruff>=0.16.4",
-]
