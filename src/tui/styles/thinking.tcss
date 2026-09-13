@@ -1,0 +1,20 @@
+/* ───────────────────────────────────────────────
+   thinking.tcss — ThinkingRow (components/thinking.py)
+   spinner + dim label while the model works
+   ─────────────────────────────────────────────── */
+
+ThinkingRow {
+    height: 1;
+    margin: 0 0 1 0;                /* same rhythm as messages */
+}
+
+.thinking-spinner {
+    width: auto;
+    color: #b392f8;                 /* accent — Jimmy is working */
+}
+
+.thinking-label {
+    width: auto;
+    margin-left: 1;
+    color: #5f626b;                 /* faint */
+}

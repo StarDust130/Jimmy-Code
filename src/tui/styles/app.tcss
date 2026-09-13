@@ -1,0 +1,22 @@
+/* ═══════════════════════════════════════════════════════════════
+   app.tcss — GLOBAL SHEET (screen only; palette documented here)
+
+   JIMMY PALETTE — used by every component stylesheet:
+
+       bg      #0e0f13   canvas, near-black with a hint of blue
+       surface #15161d   raised areas (input box)
+       border  #23252e   hairlines
+       text    #e8e9ee   primary text
+       muted   #9a9daa   secondary text (user messages, labels)
+       faint   #5f626b   hints, placeholders, meta
+       accent  #b392f8   Jimmy violet — the ONE loud color
+       danger  #f87171   errors only
+
+   Rule of thumb: everything is grayscale except the accent, which
+   marks "Jimmy" — brand, spinner, reply markers, focus ring.
+   ═══════════════════════════════════════════════════════════════ */
+
+Screen {
+    background: #0e0f13;
+    color: #e8e9ee;
+}

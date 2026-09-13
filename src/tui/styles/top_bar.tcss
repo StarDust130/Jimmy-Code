@@ -1,0 +1,45 @@
+/* ──────────────────────────────────────────────────────────
+   top_bar.tcss — TopBar (components/top_bar.py)
+
+   ✻ Jimmy · model-name                    ● ready
+   ─────────────────────────── hairline ──────────────────
+   ────────────────────────────────────────────────────────── */
+
+TopBar {
+    height: 2;                      /* 1 content row + hairline */
+    padding: 0 2;
+    background: #0e0f13;
+    border-bottom: solid #23252e;   /* hairline under the header */
+}
+
+TopBar > Label {
+    height: 1;
+}
+
+#brand {
+    width: auto;
+    color: #b392f8;                 /* accent */
+    text-style: bold;
+}
+
+#brand-model {
+    width: auto;
+    margin-left: 1;
+    color: #5f626b;                 /* faint */
+}
+
+/* Flex spacer — pushes the state pill to the right edge. */
+#top-spacer {
+    width: 1fr;
+}
+
+/* State pill: ● ready / ◌ thinking… / ✕ error / — interrupted */
+#state {
+    width: auto;
+    text-style: bold;
+}
+
+.state-ready       { color: #5f626b; }   /* faint  */
+.state-thinking    { color: #b392f8; }   /* accent */
+.state-error       { color: #f87171; }   /* danger */
+.state-interrupted { color: #9a9daa; }   /* muted  */

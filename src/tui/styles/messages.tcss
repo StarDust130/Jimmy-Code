@@ -1,0 +1,58 @@
+/* ──────────────────────────────────────────────────────────
+   messages.tcss — message widgets (components/messages.py)
+
+   Every message is the same two-part pattern:
+
+       ● jimmy            ← .marker  speaker (color = identity)
+         streamed text    ← .body    content, indented 2 cols
+
+   No bubbles, no boxes — hierarchy from color + indentation.
+   ────────────────────────────────────────────────────────── */
+
+/* Entrance: messages mount invisible (opacity 0). The fade-in
+   is driven from Python — see Message._fade_in in messages.py. */
+Message {
+    width: 100%;
+    height: auto;
+    margin: 0 0 1 0;                /* one blank row between turns */
+    opacity: 0%;
+}
+
+/* Speaker line */
+.marker {
+    height: 1;
+    width: auto;
+    text-style: bold;
+}
+
+/* Content — 2 columns in from the marker */
+.body {
+    height: auto;
+    margin: 0 0 0 2;
+}
+
+/* Identity colors */
+.msg-user > .marker      { color: #9a9daa; }   /* muted  */
+.msg-assistant > .marker { color: #b392f8; }   /* accent */
+.msg-error > .marker     { color: #f87171; }   /* danger */
+.msg-system > .marker    { color: #5f626b; }   /* faint  */
+
+/* Body tones — the user is dim, Jimmy speaks bright */
+.msg-user > .body        { color: #9a9daa; }
+.msg-assistant > .body   { color: #e8e9ee; }
+.msg-error > .body       { color: #fda4af; }   /* softened danger */
+
+/* System notes — quiet, a little extra air */
+.msg-system {
+    margin: 1 0;
+}
+
+/* Welcome block */
+.msg-welcome {
+    margin: 1 0 2 0;
+}
+
+.welcome-body {
+    height: auto;
+    color: #9a9daa;                 /* markup inside sets its own tones */
+}
