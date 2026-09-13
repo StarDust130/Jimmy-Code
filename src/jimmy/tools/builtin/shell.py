@@ -49,10 +49,7 @@ class ShellTool(Tool):
             return ToolResult(
                 success=False,
                 output="",
-                error=(
-                    f"Command timed out after "
-                    f"{arguments.timeout} seconds."
-                ),
+                error=(f"Command timed out after {arguments.timeout} seconds."),
             )
         except OSError as exc:
             # ⚠️ Failed to start command
@@ -67,18 +64,11 @@ class ShellTool(Tool):
 
         # ⚠️ Include error output when present
         if completed.stderr:
-            output += (
-                "\n\n--- stderr ---\n"
-                + completed.stderr
-            )
+            output += "\n\n--- stderr ---\n" + completed.stderr
 
         # ✅ Return command result
         return ToolResult(
             success=completed.returncode == 0,
             output=output.strip(),
-            error=(
-                f"Exit code: {completed.returncode}"
-                if completed.returncode != 0
-                else None
-            ),
+            error=(f"Exit code: {completed.returncode}" if completed.returncode != 0 else None),
         )

@@ -47,12 +47,8 @@ class Agent:
                 answer = result.content
 
                 # 9️⃣ Save the conversation
-                self.history.append(
-                    Message(role="user", content=user_text)
-                )
-                self.history.append(
-                    Message(role="assistant", content=answer)
-                )
+                self.history.append(Message(role="user", content=user_text))
+                self.history.append(Message(role="assistant", content=answer))
 
                 # 🔟 Send the answer to the UI
                 if answer:
@@ -75,9 +71,7 @@ class Agent:
                 tool = self.tools.get(call.name)
 
                 # ✅ Validate tool arguments
-                arguments = tool.args_schema.model_validate(
-                    call.arguments
-                )
+                arguments = tool.args_schema.model_validate(call.arguments)
 
                 # ⚙️ Run the tool
                 tool_result = tool.execute(arguments)

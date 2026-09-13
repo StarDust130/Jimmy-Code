@@ -74,19 +74,13 @@ class ReadFilesTool(Tool):
             if truncated:
                 text = text[: arguments.max_chars_per_file]
 
-            # ℹ️ Tell the agent content was cut
+            # 🌧️ Tell the agent content was cut
             suffix = "\n...[truncated]" if truncated else ""
 
-            results.append(
-                f"===== {raw_path} =====\n"
-                f"{text}{suffix}"
-            )
+            results.append(f"===== {raw_path} =====\n{text}{suffix}")
 
         # ✅ Success if at least one file worked
-        success = any(
-            "ERROR" not in result.splitlines()[0]
-            for result in results
-        )
+        success = any("ERROR" not in result.splitlines()[0] for result in results)
 
         # 📤 Return results to the agent
         return ToolResult(

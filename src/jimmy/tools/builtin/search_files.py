@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from ..core.base import Tool, ToolResult
 
-
 # 🚫 Skip generated/dependency folders
 IGNORED_DIRS = {
     ".git",
@@ -117,9 +116,7 @@ class SearchFilesTool(Tool):
                     if len(snippet) > 200:
                         snippet = snippet[:200] + "..."
 
-                    matches.append(
-                        f"{relative}:{line_number}: {snippet}"
-                    )
+                    matches.append(f"{relative}:{line_number}: {snippet}")
                     break
 
         # 🔎 Nothing found
@@ -136,9 +133,7 @@ class SearchFilesTool(Tool):
         output = "\n".join(matches)
 
         if truncated:
-            output += (
-                f"\n\nShowing first {arguments.max_results} results."
-            )
+            output += f"\n\nShowing first {arguments.max_results} results."
 
         # ✅ Return results to the agent
         return ToolResult(

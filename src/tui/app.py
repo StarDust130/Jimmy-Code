@@ -145,7 +145,7 @@ class JimmyApp(App[None]):
             self.top_bar.set_interrupted()
             raise
 
-        except Exception as exc:  # noqa: BLE001 — show it, don't crash
+        except Exception as exc:
             if reply is None:
                 await thinking.remove()
             self.chat.append(ErrorMessage(exc))
