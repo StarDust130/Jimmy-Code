@@ -1,11 +1,11 @@
 # 🔧 Built-in tools Jimmy can use
-from .builtin.edit_files import EditFilesTool
-from .builtin.read_files import ReadFilesTool
-from .builtin.search_files import SearchFilesTool
-from .builtin.shell import ShellTool
+from ..builtin.edit_files import EditFilesTool
+from ..builtin.read_files import ReadFilesTool
+from ..builtin.search_files import SearchFilesTool
+from ..builtin.shell import ShellTool
 
 # 📋 Tool registry
-from .core.registry import ToolRegistry
+from ..core.registry import ToolRegistry
 
 
 def create_default_registry() -> ToolRegistry:

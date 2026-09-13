@@ -1,20 +1,26 @@
-"""The small provider contract the agent depends on."""
+from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
-from typing import Protocol
+from collections.abc import Sequence
+from typing import Any, Protocol
 
 from .types import LLMResult, Message
 
 
 class LLMProvider(Protocol):
-    """Minimal interface. Concrete SDK details stay behind this boundary."""
-
+    # 🤖 Model name used by the provider
     model: str
 
-    async def complete(self, messages: Sequence[Message]) -> LLMResult:
-        """Return one completed response."""
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[dict[str, Any]] = (),
+    ) -> LLMResult:
+        """💬 Get one complete response, optionally with tools."""
         ...
 
-    async def stream(self, messages: Sequence[Message]) -> AsyncIterator[str]:
-        """Yield response text chunks in order."""
+    async def stream(
+        self,
+        messages: Sequence[Message],
+    ):
+        """⚡ Stream a normal chat response."""
         ...

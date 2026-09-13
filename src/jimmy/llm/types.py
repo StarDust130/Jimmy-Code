@@ -1,15 +1,25 @@
 """Provider-independent LLM types."""
 
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
-Role = Literal["system", "user", "assistant"]
+
+Role = Literal["system", "user", "assistant", "tool"]
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCall:
+    id: str
+    name: str
+    arguments: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
 class Message:
     role: Role
-    content: str
+    content: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: tuple[ToolCall, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +31,7 @@ class Usage:
 
 @dataclass(frozen=True, slots=True)
 class LLMResult:
-    content: str
-    usage: Usage = Usage()
+    content: str = ""
+    usage: Usage = field(default_factory=Usage)
     model: str = ""
+    tool_calls: tuple[ToolCall, ...] = ()
