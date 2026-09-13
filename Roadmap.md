@@ -286,3 +286,48 @@ Now the focus shifts from **making Jimmy work** to **making Jimmy work reliably 
 > **From a plain-English task to a verified code change.**
 >
 > **V1 built Jimmy. V2 teaches Jimmy how to work.** 🚀
+
+
+V0
+CLI → 1 LLM → answer
+
+V1
+CLI → LLM → tools → result
+(5 main tools)
+
+
+V2
+better context
+
+V3
+model switching/fallback
+
+V4
+sessions/permissions
+
+V5
+plan capability
+
+V6
+review/recovery
+
+...
+
+- llmprovider (litellm)
+- tool system (search, edit, shell, read, gitcommit)
+- context builder
+- obeservability (logging, metrics, tracing)
+- session manager (sqlite)
+- permission system (sandbox)
+- model switching/fallback
+- plan capability
+- great Evaluation
+- 
+
+1. TUI opens ✅
+2. input works ✅
+3. LiteLLM provider ✅
+4. streaming answer ✅
+5. token usage ✅
+6. agent → provider → answer ✅
+7. tests ✅
