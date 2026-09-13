@@ -27,7 +27,6 @@ from .components.messages import (
     ErrorMessage,
     SystemNote,
     UserMessage,
-    WelcomeMessage,
 )
 from .components.thinking import ThinkingRow
 from .components.top_bar import TopBar
