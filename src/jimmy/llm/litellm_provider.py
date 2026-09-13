@@ -2,7 +2,6 @@
 
 from collections.abc import AsyncIterator, Sequence
 
-import litellm
 from litellm import acompletion
 
 from .types import LLMResult, Message, Usage
