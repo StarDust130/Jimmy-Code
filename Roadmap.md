@@ -346,7 +346,7 @@ review/recovery
    ├─ select active model in TUI
    └─ save locally
 
-3. 🧠 Better context
+3. 🧠 Better context 🌟
    ├─ only relevant context
    ├─ token budget
    ├─ compact old results when needed
@@ -358,3 +358,6 @@ review/recovery
 7. 🧪 Evaluation suite
 8. 🧠 Planning capability
 9. 🔄 Recovery / fallback
+10. 🧩 Model switching / fallback
+11. 🧪 Evaluation suite
+12. 🚀 Deploy it.
