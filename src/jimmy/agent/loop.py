@@ -1,12 +1,15 @@
 """Jimmy's core tool-using agent loop."""
 
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Callable
 
 from jimmy.context import ContextBuilder
 from jimmy.llm.provider import LLMProvider
 from jimmy.llm.types import Message
 from jimmy.tools.core.factory import create_default_registry
 from jimmy.tools.core.registry import ToolRegistry
+
+AgentEvent = Callable[[str, dict], None]
 
 
 class Agent:
@@ -18,45 +21,63 @@ class Agent:
         context: ContextBuilder | None = None,
         tools: ToolRegistry | None = None,
     ) -> None:
-        # 1️⃣ Store the AI provider
         self.provider = provider
-
-        # 2️⃣ Create context manager
         self.context = context or ContextBuilder()
-
-        # 3️⃣ Load available tools
         self.tools = tools or create_default_registry()
-
-        # 4️⃣ Keep conversation history
         self.history: list[Message] = []
 
-    async def stream(self, user_text: str) -> AsyncIterator[str]:
-        # 5️⃣ Build the initial context for the request
+    async def stream(
+        self,
+        user_text: str,
+        on_event: AgentEvent | None = None,
+    ) -> AsyncIterator[str]:
         messages = self.context.build(user_text, self.history)
 
-        # 6️⃣ Keep working until the task is finished
         while True:
-            # 7️⃣ Ask the model what to do
-            result = await self.provider.complete(
-                messages,
-                tools=self.tools.schemas(),
-            )
+            # 🤖 Ask the model
+            llm_started = time.perf_counter()
 
-            # 8️⃣ No tool needed → return the final answer
+            try:
+                result = await self.provider.complete(
+                    messages,
+                    tools=self.tools.schemas(),
+                )
+            except Exception as exc:
+                if on_event:
+                    on_event(
+                        "error",
+                        {
+                            "source": "llm",
+                            "error": exc,
+                        },
+                    )
+                raise
+
+            llm_latency = time.perf_counter() - llm_started
+
+            if on_event:
+                on_event(
+                    "llm_done",
+                    {
+                        "latency": llm_latency,
+                        "usage": result.usage,
+                        "model": result.model,
+                    },
+                )
+
+            # ✅ Final answer
             if not result.tool_calls:
                 answer = result.content
 
-                # 9️⃣ Save the conversation
                 self.history.append(Message(role="user", content=user_text))
                 self.history.append(Message(role="assistant", content=answer))
 
-                # 🔟 Send the answer to the UI
                 if answer:
                     yield answer
 
                 return
 
-            # 1️⃣1️⃣ Save the model's tool request
+            # 🛠️ Save tool request
             messages.append(
                 Message(
                     role="assistant",
@@ -65,18 +86,48 @@ class Agent:
                 )
             )
 
-            # 1️⃣2️⃣ Execute every requested tool
+            # 🔧 Run tools
             for call in result.tool_calls:
-                # 🔎 Find the requested tool
                 tool = self.tools.get(call.name)
 
-                # ✅ Validate tool arguments
                 arguments = tool.args_schema.model_validate(call.arguments)
 
-                # ⚙️ Run the tool
-                tool_result = tool.execute(arguments)
+                if on_event:
+                    on_event(
+                        "tool_start",
+                        {
+                            "name": call.name,
+                            "arguments": call.arguments,
+                        },
+                    )
 
-                # 1️⃣3️⃣ Send the tool result back to the model
+                tool_started = time.perf_counter()
+
+                try:
+                    tool_result = tool.execute(arguments)
+                except Exception as exc:
+                    if on_event:
+                        on_event(
+                            "error",
+                            {
+                                "source": "tool",
+                                "name": call.name,
+                                "error": exc,
+                            },
+                        )
+                    raise
+
+                tool_latency = time.perf_counter() - tool_started
+
+                if on_event:
+                    on_event(
+                        "tool_done",
+                        {
+                            "name": call.name,
+                            "latency": tool_latency,
+                        },
+                    )
+
                 messages.append(
                     Message(
                         role="tool",
