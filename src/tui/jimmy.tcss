@@ -216,57 +216,104 @@ ChatLog {
     color: #565d73;
 }
 
-/* ── Composer ─────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════
+   COMPOSER
+   ═══════════════════════════════════════════════ */
+
 
 Composer {
     width: 100%;
     max-width: 132;
+
     height: auto;
-    padding: 0 2 1 2;
-    background: #090b12;
+
+    padding: 0 0 0 0;
+
+    background: #080B10;
 }
 
 #prompt {
     width: 100%;
     height: 3;
+
     padding: 0 1;
-    background: #0f1322;
-    border: round #2a3148;
-    color: #e7eaf3;
+
+    background: #0D1219;
+
+    border: round #263241;
+
+    color: #E8ECF4;
 }
 
 #prompt:focus {
-    border: round #8b5cf6;
-    background: #12162b;
+    background: #101621;
+    border: round #8B7CF6;
 }
 
 #composer.busy #prompt {
-    border: round #2e3450;
-    background: #0e111d;
+    background: #0C1118;
+    border: round #303A49;
 }
 
 #composer.celebrate #prompt {
-    border: round #2f9e74;
-    background: #0e1713;
+    background: #0D1813;
+    border: round #34D399;
 }
 
-#composer-statusline {
-    width: 100%;
-    height: 1;
-    padding: 0 1;
-    margin-top: 1;
-}
+
+/* ─────────────────────────────────────────────
+   SHORTCUT RAIL
+   ───────────────────────────────────────────── */
 
 #composer-hints {
-    width: 1fr;
+    width: 100%;
     height: 1;
-    color: #565d73;
+
+    margin-top: 0;
+    padding: 0;
+
+    text-align: center;
+
+    color: #566170;
 }
 
-#composer-pwd {
+
+/* ═══════════════════════════════════════════════
+   TOASTS
+   ═══════════════════════════════════════════════ */
+
+ToastRack {
+    align: left bottom;
+
+    width: 100%;
+    height: auto;
+}
+
+Toast {
     width: auto;
-    height: 1;
-    color: #3a4157;
+    max-width: 46;
+
+    height: 3;
+
+    margin: 0 0 1 1;
+    padding: 0 1;
+
+    background: #101620;
+    color: #D8DEE9;
+
+    border: round #263241;
+}
+
+Toast.-information {
+    border: round #5666A8;
+}
+
+Toast.-warning {
+    border: round #F5C451;
+}
+
+Toast.-error {
+    border: round #FB7185;
 }
 
 /* ── Command palette (ctrl+p) — small, floating, centered, static ─── */
@@ -425,9 +472,7 @@ HomeScreen {
 
 #hero {
     width: 100%;
-    max-width: 74;
-    height: auto;
-    padding: 0;
+    max-width: 78;
 }
 
 #home-sparkles {
@@ -512,3 +557,4 @@ HomeScreen {
 .hidden-until {
     visibility: hidden;
 }
+
