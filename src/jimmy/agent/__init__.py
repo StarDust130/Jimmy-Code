@@ -1,3 +1,6 @@
-from .loop import Agent
+from .loop import Agent, AgentEvent
 
-__all__ = ["Agent"]
+__all__ = [
+    "Agent",
+    "AgentEvent",
+]
