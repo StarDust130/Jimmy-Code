@@ -1,5 +1,3 @@
-babu is best
-
 # 🕺 Jimmy Code🪩
 
 <p align="center">
