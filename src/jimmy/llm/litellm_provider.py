@@ -8,7 +8,13 @@ from typing import Any, cast
 
 from litellm import acompletion
 
-from .types import LLMResult, Message, ToolCall, Usage
+from .types import (
+    LLMResult,
+    LLMStreamEvent,
+    Message,
+    ToolCall,
+    Usage,
+)
 
 
 class LiteLLMProvider:
@@ -18,24 +24,20 @@ class LiteLLMProvider:
         model: str,
         api_key: str | None = None,
     ) -> None:
-        # 1️⃣ Store the model
         self.model = model
-
-        # 2️⃣ Store the optional API key
         self.api_key = api_key
 
     @staticmethod
-    def _message(message: Message) -> dict[str, Any]:
-        # 3️⃣ Convert our message to LiteLLM format
+    def _message(
+        message: Message,
+    ) -> dict[str, Any]:
         data: dict[str, Any] = {
             "role": message.role,
         }
 
-        # 💬 Add message text
         if message.content is not None:
             data["content"] = message.content
 
-        # 🔧 Add previous tool calls
         if message.tool_calls:
             data["tool_calls"] = [
                 {
@@ -49,45 +51,74 @@ class LiteLLMProvider:
                 for call in message.tool_calls
             ]
 
-        # 🔗 Link tool result to its call
         if message.tool_call_id:
             data["tool_call_id"] = message.tool_call_id
 
         return data
+
+    def _kwargs(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[dict[str, Any]],
+    ) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": [self._message(message) for message in messages],
+        }
+
+        if tools:
+            kwargs["tools"] = list(tools)
+
+        if self.api_key:
+            kwargs["api_key"] = self.api_key
+
+        return kwargs
+
+    @staticmethod
+    def _usage(raw: Any) -> Usage:
+        if raw is None:
+            return Usage()
+
+        def read(name: str) -> int:
+            value = getattr(raw, name, None)
+
+            if value is None and isinstance(raw, dict):
+                value = raw.get(name)
+
+            try:
+                return int(value or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        return Usage(
+            input_tokens=read("prompt_tokens"),
+            output_tokens=read("completion_tokens"),
+            total_tokens=read("total_tokens"),
+        )
 
     async def complete(
         self,
         messages: Sequence[Message],
         tools: Sequence[dict[str, Any]] = (),
     ) -> LLMResult:
-        # 4️⃣ Build the model request
-        kwargs: dict[str, Any] = {
-            "model": self.model,
-            "messages": [self._message(message) for message in messages],
-        }
+        kwargs = self._kwargs(messages, tools)
 
-        # 🛠️ Give the model available tools
-        if tools:
-            kwargs["tools"] = list(tools)
-
-        # 🔑 Add API key
-        if self.api_key:
-            kwargs["api_key"] = self.api_key
-
-        # 5️⃣ Get one complete response
         response = cast(
             Any,
             await acompletion(**kwargs),
         )
 
-        # 6️⃣ Read the model message
         message = response.choices[0].message
 
-        # 7️⃣ Parse tool calls
         tool_calls: list[ToolCall] = []
 
         for call in getattr(message, "tool_calls", None) or []:
-            arguments = json.loads(call.function.arguments)
+            raw_args = getattr(call.function, "arguments", None) or "{}"
+
+            try:
+                arguments = json.loads(raw_args)
+            except json.JSONDecodeError:
+                arguments = {}
 
             tool_calls.append(
                 ToolCall(
@@ -97,68 +128,196 @@ class LiteLLMProvider:
                 )
             )
 
-        # 8️⃣ Read token usage
-        usage_data = getattr(response, "usage", None)
-
-        usage = Usage(
-            input_tokens=getattr(
-                usage_data,
-                "prompt_tokens",
-                0,
-            )
-            or 0,
-            output_tokens=getattr(
-                usage_data,
-                "completion_tokens",
-                0,
-            )
-            or 0,
-            total_tokens=getattr(
-                usage_data,
-                "total_tokens",
-                0,
-            )
-            or 0,
-        )
-
-        # 9️⃣ Return our standard result
         return LLMResult(
             content=message.content or "",
-            usage=usage,
-            model=self.model,
+            usage=self._usage(getattr(response, "usage", None)),
+            model=(getattr(response, "model", None) or self.model),
             tool_calls=tuple(tool_calls),
         )
 
-    async def stream(
+    def stream(
         self,
         messages: Sequence[Message],
-    ) -> AsyncIterator[str]:
-        # 🔟 Build the streaming request
-        kwargs: dict[str, Any] = {
-            "model": self.model,
-            "messages": [self._message(message) for message in messages],
-            "stream": True,
+        tools: Sequence[dict[str, Any]] = (),
+    ) -> AsyncIterator[LLMStreamEvent]:
+        return self._stream(messages, tools)
+
+    async def _stream(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[dict[str, Any]],
+    ) -> AsyncIterator[LLMStreamEvent]:
+
+        kwargs = self._kwargs(messages, tools)
+
+        kwargs["stream"] = True
+
+        # Request provider usage on the final stream chunk.
+        kwargs["stream_options"] = {
+            "include_usage": True,
         }
 
-        # 🔑 Add API key
-        if self.api_key:
-            kwargs["api_key"] = self.api_key
-
-        # 1️⃣1️⃣ Get the streaming response
         response = cast(
             AsyncIterator[Any],
             await acompletion(**kwargs),
         )
 
-        # 1️⃣2️⃣ Read chunks as they arrive
+        text_parts: list[str] = []
+
+        tool_buffers: dict[
+            int,
+            dict[str, str],
+        ] = {}
+
+        usage = Usage()
+        response_model = self.model
+
         async for chunk in response:
-            content = None
+            model_name = getattr(
+                chunk,
+                "model",
+                None,
+            )
+
+            if model_name:
+                response_model = model_name
+
+            chunk_usage = self._usage(getattr(chunk, "usage", None))
+
+            if chunk_usage.available:
+                usage = chunk_usage
+
+            choices = getattr(
+                chunk,
+                "choices",
+                None,
+            )
+
+            if not choices:
+                # Important: usage-only final chunks can have
+                # no choices.
+                continue
+
+            delta = getattr(
+                choices[0],
+                "delta",
+                None,
+            )
+
+            if delta is None:
+                continue
+
+            content = getattr(
+                delta,
+                "content",
+                None,
+            )
+
+            if content:
+                text_parts.append(content)
+
+                yield LLMStreamEvent(
+                    kind="text",
+                    text=content,
+                )
+
+            delta_tool_calls = (
+                getattr(
+                    delta,
+                    "tool_calls",
+                    None,
+                )
+                or []
+            )
+
+            for tool_delta in delta_tool_calls:
+                index = int(
+                    getattr(
+                        tool_delta,
+                        "index",
+                        0,
+                    )
+                    or 0
+                )
+
+                buffer = tool_buffers.setdefault(
+                    index,
+                    {
+                        "id": "",
+                        "name": "",
+                        "arguments": "",
+                    },
+                )
+
+                call_id = getattr(
+                    tool_delta,
+                    "id",
+                    None,
+                )
+
+                if call_id:
+                    buffer["id"] = call_id
+
+                function = getattr(
+                    tool_delta,
+                    "function",
+                    None,
+                )
+
+                if function is None:
+                    continue
+
+                name = getattr(
+                    function,
+                    "name",
+                    None,
+                )
+
+                if name:
+                    buffer["name"] += name
+
+                arguments = getattr(
+                    function,
+                    "arguments",
+                    None,
+                )
+
+                if arguments:
+                    buffer["arguments"] += arguments
+
+        tool_calls: list[ToolCall] = []
+
+        for index in sorted(tool_buffers):
+            buffer = tool_buffers[index]
+
+            if not buffer["name"]:
+                continue
+
+            raw_arguments = buffer["arguments"] or "{}"
 
             try:
-                content = chunk.choices[0].delta.content
-            except (AttributeError, IndexError):
-                content = None
+                arguments = json.loads(raw_arguments)
+            except json.JSONDecodeError:
+                # Agent validation will safely report
+                # malformed arguments back to the model.
+                arguments = {}
 
-            # 📤 Send each text chunk
-            if content:
-                yield content
+            tool_calls.append(
+                ToolCall(
+                    id=(buffer["id"] or f"call_{index}"),
+                    name=buffer["name"],
+                    arguments=arguments,
+                )
+            )
+
+        result = LLMResult(
+            content="".join(text_parts),
+            usage=usage,
+            model=response_model,
+            tool_calls=tuple(tool_calls),
+        )
+
+        yield LLMStreamEvent(
+            kind="done",
+            result=result,
+        )
