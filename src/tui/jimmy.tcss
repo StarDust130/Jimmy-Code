@@ -1,213 +1,514 @@
+/* ═════════════════════════════════════════════════════════════════════
+   Jimmy Code — jimmy.tcss
+   Retro arcade × synthwave × cyber terminal × premium developer tool.
+
+   Themes are driven from app.py (THEME dict + rebuilt flow palette) so
+   the wordmark / waves / accents change LIVE; the CSS below keeps the
+   structural palette constant across themes.  Palette rows carry
+   explicit inline colors in app.py — the colors here are fallbacks.
+
+   FREEZE FIX (unchanged): the palette has NO transitions and NO opacity
+   animation — static open/close, zero animation races.
+   ═════════════════════════════════════════════════════════════════════ */
+
 Screen {
-    background: #0b0d12;
-    color: #d9dce5;
+    background: #090b12;
+    color: #e2e6f2;
+    align: center top;
 }
 
+/* ── Top navbar ───────────────────────────────────────────────────── */
 
-/* ─────────────────────────────────────
-   TOP BAR
-   ───────────────────────────────────── */
-
-TopBar {
+#top-bar {
     width: 100%;
+    max-width: 132;
+    height: 2;
+    padding: 0 1;
+    background: #0c0f18;
+    border-bottom: solid #1a2036;
+}
+
+#top-left {
+    width: 1fr;
+    height: 1;
+}
+
+#top-left:hover {
+    background: #10141f;
+}
+
+#chip-tokens,
+#chip-state,
+#chip-sound {
+    width: auto;
     height: 1;
     padding: 0 1;
-
-    background: #11141b;
 }
 
-#brand {
-    color: #c084fc;
-    text-style: bold;
+#chip-tokens {
+    color: #fb7185;                  /* Σ shown in red */
 }
 
-#brand-model {
-    color: #737a8a;
-    padding-left: 1;
+#chip-sound {
+    margin-left: 1;
 }
 
-#top-spacer {
-    width: 1fr;
+#chip-state:hover,
+#chip-sound:hover {
+    background: #161c30;
 }
 
-#state {
-    color: #9da3b2;
-}
-
-.state-ready {
-    color: #6ee7b7;
-}
-
-.state-thinking {
-    color: #c084fc;
-}
-
-.state-error {
-    color: #fb7185;
-}
-
-.state-interrupted {
-    color: #fbbf24;
-}
-
-
-/* ─────────────────────────────────────
-   CHAT
-   ───────────────────────────────────── */
+/* ── Timeline ─────────────────────────────────────────────────────── */
 
 ChatLog {
     width: 100%;
+    max-width: 132;
     height: 1fr;
-
-    padding: 0 2 1 2;
-
-    background: #0b0d12;
-
+    padding: 1 2;
+    align: center top;
+    background: #090b12;
+    overflow-x: hidden;
     scrollbar-size: 1 1;
+    scrollbar-color: #232838;
 }
-
-
-/* ─────────────────────────────────────
-   MESSAGES
-   ───────────────────────────────────── */
 
 .msg {
     width: 100%;
+    max-width: 120;
     height: auto;
-
-    margin: 0;
-    padding: 0;
-
-    opacity: 0;
 }
 
 .msg-user {
+    margin-top: 1;
     margin-bottom: 1;
+    padding-left: 1;
 }
 
 .msg-assistant {
     margin-bottom: 1;
+    padding-left: 1;
 }
 
-.marker {
-    width: auto;
-    height: 1;
-
-    text-style: bold;
-}
-
-.body {
+.assistant-body {
     width: 100%;
     height: auto;
-
-    padding-left: 2;
-
-    color: #dce0e8;
+    padding-right: 1;
+    color: #e9ecf7;
+    overflow-x: auto;
 }
 
-
-.msg-user .marker {
-    color: #60a5fa;
-}
-
-.msg-user .body {
-    color: #aeb4c2;
-}
-
-.msg-assistant .marker {
-    color: #c084fc;
-}
-
-.msg-assistant .body {
-    color: #e3e6ed;
-}
-
-
-.msg-error {
-    height: auto;
-    margin: 1 0;
-}
-
-.msg-error .marker {
-    color: #fb7185;
-}
-
-.msg-error .body {
-    color: #fda4af;
-}
-
-
-.msg-system {
-    height: 1;
-    margin: 0;
-}
-
-.msg-system .marker {
-    color: #6b7280;
-}
-
-
-/* ─────────────────────────────────────
-   MODEL STATUS
-   ───────────────────────────────────── */
-
-.live-model-status {
+.pair-divider {
     width: 100%;
+    max-width: 120;
     height: 1;
-
-    margin: 0;
-    padding-left: 2;
+    border-top: solid #161b2c;
+    margin-top: 1;
+    margin-bottom: 1;
 }
 
-
-/* ─────────────────────────────────────
-   TOOL STATUS
-   ───────────────────────────────────── */
+.thinking-row {
+    width: 100%;
+    max-width: 120;
+    height: 1;
+    padding-left: 1;
+}
 
 .live-tool-status {
     width: 100%;
+    max-width: 120;
     height: 1;
-
-    margin: 0;
-    padding-left: 2;
+    padding-left: 1;
 }
 
+.live-tool-status:hover {
+    background: #0d1120;
+}
 
-/* ─────────────────────────────────────
-   COMPOSER
-   ───────────────────────────────────── */
+.turn-summary {
+    width: 100%;
+    max-width: 120;
+    height: auto;
+    padding-left: 1;
+    margin-bottom: 1;
+}
+
+.turn-summary:hover {
+    background: #0d1120;
+}
+
+/* ── Error card ───────────────────────────────────────────────────── */
+
+.error-card {
+    width: 100%;
+    max-width: 120;
+    height: auto;
+    border: round #5b2733;
+    background: #120d13;
+    padding: 0 1;
+    margin: 1 0;
+}
+
+.err-title {
+    width: 100%;
+    height: 1;
+}
+
+.err-msg {
+    width: 100%;
+    height: auto;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+.err-actions {
+    width: 100%;
+    height: 1;
+}
+
+#err-retry {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+}
+
+#err-retry:hover {
+    background: #2a1420;
+}
+
+#err-details {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    margin-left: 1;
+}
+
+#err-details:hover {
+    background: #191019;
+}
+
+.err-detail {
+    display: none;
+    width: 100%;
+    height: auto;
+    color: #c98a97;
+    padding: 1 1 0 1;
+}
+
+.err-detail.shown {
+    display: block;
+}
+
+.msg-system {
+    width: 100%;
+    max-width: 120;
+    height: auto;
+    padding-left: 1;
+    color: #4b5163;
+    text-style: italic;
+}
+
+.empty-state {
+    width: 100%;
+    max-width: 120;
+    height: auto;
+    text-align: center;
+    margin-top: 3;
+    color: #565d73;
+}
+
+/* ── Composer ─────────────────────────────────────────────────────── */
 
 Composer {
     width: 100%;
+    max-width: 132;
     height: auto;
-
     padding: 0 2 1 2;
-
-    background: #0b0d12;
+    background: #090b12;
 }
 
 #prompt {
     width: 100%;
     height: 3;
-
     padding: 0 1;
-
-    background: #11141b;
-
-    border: round #343946;
-
-    color: #e5e7eb;
+    background: #0f1322;
+    border: round #2a3148;
+    color: #e7eaf3;
 }
 
 #prompt:focus {
     border: round #8b5cf6;
+    background: #12162b;
+}
+
+#composer.busy #prompt {
+    border: round #2e3450;
+    background: #0e111d;
+}
+
+#composer.celebrate #prompt {
+    border: round #2f9e74;
+    background: #0e1713;
+}
+
+#composer-statusline {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
 }
 
 #composer-hints {
+    width: 1fr;
+    height: 1;
+    color: #565d73;
+}
+
+#composer-pwd {
+    width: auto;
+    height: 1;
+    color: #3a4157;
+}
+
+/* ── Command palette (ctrl+p) — small, floating, centered, static ─── */
+
+CommandPaletteScreen {
+    align: center middle;
+    background: #05060a 78%;         /* dim scrim — click it to close */
+}
+
+#palette {
+    width: 68;
+    max-width: 92%;                  /* small terminals: still centered */
+    height: auto;
+    max-height: 30;
+    background: #0d1017;
+    border: round #2a3148;
+    padding: 0 1 1 1;
+    /* No opacity, no transition — instant open/close, zero freeze risk. */
+}
+
+#palette-head {
     width: 100%;
     height: 1;
-
     padding: 0 1;
+    background: #10141f;
+    border-bottom: solid #1a2036;
+}
 
-    color: #555b69;
+#palette-title {
+    width: 1fr;
+    height: 1;
+    color: #e2e6f2;
+    text-style: bold;
+}
+
+#palette-esc {
+    width: auto;
+    height: 1;
+}
+
+#palette-close {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    margin-left: 1;
+    color: #aab2c7;
+}
+
+#palette-close:hover {
+    background: #2a1420;
+    color: #fda4af;
+}
+
+#palette-search {
+    width: 100%;
+    height: 3;
+    margin-top: 1;
+    padding: 0 1;
+    background: #0f1322;
+    border: round #2a3148;
+    color: #e7eaf3;
+}
+
+#palette-search:focus {
+    border: round #8b5cf6;
+    background: #12162b;
+}
+
+#palette-section {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+    color: #8a91a8;
+    text-style: bold;
+}
+
+#palette-list {
+    width: 100%;
+    height: auto;
+    max-height: 18;
+    overflow-y: auto;
+}
+
+.palette-item {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    color: #dbe0ee;                  /* fallback only — rows carry inline
+                                        explicit colors (app.py) */
+}
+
+.palette-item:hover {
+    background: #131a30;
+}
+
+.palette-item.selected {
+    background: #1c2440;
+    text-style: bold;
+}
+
+#palette-foot {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+    border-top: solid #1a2036;
+    color: #6a7188;
+}
+
+/* ── Home ─────────────────────────────────────────────────────────── */
+
+HomeScreen {
+    background: #080a10;
+    layers: backdrop main;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+#home-stars {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    layer: backdrop;
+}
+
+#home-top {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    layer: main;
+}
+
+#home-top-brand {
+    width: 1fr;
+    height: 1;
+}
+
+#home-top-sound {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+}
+
+#home-top-sound:hover {
+    background: #131a30;
+}
+
+#home-center {
+    width: 100%;
+    height: 1fr;
+    align: center middle;
+    layer: main;
+    overflow-y: auto;
+}
+
+#hero {
+    width: 100%;
+    max-width: 74;
+    height: auto;
+    padding: 0;
+}
+
+#home-sparkles {
+    width: 100%;
+    height: 1;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#home-logo {
+    width: 100%;
+    height: auto;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#home-wave {
+    width: 100%;
+    height: 1;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#home-sub {
+    width: 100%;
+    height: 1;
+    text-align: center;
+}
+
+#home-tagline {
+    width: 100%;
+    height: 1;
+    text-align: center;
+    margin-top: 1;
+}
+
+#home-status {
+    width: 100%;
+    height: 1;
+    text-align: center;
+    margin-top: 1;
+}
+
+#home-meta {
+    width: 100%;
+    height: 1;
+    text-align: center;
+    color: #565d73;
+    margin-top: 1;
+}
+
+#home-prompt {
+    width: 100%;
+    height: 3;
+    margin-top: 2;
+    padding: 0 1;
+    background: #0f1322;
+    border: round #2a3148;
+    color: #e7eaf3;
+}
+
+#home-prompt:focus {
+    border: round #8b5cf6;
+    background: #12162b;
+}
+
+#home-hints {
+    width: 100%;
+    height: 1;
+    text-align: center;
+    color: #565d73;
+    margin-top: 1;
+}
+
+#home-bottom-wave {
+    width: 100%;
+    height: 1;
+    padding: 0;
+    layer: main;
+}
+
+.hidden-until {
+    visibility: hidden;
 }
