@@ -1,14 +1,14 @@
 """The composer: prompt input, paste handling, history, and shortcuts.
 
-Ctrl+H:
-    Works when the terminal reports a distinct Ctrl+H key event.
+ctrl+n:
+    Works when the terminal reports a distinct ctrl+n key event.
 
 Ctrl+N:
-    Reliable fallback for terminals that translate Ctrl+H into Backspace.
+    Reliable fallback for terminals that translate ctrl+n into Backspace.
 
 Important:
-    Never treat ``backspace`` itself as Ctrl+H. In many terminals,
-    Ctrl+H and Backspace use the same control code.
+    Never treat ``backspace`` itself as ctrl+n. In many terminals,
+    ctrl+n and Backspace use the same control code.
 """
 
 from __future__ import annotations
@@ -33,22 +33,6 @@ class PromptInput(Input):
         self._sanitizing = False
         self._prev_len = 0
 
-    # ─────────────────────────────────────────────
-    # Keyboard
-    # ─────────────────────────────────────────────
-
-    def on_key(self, event: events.Key) -> None:
-        """Handle shortcuts while the input is focused."""
-
-        # Ctrl+H works on terminals that expose a distinct key event.
-        #
-        # Ctrl+N is the reliable fallback because some terminals send
-        # Ctrl+H as the exact same byte used by Backspace.
-        if event.key in ("ctrl+h", "ctrl+n"):
-            event.stop()
-            event.prevent_default()
-
-            jimmy(self).action_home()
 
     # ─────────────────────────────────────────────
     # Input sanitization
@@ -114,7 +98,7 @@ class Composer(Vertical):
     """Prompt, compact shortcuts, and ↑/↓ command history."""
 
     HINTS_IDLE: ClassVar[str] = (
-        f"{keycap('⌂ Ctrl+H', 'home')}   "
+        f"{keycap('⌂ ctrl+n', 'home')}   "
         f"{keycap('✦ Ctrl+P', 'commands')}   "
         f"{keycap('▣ Ctrl+C', 'copy')}   "
         f"{keycap('⏻ Ctrl+Q', 'quit')}"
