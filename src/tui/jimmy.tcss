@@ -428,22 +428,27 @@ CommandPaletteScreen {
 
 HomeScreen {
     background: #080a10;
-    layers: backdrop main;
+    layers: main fx;
     overflow-x: hidden;
     overflow-y: auto;
 }
 
-#home-stars {
+#home-scan {
     position: absolute;
     width: 100%;
-    height: 100%;
-    layer: backdrop;
+    height: 1;
+    layer: fx;
+    visibility: hidden;
+}
+
+#home-scan.on {
+    visibility: visible;
 }
 
 #home-top {
     width: 100%;
     height: 1;
-    padding: 0 1;
+    padding: 0 2;
     layer: main;
 }
 
@@ -472,7 +477,7 @@ HomeScreen {
 
 #hero {
     width: 100%;
-    max-width: 78;
+    max-width: 64;      
 }
 
 #home-sparkles {
@@ -509,21 +514,6 @@ HomeScreen {
     margin-top: 1;
 }
 
-#home-status {
-    width: 100%;
-    height: 1;
-    text-align: center;
-    margin-top: 1;
-}
-
-#home-meta {
-    width: 100%;
-    height: 1;
-    text-align: center;
-    color: #565d73;
-    margin-top: 1;
-}
-
 #home-prompt {
     width: 100%;
     height: 3;
@@ -539,12 +529,50 @@ HomeScreen {
     background: #12162b;
 }
 
+#home-chips {
+    width: 100%;
+    height: 1;
+    align: center middle;
+    margin-top: 1;
+}
+
+.chip {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    margin: 0 1;
+    color: #7c86ad;
+}
+
+.chip:hover {
+    background: #131a30;
+    color: #e7eaf3;
+    text-style: bold;
+}
+
 #home-hints {
     width: 100%;
     height: 1;
     text-align: center;
     color: #565d73;
     margin-top: 1;
+}
+
+#home-statusbar {
+    width: 100%;
+    height: 1;
+    padding: 0 2;
+    layer: main;
+}
+
+#home-pwd {
+    width: 1fr;
+    height: 1;
+}
+
+#home-ver {
+    width: auto;
+    height: 1;
 }
 
 #home-bottom-wave {
@@ -557,4 +585,3 @@ HomeScreen {
 .hidden-until {
     visibility: hidden;
 }
-
