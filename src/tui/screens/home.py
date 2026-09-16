@@ -106,14 +106,6 @@ class HomeScreen(Screen):
             self._anim_ticker.stop()
             self._anim_ticker = None
 
-    # ctrl+h / ctrl+n toggle back to the workspace (intercepted at screen
-    # level; PromptInput already handles them when its input is focused —
-    # this covers focus anywhere else on home).
-    def on_key(self, event: events.Key) -> None:
-        if event.key in ("ctrl+h", "ctrl+n"):
-            event.stop()
-            event.prevent_default()
-            jimmy(self).action_home()
 
     def _paint_brand(self) -> None:
         if self._brand is not None:
