@@ -78,7 +78,7 @@ class TopBar(Horizontal):
 
         if self._left is not None:
             self._left.update(self._brand_text())
-            self._left.tooltip = f"{self.cwd_path} · click for home (ctrl+h)"
+            self._left.tooltip = f"{self.cwd_path} · click for home (ctrl+n)"
         if self._tokens_chip is not None:
             self._tokens_chip.tooltip = "session tokens (input + output)"
         if self._state_chip is not None:
