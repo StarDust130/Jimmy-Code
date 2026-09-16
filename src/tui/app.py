@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from typing import Callable, ClassVar
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -37,19 +38,21 @@ from .widgets.top_bar import TopBar
 class JimmyApp(App[None]):
     """Jimmy Code — keyboard:
 
-    enter send · esc interrupt · ctrl+n home (ctrl+n on terminals
-    that support it) · ctrl+p palette · ctrl+c copy last ·
-    ctrl+a copy all · ctrl+l clear line · ctrl+s sound · ctrl+q quit
+    enter send · esc interrupt · ctrl+n home (one-way) · ctrl+p palette ·
+    ctrl+c copy last · ctrl+a copy all · ctrl+l clear line ·
+    ctrl+s sound · ctrl+q quit
     """
 
     TITLE = "jimmy"
     CSS_PATH = "jimmy.tcss"
 
-    COMMANDS = set()  # built-in palette disabled; ctrl+p opens ours
+    # RUF012: mutable class attributes must be annotated ClassVar.
+    COMMANDS: ClassVar[set] = set()  # built-in palette disabled; ctrl+p opens ours
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         ("ctrl+q", "quit", "Quit"),
         # Home — one-way: only chat → home. Never toggles back.
+        # priority=True makes this fire even while an Input is focused.
         Binding("ctrl+n", "home", "Home", priority=True),
         # Sound / editor
         ("ctrl+s", "toggle_sound", "Sound"),
@@ -167,8 +170,13 @@ class JimmyApp(App[None]):
             return
         self._focus_top_input()
 
-    def close_palette(self) -> None:
-        """Close the palette — canonical pop via call_next + focus restore."""
+    def close_palette(self, after: Callable[[], None] | None = None) -> None:
+        """Close the palette — canonical pop via call_next + focus restore.
+
+        ``after`` runs ONLY after the palette is actually gone, so
+        navigation commands (e.g. Go home) can never bury the palette by
+        pushing a screen on top of it before the pop runs.
+        """
         if self._palette_closing or not self._palette_open():
             return
         self._palette_closing = True
@@ -181,6 +189,8 @@ class JimmyApp(App[None]):
                 pass
             self._palette_closing = False
             self.call_after_refresh(self._focus_top_input)
+            if after is not None:
+                after()
 
         self.call_next(_pop)
 
@@ -450,6 +460,11 @@ class JimmyApp(App[None]):
         return True
 
     def action_home(self) -> None:
+        # While the palette is open, ctrl+n must NOT push Home on top of
+        # the modal (it would bury it).  Close the palette instead.
+        if self._palette_open():
+            self.close_palette()
+            return
         if self._home_is_open():
             return  # one-way: ctrl+n never closes home (esc or ↵ does)
         self.push_screen(HomeScreen(animated=False))
@@ -480,6 +495,11 @@ class JimmyApp(App[None]):
         self.notify(label, timeout=1.5)
 
     def action_copy_last(self) -> None:
+        # On the home screen ctrl+c is not a copy: point the user at the
+        # way out instead.  In chat it copies the last prompt + reply.
+        if self._home_is_open():
+            self.notify("⏻ Ctrl+Q to quit", timeout=1.6)
+            return
         self._copy_entries(
             self._exchange_text("last"),
             "📋 Copied last",
