@@ -53,7 +53,7 @@ class CommandPaletteScreen(ModalScreen):
     (↑↓ applies live, each dot shows that theme's own color).
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("escape", "palette_escape_action", "Close", priority=True),
     ]
 
@@ -61,7 +61,7 @@ class CommandPaletteScreen(ModalScreen):
         ("↵", "send · begin"),
         ("↑ ↓", "prompt history"),
         ("esc", "interrupt jimmy / go back in menus"),
-        ("ctrl+n", "home (toggle — ctrl+n on kitty terminals)"),
+        ("ctrl+n", "home — esc exits home"),
         ("ctrl+p", "command menu (toggle)"),
         ("ctrl+c", "copy last prompt + reply"),
         ("ctrl+a", "copy whole chat"),
@@ -124,7 +124,7 @@ class CommandPaletteScreen(ModalScreen):
         return [
             ("⌨", "Keyboard Shortcuts", self._show_shortcuts),
             ("🎨", f"Theme · {THEME['name']}", self._show_themes),
-            ("⌂", "Go home", app.action_home),
+            ("⌂", "Go home", self._go_home),
             ("⎘", "Copy last prompt + reply", app.action_copy_last),
             ("⎘", "Copy whole chat", app.action_copy_all),
             ("♪", "Sound play / stop", app.action_toggle_sound),
@@ -382,3 +382,16 @@ class CommandPaletteScreen(ModalScreen):
         """The single close path — delegates to the app (canonical pop +
         explicit focus restore).  No timers, no dismiss(), no races."""
         jimmy(self).close_palette()
+
+    def _go_home(self) -> None:
+        """Close the palette FIRST, then navigate home (order-safe)."""
+        app = jimmy(self)
+
+        def _navigate() -> None:
+            app.action_home()
+
+        try:
+            app.close_palette(after=_navigate)  # app.py with `after` param
+        except TypeError:
+            app.close_palette()  # older app.py fallback
+            app.call_later(_navigate)
