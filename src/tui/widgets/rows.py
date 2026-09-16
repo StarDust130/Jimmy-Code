@@ -5,12 +5,19 @@ from __future__ import annotations
 import time
 from typing import Any, ClassVar
 
+from rich.markup import escape
 from rich.text import Text
-from textual import errors
+from textual import errors, events
 from textual.timer import Timer
 from textual.widgets import Static
 
-from ..kit.helpers import SPINNER_FRAMES, classify_error, compact_count, format_duration, jimmy
+from ..kit.helpers import (
+    SPINNER_FRAMES,
+    classify_error,
+    compact_count,
+    format_duration,
+    jimmy,
+)
 from ..kit.theme import THEME
 
 
@@ -22,13 +29,21 @@ class AnimatedRow(Static):
        override can never raise AttributeError.
     2. LATE TIMER SAFETY — ``_safe_update`` stops the animation instead
        of crashing if the widget left the layout (chat cleared mid-tick).
+    3. LATE MOUNT SAFETY — ``on_mount`` can run AFTER ``finish()``/
+       ``fail()`` (mounting is asynchronous).  ``_finished`` makes the
+       guard bidirectional: a finished row can never start (or resume)
+       its animation — previously a finished tool row could keep
+       spinning forever if its on_mount landed late.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._anim_timer: Timer | None = None
+        self._finished = False
 
     def _start_anim(self, interval: float) -> None:
+        if self._finished:
+            return  # row already resolved — never animate again
         if self._anim_timer is None:
             self._anim_timer = self.set_interval(interval, self._anim_tick)
 
@@ -38,6 +53,9 @@ class AnimatedRow(Static):
             self._anim_timer = None
 
     def _anim_tick(self) -> None:
+        if self._finished:
+            self._stop_anim()
+            return
         self._redraw()
 
     def _redraw(self) -> None:
@@ -106,13 +124,9 @@ class LiveToolStatus(AnimatedRow):
         self._start_anim(0.1)
 
     def _label(self) -> str:
-        from rich.markup import escape
-
         return escape(f"{self.icon} {self.action}")
 
     def _detail_part(self) -> str:
-        from rich.markup import escape
-
         if not self.detail:
             return ""
         return f"  [#7b8296]{escape(self.detail)}[/]"
@@ -129,6 +143,7 @@ class LiveToolStatus(AnimatedRow):
         )
 
     def finish(self, latency: float) -> None:
+        self._finished = True  # before stopping — also blocks late on_mount
         self._stop_anim()
         self._safe_update(
             Text.from_markup(
@@ -138,12 +153,11 @@ class LiveToolStatus(AnimatedRow):
         )
 
     def fail(self, error: BaseException) -> None:
+        self._finished = True
         self._stop_anim()
         lines = str(error).strip().splitlines()
         reason = lines[0].strip() if lines and lines[0].strip() else type(error).__name__
         icon = classify_error(error)[0]
-        from rich.markup import escape
-
         self._safe_update(
             Text.from_markup(
                 f"[#fb7185]✕[/] [#fda4af]{self._label()}[/]{self._detail_part()}  "
@@ -155,12 +169,17 @@ class LiveToolStatus(AnimatedRow):
 class TurnSummary(AnimatedRow):
     """The ONE per-turn digest — the only place token totals appear.
 
-        ✦ 1.3s · 667 in · 12 out · 2 tools · 3 rounds  ⧉
+        ✦ 1.3s · 667 in · 12 out · 2 tools · 3 rounds  ⧉ copy
 
     Clicking the row copies exactly that exchange (prompt + reply).
     """
 
-    SPARK_COLORS: ClassVar[tuple[str, ...]] = ("#c084fc", "#f472b6", "#22d3ee", "#93c5fd")
+    SPARK_COLORS: ClassVar[tuple[str, ...]] = (
+        "#c084fc",
+        "#f472b6",
+        "#22d3ee",
+        "#93c5fd",
+    )
 
     def __init__(
         self, *, duration: float, input_tokens: int, output_tokens: int, tools: int, steps: int
@@ -183,6 +202,7 @@ class TurnSummary(AnimatedRow):
         if self._frame >= 6:
             self._stop_anim()
             self._frame = -1
+            self._finished = True  # sparkle done — never restart it
         self._redraw()
 
     def _redraw(self) -> None:
@@ -206,9 +226,6 @@ class TurnSummary(AnimatedRow):
         divider = "  [#2a3148]·[/]  "
         self._safe_update(Text.from_markup(f"{spark}{divider.join(parts)}  [#3a4157]⧉ copy[/]"))
 
-    def on_click(self, event: Any) -> None:
-        from textual import events
-
-        if isinstance(event, events.Click):
-            event.stop()
+    def on_click(self, event: events.Click) -> None:
+        event.stop()
         jimmy(self).action_copy_last()
