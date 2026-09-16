@@ -61,7 +61,7 @@ class CommandPaletteScreen(ModalScreen):
         ("↵", "send · begin"),
         ("↑ ↓", "prompt history"),
         ("esc", "interrupt jimmy / go back in menus"),
-        ("ctrl+h", "home (toggle — ctrl+h on kitty terminals)"),
+        ("ctrl+n", "home (toggle — ctrl+n on kitty terminals)"),
         ("ctrl+p", "command menu (toggle)"),
         ("ctrl+c", "copy last prompt + reply"),
         ("ctrl+a", "copy whole chat"),
