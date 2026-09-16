@@ -99,7 +99,7 @@ class Composer(Vertical):
 
     HINTS_IDLE: ClassVar[str] = (
         f"{keycap('⌂ ctrl+N', 'home')}   "
-        f"{keycap('✦ Ctrl+P', 'commands')}   "
+        f"{keycap('✦ Ctrl+P', 'palette')}   "
         f"{keycap('▣ Ctrl+C', 'copy')}   "
         f"{keycap('⏻ Ctrl+Q', 'quit')}"
     )
