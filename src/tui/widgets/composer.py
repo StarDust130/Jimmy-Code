@@ -1,10 +1,10 @@
 """The composer: prompt input, paste handling, history, and shortcuts.
 
-ctrl+n:
-    Works when the terminal reports a distinct ctrl+n key event.
+ctrl+N:
+    Works when the terminal reports a distinct ctrl+N key event.
 
 Ctrl+N:
-    Reliable fallback for terminals that translate ctrl+n into Backspace.
+    Reliable fallback for terminals that translate ctrl+N   into Backspace.
 
 Important:
     Never treat ``backspace`` itself as ctrl+n. In many terminals,
@@ -98,7 +98,7 @@ class Composer(Vertical):
     """Prompt, compact shortcuts, and ↑/↓ command history."""
 
     HINTS_IDLE: ClassVar[str] = (
-        f"{keycap('⌂ ctrl+n', 'home')}   "
+        f"{keycap('⌂ ctrl+N', 'home')}   "
         f"{keycap('✦ Ctrl+P', 'commands')}   "
         f"{keycap('▣ Ctrl+C', 'copy')}   "
         f"{keycap('⏻ Ctrl+Q', 'quit')}"
