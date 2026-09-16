@@ -37,7 +37,7 @@ from .widgets.top_bar import TopBar
 class JimmyApp(App[None]):
     """Jimmy Code — keyboard:
 
-    enter send · esc interrupt · ctrl+h home (ctrl+h on terminals
+    enter send · esc interrupt · ctrl+n home (ctrl+n on terminals
     that support it) · ctrl+p palette · ctrl+c copy last ·
     ctrl+a copy all · ctrl+l clear line · ctrl+s sound · ctrl+q quit
     """
@@ -49,8 +49,8 @@ class JimmyApp(App[None]):
 
     BINDINGS = [
         ("ctrl+q", "quit", "Quit"),
-        # Home
-        ("ctrl+h", "home", "Home"),
+        # Home — one-way: only chat → home. Never toggles back.
+        Binding("ctrl+n", "home", "Home", priority=True),
         # Sound / editor
         ("ctrl+s", "toggle_sound", "Sound"),
         ("ctrl+l", "clear_input", "Clear line"),
@@ -451,9 +451,7 @@ class JimmyApp(App[None]):
 
     def action_home(self) -> None:
         if self._home_is_open():
-            self.pop_screen()
-            self.call_after_refresh(self._focus_top_input)
-            return
+            return  # one-way: ctrl+n never closes home (esc or ↵ does)
         self.push_screen(HomeScreen(animated=False))
 
     def _exchange_text(self, which: str = "last") -> list[tuple[str, str]]:
