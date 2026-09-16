@@ -113,6 +113,6 @@ def sound_chip_text(playing: bool) -> Text:
     """Render the compact sound status chip."""
 
     if playing:
-        return Text.from_markup("[#8A91A8]🔇[/] [#8A91A8]muted[/]")
-
-    return Text.from_markup("[#67E8F9]🔊[/] [#8A91A8]sound[/]")
+        return Text.from_markup("[#67E8F9]🔊[/] [#8A91A8]sound[/]")
+    
+    return Text.from_markup("[#8A91A8]🔇[/] [#8A91A8]muted[/]")
