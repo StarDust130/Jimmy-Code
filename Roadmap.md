@@ -340,17 +340,19 @@ review/recovery
    ├─ model name
    └─ cleaner streaming
 
-2. 🤖 Multi-model support
+2. 🧠 Better context 🌟
+   ├─ only relevant context
+   ├─ token budget
+   ├─ compact old results when needed
+   └─ never dump everything to LLM   
+
+3. 🤖 Multi-model support
    ├─ Gemini = default
    ├─ user adds any LiteLLM model + API key
    ├─ select active model in TUI
    └─ save locally
 
-3. 🧠 Better context 🌟
-   ├─ only relevant context
-   ├─ token budget
-   ├─ compact old results when needed
-   └─ never dump everything to LLM
+
 
 4. 🔐 Permissions
 5. 💾 Sessions
