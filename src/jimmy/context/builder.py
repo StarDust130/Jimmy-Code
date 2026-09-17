@@ -2,6 +2,8 @@
 
 V1 deliberately sends only stable instructions plus the current user message.
 The smarter state-aware context system comes later.
+
+Need to fix make it better
 """
 
 from collections.abc import Sequence
