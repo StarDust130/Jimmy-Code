@@ -1,3 +1,6 @@
-from .builder import ContextBuilder
+# src/jimmy/context/__init__.py
+"""🧠 Jimmy's token-efficient context building."""
 
-__all__ = ["ContextBuilder"]
+from .builder import SYSTEM_PROMPT, TOOL_STUB, ContextBuilder
+
+__all__ = ["SYSTEM_PROMPT", "TOOL_STUB", "ContextBuilder"]
