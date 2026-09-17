@@ -1,6 +1,6 @@
-from .loop import Agent, AgentEvent
+# src/jimmy/agent/__init__.py
+"""🤖 Jimmy's agent loop."""
 
-__all__ = [
-    "Agent",
-    "AgentEvent",
-]
+from .loop import Agent, AgentEvent, AgentEventType
+
+__all__ = ["Agent", "AgentEvent", "AgentEventType"]
