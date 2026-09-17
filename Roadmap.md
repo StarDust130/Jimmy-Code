@@ -354,12 +354,12 @@ review/recovery
 
 
 
-4. 🔐 Permissions
-5. 💾 Sessions
-6. 📊 Better observability
-7. 🧪 Evaluation suite
-8. 🧠 Planning capability
-9. 🔄 Recovery / fallback
-10. 🧩 Model switching / fallback
-11. 🧪 Evaluation suite
-12. 🚀 Deploy it.
+ 🔐 Permissions
+ 💾 Sessions
+ 📊 Better observability
+ 🧪 Evaluation suite
+ 🧠 Planning capability
+ 🔄 Recovery / fallback
+🧩 Model switching / fallback
+ 🧪 Evaluation suite
+ 🚀 Deploy it.
