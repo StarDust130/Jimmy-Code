@@ -29,7 +29,7 @@ async def open_palette(app, pilot) -> CommandPaletteScreen:
 
 
 @tui_test
-async def test_palette_lists_exactly_the_five_commands(app) -> None:
+async def test_palette_lists_exactly_the_six_commands(app) -> None:
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
         await leave_home(app, pilot)
@@ -40,13 +40,13 @@ async def test_palette_lists_exactly_the_five_commands(app) -> None:
         assert any(label.startswith("Theme") for label in labels)
         assert any(label.startswith("Change model") for label in labels)
         assert any(label.startswith("Permissions") for label in labels)
+        assert any(label.startswith("Sessions") for label in labels)
         assert labels[-1] == "Close menu"
-        assert len(labels) == 5
+        assert len(labels) == 6
 
         # "Go home" was removed by design — navigation is ctrl+n.
         assert "Go home" not in labels
-
-
+        
 @tui_test
 async def test_palette_change_model_opens_wizard(app) -> None:
     async with app.run_test(size=(100, 30)) as pilot:
