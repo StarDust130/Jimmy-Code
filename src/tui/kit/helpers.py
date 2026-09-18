@@ -143,15 +143,113 @@ def _shell_icon(command: str) -> tuple[str, str]:
     return "▶️", "Running"
 
 
+def _apply_patch_display(arguments: dict[str, Any]) -> tuple[str, str, str]:
+    """🩹 apply_patch → target file + hunk count when we can tell.
+
+    Handles the shapes the tool may pass: a list of hunks/edits, a raw
+    unified diff string (counted by @@ markers), or just a target path.
+    """
+    target = ""
+    for key in ("path", "file_path", "filepath", "filename", "file", "target"):
+        value = arguments.get(key)
+        if value:
+            target = str(value).strip()
+            break
+
+    count: int | None = None
+    hunks = arguments.get("hunks") or arguments.get("edits")
+    if isinstance(hunks, (list, tuple)):
+        count = len(hunks)
+    if count is None:
+        patch = arguments.get("patch") or arguments.get("diff")
+        if isinstance(patch, str):
+            count = sum(1 for line in patch.splitlines() if line.startswith("@@"))
+
+    detail = target
+    if count:
+        suffix = "hunk" if count == 1 else "hunks"
+        detail = f"{target} · {count} {suffix}" if target else f"{count} {suffix}"
+    return "🩹", "Patching", clip(detail or "patch")
+
+
+def _run_tests_display(arguments: dict[str, Any]) -> tuple[str, str, str]:
+    """🧪 run_tests → WHAT is under test (path / node id / pattern)."""
+    detail = ""
+    for key in (
+        "test_path",
+        "paths",
+        "path",
+        "node_id",
+        "pattern",
+        "keyword",
+        "target",
+        "args",
+    ):
+        value = arguments.get(key)
+        if value is None:
+            continue
+        if isinstance(value, (list, tuple)):
+            detail = " ".join(str(v) for v in value if str(v).strip())
+        else:
+            detail = str(value).strip()
+        if detail:
+            break
+    return "🧪", "Testing", clip(detail)
+
+
+def _git_display(arguments: dict[str, Any]) -> tuple[str, str, str]:
+    """🌿 dedicated GitTool — the SAME subcommand-aware icon language
+    as shell git, by reconstructing a 'git …' command string and reusing
+    :func:`_shell_icon`.
+
+    Handles the shapes the tool may pass:  {"command": "status"},
+    {"args": ["commit", "-m", "msg"]},  {"command": "git push"},  {}.
+    """
+    command = (
+        arguments.get("command") or arguments.get("subcommand") or arguments.get("operation") or ""
+    )
+    cmd = str(command).strip()
+
+    if cmd.lower().startswith("git"):
+        # already a full command — reuse verbatim
+        joined = cmd
+    else:
+        parts = ["git"] + ([cmd] if cmd else [])
+        args = arguments.get("args")
+        if isinstance(args, (list, tuple)):
+            parts.extend(str(a) for a in args if str(a).strip())
+        elif isinstance(args, str) and args.strip():
+            parts.append(args.strip())
+        for key in ("paths", "files", "path", "file"):
+            value = arguments.get(key)
+            if isinstance(value, (list, tuple)):
+                parts.extend(str(v) for v in value if str(v).strip())
+            elif value:
+                parts.append(str(value).strip())
+        message = str(arguments.get("message") or "").strip()
+        if message:
+            parts.extend(["-m", message])
+        joined = " ".join(parts)
+
+    icon, action = _shell_icon(joined)
+    return icon, action, clip(joined)
+
+
 def tool_display(tool_name: str, arguments: dict[str, Any]) -> tuple[str, str, str]:
     """Map a tool call to (icon, action, detail) for readable rows.
 
     Shell rows are COMMAND-AWARE: `git status` -> 🌿, `pytest` -> 🧪,
     `pip install` -> 📦, so a wall of shell calls still reads at a glance.
+    The dedicated tools get the same treatment:
 
-    e.g.  search_files {"query": "jwt"}  -> ("🔍", "Searching", '"jwt"')
-          read_files   {"paths": [..]}   -> ("📖", "Reading", "a.md, b.py")
-          shell {"command": "git status"} -> ("🌿", "Checking git", "git status")
+    e.g.  search_files {"query": "jwt"}           -> ("🔍", "Searching", '"jwt"')
+          read_files   {"paths": [..]}            -> ("📖", "Reading", "a.md, b.py")
+          shell        {"command": "git status"}  -> ("🌿", "Checking git", "git status")
+          apply_patch  {"path": "x.py", "hunks": [..]} -> ("🩹", "Patching", "x.py · 3 hunks")
+          run_tests    {"path": "tests/tool/"}    -> ("🧪", "Testing", "tests/tool/")
+          git          {"command": "commit", ...} -> ("📦", "Committing", "git commit -m …")
+          list_files   {"path": "src/"}           -> ("📂", "Listing", "src/")
+          write_file   {"path": "new.py"}         -> ("📝", "Writing", "new.py")
     """
     mapping = {
         "read_file": ("📖", "Reading"),
@@ -177,6 +275,18 @@ def tool_display(tool_name: str, arguments: dict[str, Any]) -> tuple[str, str, s
                 break
         icon, action = _shell_icon(command)
         return icon, action, clip(command)
+
+    # 🩹 multi-hunk patch → file + hunk count
+    if tool_name in ("apply_patch", "apply_patch_tool"):
+        return _apply_patch_display(arguments)
+
+    # 🧪 structured test run → target under test
+    if tool_name in ("run_tests", "run_tests_tool", "test_runner"):
+        return _run_tests_display(arguments)
+
+    # 🌿 dedicated git tool → same icon language as shell git
+    if tool_name in ("git", "git_tool"):
+        return _git_display(arguments)
 
     icon, action = mapping.get(tool_name, ("🛠️", "Using"))
 
