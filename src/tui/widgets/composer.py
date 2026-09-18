@@ -501,7 +501,7 @@ class Composer(Vertical):
             markup = self.HINTS_BUSY
 
         else:
-            self._prompt_input.placeholder = "Give Jimmy a task…  ( / for commands )"
+            self._prompt_input.placeholder = "Give Jimmy a task… "
             self.remove_class("busy")
 
             markup = self.HINTS_IDLE
