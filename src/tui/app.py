@@ -10,7 +10,6 @@ Agent behavior (LiteLLM streaming, tools, context, tokens, events)
 lives in ``jimmy.agent`` / ``jimmy.llm``.  Notable agent contract:
     * ``max_steps`` is NOT an error — the agent saves progress and
       emits a ``max_steps`` event; the TUI shows a ▶ Continue card.
-    * tool events carry ``step`` → the timeline groups batches.
     * ``llm_done`` carries ``usage_ok`` → TurnSummary can report gaps.
 """
 
@@ -49,12 +48,7 @@ from .widgets.messages import (
     SystemNote,
     UserMessage,
 )
-from .widgets.rows import (
-    LiveToolStatus,
-    StepHeader,
-    ThinkingRow,
-    TurnSummary,
-)
+from .widgets.rows import LiveToolStatus, ThinkingRow, TurnSummary
 from .widgets.top_bar import TopBar
 
 
@@ -87,8 +81,8 @@ class JimmyApp(App[None]):
     """Jimmy Code — keyboard:
 
     enter send · esc interrupt · ctrl+n home (one-way) · ctrl+p palette ·
-    ctrl+m models · ctrl+c copy last · ctrl+a copy all · ctrl+l clear line ·
-    ctrl+s sound · ctrl+q quit · / in the prompt = slash menu
+    ctrl+m models · ctrl+c copy last (with tool calls) · ctrl+a copy all ·
+    ctrl+l clear line · ctrl+s sound · ctrl+q quit · / = slash menu
     """
 
     TITLE = "jimmy"
@@ -144,11 +138,6 @@ class JimmyApp(App[None]):
         self._thinking: ThinkingRow | None = None
         self._tool_rows: dict[str, LiveToolStatus] = {}
 
-        # 🧭 tool-timeline grouping: one StepHeader per step.
-        self._step_header: StepHeader | None = None
-        self._last_step_header: StepHeader | None = None
-        self._max_steps = 25
-
         # Per-turn aggregates + session totals for the navbar Σ chip.
         self._turn_start = 0.0
         self._turn_in = 0
@@ -159,7 +148,9 @@ class JimmyApp(App[None]):
         self._total_in = 0
         self._total_out = 0
 
-        # Transcript of ONLY user/assistant text — what ctrl+c copies.
+        # 📋 Transcript of the WHOLE exchange in chronological order:
+        # ("user", …) · ("tool", …) · ("assistant", …) — what ctrl+c /
+        # ctrl+a copy, so tool calls are included.
         self._transcript: list[tuple[str, str]] = []
 
         # Retry support.
@@ -191,11 +182,6 @@ class JimmyApp(App[None]):
         yield Composer()
 
     def on_mount(self) -> None:
-        try:
-            self._max_steps = int(getattr(self.agent, "max_steps", 25))
-        except Exception:
-            self._max_steps = 25
-
         self.composer.focus_input()
         if self.initial_prompt:
             prompt = self.initial_prompt
@@ -399,10 +385,6 @@ class JimmyApp(App[None]):
         self._error_shown = False
         self._last_prompt = text
 
-        # 🧭 new turn → fresh step grouping.
-        self._step_header = None
-        self._last_step_header = None
-
         self._turn_start = time.monotonic()
         self._turn_in = self._turn_out = self._turn_tools = self._turn_steps = 0
         self._turn_gaps = 0
@@ -427,17 +409,6 @@ class JimmyApp(App[None]):
         if row is not None:
             row.remove()
 
-    # 🧭 step headers: one per step, older ones dim out
-    def _mount_step_header(self, step: int) -> None:
-        if self._step_header is not None and self._step_header.step == step:
-            return  # same step — reuse the header
-        if self._last_step_header is not None:
-            self._last_step_header.make_old()
-        header = StepHeader(step)
-        self._step_header = header
-        self._last_step_header = header
-        self.chat.append(header)
-
     async def _handle_event(self, event: AgentEvent) -> None:
         data = event.data
 
@@ -449,11 +420,7 @@ class JimmyApp(App[None]):
 
         if event.type == "llm_start":
             self._dismiss_thinking()
-            row = ThinkingRow(
-                model=str(data["model"]),
-                step=int(data["step"]),
-                max_steps=self._max_steps,
-            )
+            row = ThinkingRow(model=str(data["model"]))
             self._thinking = row
             self.chat.append(row)
             self._turn_steps += 1
@@ -500,24 +467,20 @@ class JimmyApp(App[None]):
             arguments = data.get("arguments", {})
             if not isinstance(arguments, dict):
                 arguments = {}
-            step = int(data.get("step", 0))
             self._dismiss_thinking()
             icon, action, detail = tool_display(tool_name, arguments)
-
-            # 🧭 one quiet header per step → batches read as groups.
-            self._mount_step_header(step)
-
             row = LiveToolStatus(
                 call_id=call_id,
                 tool_name=tool_name,
                 icon=icon,
                 action=action,
                 detail=detail,
-                step=step,
             )
             self._tool_rows[call_id] = row
             self.chat.append(row)
             self._turn_tools += 1
+            # 📋 record the tool call — ctrl+c / ctrl+a include it
+            self._transcript.append(("tool", f"{icon} {action} {detail}".strip()))
             self.top_bar.set_activity(f"{icon} {action} {detail}".strip())
             return
 
@@ -534,6 +497,7 @@ class JimmyApp(App[None]):
             error = data.get("error", RuntimeError("Tool failed."))
             if row is not None:
                 row.fail(error)
+                self._transcript.append(("tool", f"✕ {row.action} {row.detail} — {error}".strip()))
             self.top_bar.set_activity(None)
             self.chat.pin()
             return
@@ -656,7 +620,10 @@ class JimmyApp(App[None]):
         if not self._last_prompt:
             self.notify("nothing to retry yet", timeout=1.5)
             return False
-        if self._transcript and self._transcript[-1][0] == "user":
+        # 🗑️ drop this exchange (user + tools + assistant) from transcript
+        while self._transcript and self._transcript[-1][0] != "user":
+            self._transcript.pop()
+        if self._transcript:
             self._transcript.pop()
         self.submit(self._last_prompt)
         return True
@@ -681,7 +648,14 @@ class JimmyApp(App[None]):
         if not entries:
             self.notify("nothing to copy yet", timeout=1.5)
             return
-        parts = [f"❯ {text}" if role == "user" else text for role, text in entries]
+        parts: list[str] = []
+        for role, text in entries:
+            if role == "user":
+                parts.append(f"❯ {text}")
+            elif role == "tool":
+                parts.append(f"▸ {text}")
+            else:
+                parts.append(text)
         try:
             result = self.copy_to_clipboard("\n\n".join(parts))
         except Exception:
