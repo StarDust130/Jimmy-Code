@@ -3,7 +3,7 @@
 Layout of the TUI package:
     kit/        helpers · theme · sound · assets · error_hints
     widgets/    rows · messages · chat_log · top_bar · composer
-    screens/    home · palette · models · permissions
+    screens/    home · palette · models · permissions · sessions
     app.py      THIS FILE — JimmyApp: bindings, agent loop, actions.
 
 Agent behavior (LiteLLM streaming, tools, context, tokens, events)
@@ -14,11 +14,17 @@ lives in ``jimmy.agent`` / ``jimmy.llm``.  Notable agent contract:
     * ``approval_request`` → the agent is SUSPENDED on the permission
       gate until the TUI resolves it (🛡️ ApprovalScreen); interrupt /
       clear fail it closed (DENY) — nothing ever runs unapproved.
+
+Sessions (🗄️): SQLite (~/.jimmy/sessions.db) is the persistent source
+of truth — every message / tool result / error is mirrored as it
+happens via SessionRecorder.  ctrl+o / /sessions opens the library;
+a session can be resumed exactly where it stopped.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from typing import Callable, ClassVar
 
@@ -41,6 +47,8 @@ from jimmy.permissions import (  # 🛡️ permission system
     PermissionMode,
     mode_label,
 )
+from jimmy.sessions import SessionRecorder, SessionStore  # 🗄️ sessions
+from jimmy.sessions.title import generate_title, heuristic_title  # 🏷️ titles
 
 from .kit.error_hints import friendly_error  # 🫱 human-readable errors
 from .kit.helpers import format_duration, jimmy, short_model, tool_display
@@ -50,6 +58,7 @@ from .screens.home import HomeScreen
 from .screens.models import ModelScreen  # 🤖 model picker screen
 from .screens.palette import CommandPaletteScreen
 from .screens.permissions import ApprovalScreen, PermissionScreen  # 🛡️ permission UI
+from .screens.sessions import SessionsScreen  # 🗄️ session library
 from .widgets.chat_log import ChatLog
 from .widgets.composer import Composer, HelpDialogScreen
 from .widgets.messages import (
@@ -92,9 +101,9 @@ class JimmyApp(App[None]):
     """Jimmy Code — keyboard:
 
     enter send · esc interrupt · ctrl+n home (one-way) · ctrl+p palette ·
-    ctrl+m models · ctrl+c copy last (with tool calls) · ctrl+a copy all ·
-    ctrl+l clear line · ctrl+s sound · ctrl+q quit · / = slash menu ·
-    /permissions = permission mode
+    ctrl+m models · ctrl+o sessions · ctrl+c copy last (with tool calls) ·
+    ctrl+a copy all · ctrl+l clear line · ctrl+s sound · ctrl+q quit ·
+    / = slash menu · /permissions · /sessions · /new
     """
 
     TITLE = "jimmy"
@@ -120,6 +129,8 @@ class JimmyApp(App[None]):
         # 🤖 Model picker — fires when no input is focused; while typing
         #    use /model (ctrl+m is Enter's byte on standard terminals).
         ("ctrl+m", "open_models", "Models"),
+        # 🗄️ Session library — browse · resume · rename · delete
+        ("ctrl+o", "sessions", "Sessions"),
     ]
 
     def __init__(
@@ -127,18 +138,17 @@ class JimmyApp(App[None]):
         *,
         provider: LLMProvider,
         initial_prompt: str | None = None,
+        session_store: SessionStore | None = None,
     ) -> None:
         super().__init__()
 
         self.provider = provider
         self.initial_prompt = initial_prompt
-        self.provider = provider
-        self.initial_prompt = initial_prompt
 
         # 🛡️ Permissions — the APP owns the session default (AUTO).
-        #    The manager is guaranteed on the agent AFTER construction,
-        #    so any Agent implementation works (including test fakes
-        #    that predate the permissions kwarg).
+        #    The manager is attached AFTER construction, so any Agent
+        #    implementation works (including test fakes that predate
+        #    the permissions kwarg).
         self.agent = Agent(provider)
         _perms = getattr(self.agent, "permissions", None)
         if isinstance(_perms, PermissionManager):
@@ -149,6 +159,13 @@ class JimmyApp(App[None]):
         # 🤖 Model plumbing — saved models + 💰 session cost snapshot.
         self.model_store = ModelStore()
         self._cost_usd = 0.0
+
+        # 🗄️ Sessions — SQLite is the persistent source of truth.  The
+        #    session row is created lazily on the first user message, so
+        #    a boot-and-quit leaves no empty rows behind.
+        self.store = session_store or SessionStore()
+        self._session_id: str | None = None
+        self._recorder: SessionRecorder | None = None
 
         self.sound = SoundPlayer()
         self._theme_index = 0
@@ -186,7 +203,6 @@ class JimmyApp(App[None]):
 
         # 🛡️ id of the approval currently shown (None = none pending).
         self._approval_request_id: str | None = None
-
     # accessors ──────────────────────────────────────────────────────────
 
     @property
@@ -218,9 +234,198 @@ class JimmyApp(App[None]):
         self.sound.play_startup()
         # FOCUS WATCHDOG — typing never dies.
         self.set_interval(1.0, self._heal_focus)
+        # 🗄️ session housekeeping (auto-clean policy) — off the UI thread.
+        self.run_worker(
+            self._startup_maintenance,
+            name="session-maintenance",
+            thread=True,
+            exclusive=False,
+        )
 
     def on_unmount(self) -> None:
         self.sound.stop()
+
+    # 🗄️ sessions ────────────────────────────────────────────────────────
+
+    def _startup_maintenance(self) -> None:
+        """Auto-clean per policy — runs on a worker thread at boot."""
+        try:
+            self.store.cleanup(self.store.cleanup_days())
+        except Exception:
+            pass
+
+    def _ensure_session(self) -> None:
+        """🗄️ Lazily create the SQLite row for this chat (first message)."""
+        if self._session_id is not None:
+            return
+        try:
+            row = self.store.create_session(
+                model=str(getattr(self.agent.provider, "model", "")),
+                permission_mode=self.current_permission_mode().value,
+                workspace=os.getcwd(),
+            )
+            self._session_id = row.id
+            self._recorder = SessionRecorder(self.store, row.id)
+        except Exception:
+            self._session_id = None
+            self._recorder = None
+
+    def _record_user(self, text: str) -> None:
+        try:
+            self._ensure_session()
+            if self._recorder is not None:
+                self._recorder.user_message(text)
+        except Exception:
+            pass
+        self._maybe_autotitle()
+
+    def _maybe_autotitle(self) -> None:
+        """🏷️ After the 3rd user message, generate an AI session title."""
+        if self._session_id is None:
+            return
+        try:
+            row = self.store.get_session(self._session_id)
+            if row is None or row.title_source != "default":
+                return  # user renamed or already auto-titled
+            if self.store.count_user_messages(self._session_id) < 3:
+                return
+        except Exception:
+            return
+        self.run_worker(
+            self._autotitle_worker(),
+            name="session-title",
+            group="session-title",
+            exclusive=False,
+            thread=False,
+            exit_on_error=False,
+        )
+
+    async def _autotitle_worker(self) -> None:
+        sid = self._session_id
+        if sid is None:
+            return
+        try:
+            texts = self.store.user_texts(sid, limit=3)
+            if not texts:
+                return
+            title: str | None = None
+            try:
+                title = await asyncio.wait_for(
+                    generate_title(self.agent.provider, texts), timeout=4.0
+                )
+            except Exception:
+                title = None  # provider hiccup → heuristic below
+            self.store.set_auto_title(sid, title or heuristic_title(texts))
+        except Exception:
+            pass  # 🏷️ titles are cosmetic — never disturb the chat
+
+    def _flush_session(self) -> None:
+        """🗄️ Close the pending assistant step + refresh session metadata."""
+        try:
+            if self._recorder is not None:
+                self._recorder.assistant_flush()
+            if self._session_id is not None:
+                self.store.touch_session(
+                    self._session_id,
+                    model=str(getattr(self.agent.provider, "model", "")),
+                    permission_mode=self.current_permission_mode().value,
+                )
+        except Exception:
+            pass
+
+    def _session_touch(self, **fields: str) -> None:
+        if self._session_id is None:
+            return
+        try:
+            self.store.touch_session(self._session_id, **fields)
+        except Exception:
+            pass
+
+    def forget_session(self, session_id: str) -> None:
+        """The active session was deleted in the library → stop recording."""
+        if self._session_id == session_id:
+            self._session_id = None
+            self._recorder = None
+
+    def action_sessions(self) -> None:
+        """📚 Open the session library (ctrl+o · /sessions · palette)."""
+        if isinstance(self.screen, SessionsScreen):
+            return
+        if self._palette_open():
+            self.close_palette(after=lambda: self.push_screen(SessionsScreen()))
+            return
+        self.push_screen(SessionsScreen())
+
+    def open_session(self, session_id: str) -> None:
+        """📂 Reopen a saved session — rebuild history + repaint the chat."""
+        if self._busy:
+            self.notify("jimmy is still working — esc first", severity="warning", timeout=1.5)
+            return
+        try:
+            row = self.store.get_session(session_id)
+            if row is None:
+                self.notify("session not found", severity="error", timeout=1.5)
+                return
+            history = self.store.build_history(session_id)
+        except Exception as exc:
+            self.notify(f"resume failed — {exc}", severity="error", timeout=2)
+            return
+
+        self.agent.history = history
+        self._session_id = session_id
+        self._recorder = SessionRecorder(self.store, session_id)
+
+        # 💰 fresh ledger for the continued story
+        self._total_in = 0
+        self._total_out = 0
+        self._cost_usd = 0.0
+        try:
+            self.agent.cost = CostTracker()
+        except Exception:
+            pass
+        try:
+            self.top_bar.refresh_tokens()
+        except Exception:
+            pass
+
+        # 🖼 repaint the timeline from the record
+        try:
+            self.chat.clear()
+            tool_results = sum(1 for m in history if m.role == "tool")
+            note = f"📂 resumed “{row.title}” · {len(history)} messages"
+            if tool_results:
+                note += f" · {tool_results} tool results"
+            self.chat.append(SystemNote(note))
+            for m in history:
+                if m.role == "user" and m.content:
+                    self.chat.append(UserMessage(m.content))
+                elif m.role == "assistant" and m.content:
+                    reply = AssistantMessage()
+                    reply.append(m.content)
+                    reply.finish_markdown()
+                    self.chat.append(reply)
+            self.chat.pin(force=True)
+        except Exception:
+            pass
+
+        while self._home_is_open():
+            try:
+                self.pop_screen()
+            except Exception:
+                break
+        self.notify(f"📂 resumed · {row.title}", timeout=1.6)
+        self.composer.focus_input()
+
+    def start_new_session(self) -> None:
+        """✨ Fresh session — the old one stays saved in SQLite."""
+        if self._busy:
+            self.notify("jimmy is still working — esc first", severity="warning", timeout=1.5)
+            return
+        self._flush_session()
+        self._session_id = None
+        self._recorder = None
+        self.action_clear_chat()
+        self.notify("✨ new session — the old one is saved (/sessions)", timeout=2)
 
     # 🫱 friendly errors ─────────────────────────────────────────────────
 
@@ -273,6 +478,7 @@ class JimmyApp(App[None]):
             self.top_bar.set_model(provider.model)  # 🏷️ brand repaint
         except Exception:
             pass  # chrome repaint must never block a model switch
+        self._session_touch(model=provider.model)  # 🗄️ session metadata
         self.notify(f"🤖 {short_model(provider.model)} active", timeout=2)
 
     def action_open_models(self) -> None:
@@ -311,6 +517,7 @@ class JimmyApp(App[None]):
             self.top_bar.set_permission_mode(label)
         except Exception:
             pass  # chrome repaint must never block a mode change
+        self._session_touch(permission_mode=mode.value)  # 🗄️ session metadata
         self.notify(f"🛡️ permissions · {label}", timeout=2)
 
     def resolve_approval(self, request_id: str, decision: Decision) -> None:
@@ -368,7 +575,7 @@ class JimmyApp(App[None]):
     def _focus_top_input(self) -> None:
         try:
             screen = self.screen
-            # 🛡️ Modals (approval / permission picker / help / palette)
+            # 🛡️ Modals (approval / permission picker / sessions / help)
             #    own their own keyboard — focusing the composer under
             #    them would swallow keys into the hidden prompt.
             if isinstance(screen, ModalScreen):
@@ -385,7 +592,7 @@ class JimmyApp(App[None]):
             pass
 
     def _heal_focus(self) -> None:
-        # 🛡️ modal screens (approval / permission picker / help) own the
+        # 🛡️ modal screens (approval / picker / sessions / help) own the
         #    keyboard — the watchdog must never steal focus from them.
         if self._palette_open() or isinstance(self.screen, ModalScreen):
             return
@@ -463,6 +670,10 @@ class JimmyApp(App[None]):
             self.action_open_models()
         elif command == "/permissions":
             self.action_permissions()  # 🛡️ ask / auto / full access
+        elif command in ("/sessions", "/resume"):
+            self.action_sessions()  # 🗄️ library
+        elif command == "/new":
+            self.start_new_session()  # ✨ fresh session
         elif command == "/help":
             self.push_screen(HelpDialogScreen())
         elif command == "/quit":
@@ -486,6 +697,7 @@ class JimmyApp(App[None]):
         self._tool_rows.clear()
         self._error_shown = False
         self._last_prompt = text
+        self._record_user(text)  # 🗄️ persist the user message
 
         self._turn_start = time.monotonic()
         self._turn_in = self._turn_out = self._turn_tools = self._turn_steps = 0
@@ -516,11 +728,15 @@ class JimmyApp(App[None]):
 
         # ── Step budget exhausted → ▶ Continue (NOT an error) ────────
         if event.type == "max_steps":
+            if self._recorder is not None:
+                self._recorder.event("max_steps", f"{int(data.get('steps', 0))} steps")
             self.chat.append(ContinueCard(int(data.get("steps", 0))))
             self.chat.pin(force=True)
             return
 
         if event.type == "llm_start":
+            if self._recorder is not None:
+                self._recorder.begin_step()  # 🗄️ flushes previous assistant
             self._dismiss_thinking()
             row = ThinkingRow(model=str(data["model"]))
             self._thinking = row
@@ -533,6 +749,8 @@ class JimmyApp(App[None]):
             chunk = str(data.get("text", ""))
             if not chunk:
                 return
+            if self._recorder is not None:
+                self._recorder.step_text(chunk)
             self._dismiss_thinking()
             if self._current_reply is None:
                 self._current_reply = AssistantMessage()
@@ -570,6 +788,8 @@ class JimmyApp(App[None]):
             if not isinstance(arguments, dict):
                 arguments = {}
             self._dismiss_thinking()
+            if self._recorder is not None:
+                self._recorder.tool_started(call_id, tool_name, arguments)
             icon, action, detail = tool_display(tool_name, arguments)
             row = LiveToolStatus(
                 call_id=call_id,
@@ -588,9 +808,16 @@ class JimmyApp(App[None]):
             return
 
         if event.type == "tool_done":
-            row = self._tool_rows.get(str(data["id"]))
+            call_id = str(data["id"])
+            output = data.get("output")
+            if self._recorder is not None:
+                self._recorder.tool_finished(
+                    call_id,
+                    output if isinstance(output, str) else "",
+                    float(data["latency"]),
+                )
+            row = self._tool_rows.get(call_id)
             if row is not None:
-                output = data.get("output")
                 row.finish(
                     float(data["latency"]),
                     output if isinstance(output, str) else None,
@@ -600,8 +827,11 @@ class JimmyApp(App[None]):
             return
 
         if event.type == "tool_error":
-            row = self._tool_rows.get(str(data["id"]))
+            call_id = str(data["id"])
             error = data.get("error", RuntimeError("Tool failed."))
+            if self._recorder is not None:
+                self._recorder.tool_failed(call_id, error)
+            row = self._tool_rows.get(call_id)
             if row is not None:
                 row.fail(error)
                 self._transcript.append(("tool", f"✕ {row.action} {row.detail} — {error}".strip()))
@@ -618,7 +848,10 @@ class JimmyApp(App[None]):
             return
 
         if event.type == "tool_denied":
-            row = self._tool_rows.get(str(data["id"]))
+            call_id = str(data["id"])
+            if self._recorder is not None:
+                self._recorder.tool_denied(call_id)
+            row = self._tool_rows.get(call_id)
             if row is not None:
                 row.fail(PermissionError("denied by user"))
                 self._transcript.append(("tool", f"🛡️ {row.action} {row.detail} — denied by user"))
@@ -630,6 +863,8 @@ class JimmyApp(App[None]):
             # ⚠️ ONE card per turn — the worker's except may fire for
             #    the same failure the agent already reported.
             error = data.get("error", RuntimeError("Unknown error."))
+            if self._recorder is not None:
+                self._recorder.event("error", f"{type(error).__name__}: {error}")
             if not self._error_shown:
                 self._error_shown = True
                 self.chat.append(self._friendly_error_card(error))
@@ -640,6 +875,8 @@ class JimmyApp(App[None]):
         try:
             async for event in self.agent.stream(text):
                 await self._handle_event(event)
+
+            self._flush_session()  # 🗄️ flush the final assistant step
 
             self.chat.append(
                 TurnSummary(
@@ -662,6 +899,7 @@ class JimmyApp(App[None]):
         except asyncio.CancelledError:
             self._dismiss_approval()  # 🛡️ pending approval → deny + close
             self._dismiss_thinking()
+            self._flush_session()  # 🗄️ keep what finished before the stop
 
             if not self.chat.is_empty:
                 self.chat.append(
@@ -676,6 +914,7 @@ class JimmyApp(App[None]):
 
         except Exception as exc:
             self._dismiss_thinking()
+            self._flush_session()  # 🗄️ keep what finished before the error
 
             # ⚰️ Model no longer available / deprecated.
             if is_model_not_found(exc):
@@ -713,6 +952,7 @@ class JimmyApp(App[None]):
 
     def action_clear_chat(self) -> None:
         self._dismiss_approval()  # 🛡️ pending approval → deny + close
+        self._flush_session()  # 🗄️ flush before the wipe
 
         if self._busy:
             self.workers.cancel_group(self, "turn")
@@ -730,6 +970,10 @@ class JimmyApp(App[None]):
         self.top_bar.refresh_tokens()
 
         self.chat.clear()
+
+        # 🗄️ /clear starts a fresh session — the old one stays saved.
+        self._session_id = None
+        self._recorder = None
 
         self.top_bar.set_ready()
         self.composer.set_busy(False)

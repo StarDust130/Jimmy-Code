@@ -1305,3 +1305,138 @@ ApprovalScreen {
     background: #0d1120;
     color: #aab2c7;
 }
+
+/* ═══════════════════════════════════════════════
+   🗄️ SESSIONS — library · rename
+   ═══════════════════════════════════════════════ */
+
+SessionsScreen {
+    align: center middle;
+    background: #05060a 78%;
+}
+
+#sessions-card {
+    width: 92;
+    max-width: 94%;
+    height: auto;
+    max-height: 30;
+    background: #0d1017;
+    border: round #2a3148;
+    padding: 0 1 1 1;
+}
+
+#sessions-head {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    background: #10141f;
+    border-bottom: solid #1a2036;
+}
+
+#sessions-title {
+    width: 1fr;
+    height: 1;
+    color: #e2e6f2;
+    text-style: bold;
+}
+
+#sessions-esc {
+    width: auto;
+    height: 1;
+}
+
+#sessions-close {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    margin-left: 1;
+    color: #aab2c7;
+}
+
+#sessions-close:hover {
+    background: #2a1420;
+    color: #fda4af;
+}
+
+#sessions-list {
+    width: 100%;
+    height: auto;
+    max-height: 22;
+    margin-top: 1;
+    padding: 0 1;
+    overflow-y: auto;
+}
+
+.session-row {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    color: #dbe0ee;
+}
+
+.session-row:hover {
+    background: #131a30;
+}
+
+.session-row.selected {
+    background: #1c2440;
+    text-style: bold;
+}
+
+#sessions-foot {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+    border-top: solid #1a2036;
+    color: #6a7188;
+}
+
+RenameScreen {
+    align: center middle;
+    background: #05060a 78%;
+}
+
+#rename-card {
+    width: 60;
+    max-width: 92%;
+    height: auto;
+    background: #0d1017;
+    border: round #2a3148;
+    padding: 0 1 1 1;
+}
+
+#rename-head {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    background: #10141f;
+    border-bottom: solid #1a2036;
+}
+
+#rename-title {
+    width: 1fr;
+    height: 1;
+    color: #e2e6f2;
+    text-style: bold;
+}
+
+#rename-esc {
+    width: auto;
+    height: 1;
+}
+
+#rename-input {
+    width: 100%;
+    height: 3;
+    margin-top: 1;
+    padding: 0 1;
+    background: #0f1322;
+    border: round #2a3148;
+    color: #e7eaf3;
+}
+
+#rename-input:focus {
+    border: round #8b5cf6;
+    background: #12162b;
+}

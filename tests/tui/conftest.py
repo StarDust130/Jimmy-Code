@@ -12,7 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import functools
+
+# ── 🗄️ session-DB isolation for tests ────────────────────────────────
+import os as _os
+import tempfile as _tempfile
 import time
+from pathlib import Path as _Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Callable, cast
 
@@ -20,6 +25,11 @@ import pytest
 
 from tui.app import JimmyApp
 from tui.screens.home import HomeScreen
+
+_os.environ.setdefault(
+    "JIMMY_SESSIONS_DB",
+    str(_Path(_tempfile.mkdtemp(prefix="jimmy-tui-sessions-")) / "sessions.db"),
+)
 
 if TYPE_CHECKING:
     from jimmy.llm.provider import LLMProvider

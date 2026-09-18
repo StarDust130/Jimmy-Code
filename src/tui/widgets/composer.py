@@ -334,6 +334,8 @@ class Composer(Vertical):
     COMMANDS: ClassVar[tuple[tuple[str, str], ...]] = (
         ("/model", "open the model picker (search every model)"),
         ("/permissions", "permission mode · ask / auto / full access"),
+        ("/sessions", "browse & resume past sessions"),
+        ("/new", "start a fresh session"),
         ("/sound", "play / stop the startup sound"),
         ("/help", "shortcuts · commands · support"),
         ("/quit", "quit jimmy"),

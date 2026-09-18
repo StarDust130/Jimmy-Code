@@ -36,6 +36,8 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
+from tui.screens.sessions import SessionsScreen
+
 from ..kit.helpers import jimmy, keycap
 from ..kit.theme import THEME, THEME_ORDER, THEMES
 from .models import ModelScreen
@@ -262,11 +264,6 @@ class CommandPaletteScreen(ModalScreen):
                 self._show_shortcuts,
             ),
             (
-                "🎨",
-                f"Theme · {THEME['name']}",
-                self._show_themes,
-            ),
-            (
                 "🤖",
                 f"Change model · {model_label}",
                 self._open_model_screen,
@@ -275,6 +272,16 @@ class CommandPaletteScreen(ModalScreen):
                 "🛡️",
                 f"Permissions · {self._permission_label()}",
                 self._open_permission_screen,
+            ),
+            (
+                "📚",
+                "Sessions · browse & resume",
+                self._open_sessions_screen,
+            ),
+            (
+                "🎨",
+                f"Theme · {THEME['name']}",
+                self._show_themes,
             ),
             (
                 "✕",
@@ -740,6 +747,22 @@ class CommandPaletteScreen(ModalScreen):
 
         def _open() -> None:
             app.push_screen(PermissionScreen())
+
+        try:
+            app.close_palette(after=_open)
+
+        except TypeError:
+            app.close_palette()
+            app.call_later(_open)
+            
+
+    def _open_sessions_screen(self) -> None:
+        """📚 Sessions → close palette first, then open the library."""
+
+        app = jimmy(self)
+
+        def _open() -> None:
+            app.push_screen(SessionsScreen())
 
         try:
             app.close_palette(after=_open)
