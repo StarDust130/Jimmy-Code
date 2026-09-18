@@ -98,8 +98,7 @@ class PermissionScreen(ModalScreen):
 
             yield Static(
                 Text.from_markup(
-                    "[#34d399]✓[/] [#8a91a8]runs automatically"
-                    f"{'   ' if True else ''}[/]"
+                    "[#34d399]✓[/] [#8a91a8]runs automatically[/]   "
                     "[#fbbf24]✋[/] [#8a91a8]asks you first[/]"
                 ),
                 id="perm-legend",
@@ -249,6 +248,10 @@ class ApprovalScreen(ModalScreen):
 
     def compose(self) -> Any:
         icon, action, detail = tool_display(self._tool_name, self._request.get("arguments") or {})
+        # 🧹 "Git git" reads silly — drop detail when it repeats the action.
+        if detail and detail.strip().lower() == action.strip().lower():
+            detail = ""
+
         summary = str(self._request.get("summary", "")).strip()
         reason = str(self._request.get("reason", "")).strip()
 
@@ -261,13 +264,19 @@ class ApprovalScreen(ModalScreen):
                 yield Static(Text.from_markup(keycap("esc", "deny")), id="approval-esc")
                 yield Static("✕", id="approval-close")
 
-            yield Static(
-                Text.from_markup(
-                    f"[#aab2c7]{icon}[/] [bold #f5f6fc]{escape(action)}[/]"
-                    f"  [#7b8296]{escape(detail)}[/]"
-                ),
-                classes="approval-row",
-            )
+            if detail:
+                yield Static(
+                    Text.from_markup(
+                        f"[#aab2c7]{icon}[/] [bold #f5f6fc]{escape(action)}[/]"
+                        f"  [#7b8296]{escape(detail)}[/]"
+                    ),
+                    classes="approval-row",
+                )
+            else:
+                yield Static(
+                    Text.from_markup(f"[#aab2c7]{icon}[/] [bold #f5f6fc]{escape(action)}[/]"),
+                    classes="approval-row",
+                )
 
             if summary:
                 yield Static(
@@ -283,13 +292,12 @@ class ApprovalScreen(ModalScreen):
 
             with Horizontal(id="approval-actions"):
                 yield Static("✅ Allow", id="btn-allow", classes="perm-btn")
-                yield Static("🔓 Allow for this session", id="btn-session", classes="perm-btn")
-                yield Static("❌ Deny", id="btn-deny", classes="perm-btn perm-btn-danger")
+                yield Static("🔓 Allow session", id="btn-session", classes="perm-btn")
+                yield Static("❌ Deny", id="btn-deny", classes="perm-btn")
 
             yield Static(
                 "🔓 Switch to Full Access — everything runs without asking",
                 id="btn-full",
-                classes="perm-btn perm-btn-full",
             )
 
             yield Static(
