@@ -48,7 +48,7 @@ def friendly_error(exc: Exception) -> FriendlyError:
     # 💳 quota / billing
     if "quota" in text or "billing" in text or "402" in text or "insufficient" in text:
         return FriendlyError(
-            title="Account out of quota or credit",
+            title="Account out of quota or credit ",
             hint="Top up your provider account, or press ctrl+m to switch models.",
         )
 
