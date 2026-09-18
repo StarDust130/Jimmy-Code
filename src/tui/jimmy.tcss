@@ -804,3 +804,65 @@ ModelScreen {
     border-top: solid #1a2036;
     color: #565d73;
 }
+
+.err-action-btn {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    margin-right: 1;
+    color: #f5c451;
+}
+
+.err-action-btn:hover {
+    background: #1b2033;
+    color: #f5f6fc;
+}
+
+#model-crumb {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+    color: #7b8296;
+}
+
+#model-steps {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    color: #565d73;
+}
+
+#model-foot {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+    border-top: solid #1a2036;
+    color: #565d73;
+}
+
+#model-eye {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    margin-top: 2;
+    margin-left: 1;
+    color: #8a91a8;
+}
+
+#model-eye:hover {
+    background: #131a30;
+}
+.err-action-btn {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    margin-right: 1;
+    color: #f5c451;
+}
+
+.err-action-btn:hover {
+    background: #1b2033;
+    color: #f5f6fc;
+}
