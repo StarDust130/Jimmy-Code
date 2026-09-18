@@ -2,9 +2,11 @@
 
 Builds a token-efficient context each LLM call:
  📌 system prompt (always, stable → cache friendly)
- ✂️ old tool results collapsed to stubs
- 🎯 only the last few tool results stay raw
- 📏 oversized outputs clipped when they arrive
+ ✂️ oversized outputs clipped on arrival (head+tail, bigger budget)
+ 🧾 old tool results collapsed to TOOL_STUB + a one-line SUMMARY of
+    the gist — the model keeps the key fact, so it never re-runs a
+    tool just to "remember" what it said (the token furnace fix)
+ 🎯 the last few tool results stay verbatim
 """
 
 from __future__ import annotations
@@ -14,53 +16,93 @@ from dataclasses import replace
 
 from jimmy.llm.types import Message
 
-# 🧠 core system prompt — keep lean and stable
-SYSTEM_PROMPT = """You are Jimmy, a terminal-native coding assistant.
+# 🧠 system prompt — the discipline layer.  This is the single biggest
+#    lever for agent quality: it defines SCOPE (do exactly what was
+#    asked), EFFICIENCY (batch calls, never repeat), and STOP conditions.
+SYSTEM_PROMPT = """\
+You are Jimmy, a senior software engineer working in the user's terminal.
 
-You can inspect and modify the user's workspace using the available tools.
+## Prime directive
+Do EXACTLY what the user asked — nothing more, nothing less.
+- If asked to "commit all files one by one": create one commit per file \
+(`git add <file>` then `git commit`), each with a short imperative \
+message and one emoji. Do NOT run tests, do NOT fix bugs, do NOT \
+review or refactor anything unless explicitly asked.
+- Never expand scope. Extra "helpful" work wastes the user's money.
+- If the request is ambiguous, pick the most literal interpretation \
+and proceed — do not interrogate the user.
 
-Use the smallest number of tools needed.
-Prefer specific tools over shell when a specific tool exists.
-Do not claim an action happened unless the tool result confirms it.
+## Working rules
+1. PLAN briefly (1-3 sentences) before your first tool call.
+2. BATCH independent tool calls into ONE response (e.g. several \
+`git diff` calls together). Every extra round-trip re-sends the whole \
+conversation and costs real tokens.
+3. NEVER repeat a tool call with the same arguments — you already have \
+the result. Older results are summarized below; their key facts are \
+kept in the summary line, so TRUST the summary instead of re-running.
+4. Prefer compact output: `git diff --stat` / `--name-only` over full \
+diffs; read only the files you need.
+5. Use dedicated tools over shell when one exists.
+6. Never claim an action happened unless a tool result confirms it.
+7. STOP as soon as the goal is met: give a short final summary. Do not \
+run verification, tests, or cleanup unless the user asked for them.
+8. Git safety: never `push`, `reset --hard`, or force-anything unless \
+explicitly asked.
 """
 
-# 🪦 placeholder for consumed tool results
-TOOL_STUB = "[tool result consumed — it succeeded]"
+# 🪦 stable public stub constant (imported by tests and the package
+#    __init__) — summary stubs START with this, so containment checks
+#    like ``TOOL_STUB in message.content`` keep working.
+TOOL_STUB = "[tool result summarized to save context]"
+
+
+def _summarize(content: str) -> str:
+    """First meaningful line of a tool result, trimmed — the gist."""
+    for line in content.splitlines():
+        line = line.strip()
+        if line:
+            return line[:120]
+    return "(empty result)"
 
 
 class ContextBuilder:
     """Token-efficient context builder.
 
-    - clip_tool_output(): call when a tool result arrives (step 0)
-    - build():            call before each LLM call (prunes history)
+    - clip_tool_output(): call when a tool result arrives (arrival-time)
+    - prune():            call before each LLM call (summarizes old tools)
+    - build():            convenience for simple one-shot use
     """
 
     def __init__(
         self,
         *,
-        keep_raw_tools: int = 2,  # last N tool results stay verbatim
-        max_tool_output: int = 2_000,  # chars allowed in one tool result
+        keep_raw_tools: int = 6,  # last N tool results stay verbatim
+        max_tool_output: int = 8_000,  # chars allowed in one tool result
     ) -> None:
         self.keep_raw_tools = keep_raw_tools
         self.max_tool_output = max_tool_output
 
     # ─────────────────────────────────────
-    # ✂️ Step 0: clip when result arrives
+    # ✂️ clip on arrival
     # ─────────────────────────────────────
 
     def clip_tool_output(self, output: str) -> str:
-        """Clip oversized tool output BEFORE it enters the loop."""
+        """Clip oversized tool output BEFORE it enters the loop.
+
+        head 60% + tail 25% keeps both the summary AND the final state,
+        which is what models actually need from long outputs.
+        """
         if len(output) <= self.max_tool_output:
             return output
 
-        head = output[: self.max_tool_output // 2]
-        tail = output[-self.max_tool_output // 4 :]
+        head = output[: int(self.max_tool_output * 0.6)]
+        tail = output[-int(self.max_tool_output * 0.25) :]
         dropped = len(output) - len(head) - len(tail)
 
         return f"{head}\n...[{dropped} chars truncated]...\n{tail}"
 
     # ─────────────────────────────────────
-    # 🏗️ Build context for one LLM call
+    # 🏗️ one-shot convenience
     # ─────────────────────────────────────
 
     def build(self, user_text: str, history: Sequence[Message] = ()) -> list[Message]:
@@ -70,21 +112,29 @@ class ContextBuilder:
         return messages
 
     # ─────────────────────────────────────
-    # 🧹 Prune: collapse old tool results
+    # 🧹 prune: summarize old tool results
     # ─────────────────────────────────────
 
     def prune(self, history: Sequence[Message]) -> list[Message]:
-        """Keep only the last N tool results raw, stub the rest."""
+        """Keep the last N tool results verbatim; older ones become
+        stubs that START with TOOL_STUB and keep the gist — the model
+        retains the key fact instead of re-running tools to recover it."""
         pruned: list[Message] = []
-        raw_tool_budget = self.keep_raw_tools
+        raw_budget = self.keep_raw_tools
 
         # 🔄 walk backwards so the RECENT tools keep their budget
         for message in reversed(history):
-            if message.role == "tool" and raw_tool_budget <= 0:
-                # 🪦 old tool output already consumed → stub it
-                message = replace(message, content=TOOL_STUB)
-            elif message.role == "tool":
-                raw_tool_budget -= 1
+            if message.role == "tool":
+                if raw_budget <= 0:
+                    gist = _summarize(message.content or "")
+                    message = replace(
+                        message,
+                        content=(
+                            f"{TOOL_STUB} — {gist}. Do not re-run this tool to see the full text."
+                        ),
+                    )
+                else:
+                    raw_budget -= 1
 
             pruned.append(message)
 
