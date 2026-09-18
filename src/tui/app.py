@@ -368,14 +368,19 @@ class JimmyApp(App[None]):
     def _focus_top_input(self) -> None:
         try:
             screen = self.screen
+            # 🛡️ Modals (approval / permission picker / help / palette)
+            #    own their own keyboard — focusing the composer under
+            #    them would swallow keys into the hidden prompt.
+            if isinstance(screen, ModalScreen):
+                return
             if isinstance(screen, HomeScreen):
                 if not getattr(screen, "_revealed", True):
                     return
                 prompt = screen.query_one("#home-prompt", Input)
                 if not prompt.has_focus:
                     prompt.focus()
-            else:
-                self.composer.focus_input()
+                return
+            self.composer.focus_input()
         except Exception:
             pass
 

@@ -4,11 +4,17 @@ Both screens are thin: ALL policy lives in ``jimmy.permissions``; these
 screens only display state and collect the user's decision, then call
 back into JimmyApp (which owns the agent).
 
-PermissionScreen — three color-coded mode CARDS (not a boring list):
-each shows the emoji + name, a 1·2·3 hotkey, the one-line description,
-and a capability strip telling you exactly what runs automatically (✓)
-and what asks first (✋).  Apply via ↑↓ + ↵, the hotkeys, or a click —
-the change is instant and announced (never silent).
+KEYBOARD CONTRACT: while a modal is up it OWNS the keyboard.
+    * on_mount blurs everything (screen.set_focus(None)) so no hidden
+      widget underneath can swallow keys,
+    * an explicit on_key handler (same proven pattern as the command
+      palette) drives navigation / apply / close,
+    * bindings stay as a second path.
+
+PermissionScreen — three color-coded mode CARDS: emoji + name, 1·2·3
+hotkey, description, and a capability strip showing what runs
+automatically (✓) vs what asks first (✋).  Apply via ↑↓ + ↵, the
+hotkeys, or a click — instant and announced (never silent).
 
 ApprovalScreen is FAIL-CLOSED: every exit path that isn't an explicit
 allow (esc · ✕ · click outside) resolves as DENY — the agent must never
@@ -127,6 +133,46 @@ class PermissionScreen(ModalScreen):
             lst.mount(row)
 
         self._paint()
+
+        # 🛡️ OWN THE KEYBOARD — blur anything underneath so every key
+        #    reaches this screen (nothing focusable lives on a modal).
+        try:
+            self.set_focus(None)
+        except Exception:
+            pass
+
+    # ⌨️ keyboard (bulletproof path — mirrors CommandPaletteScreen) ────
+
+    def on_key(self, event: events.Key) -> None:
+        key = event.key
+        if key == "escape":
+            event.stop()
+            event.prevent_default()
+            self.action_close_perm()
+        elif key == "up":
+            event.stop()
+            event.prevent_default()
+            self.action_perm_up()
+        elif key == "down":
+            event.stop()
+            event.prevent_default()
+            self.action_perm_down()
+        elif key == "enter":
+            event.stop()
+            event.prevent_default()
+            self.action_perm_apply()
+        elif key == "1":
+            event.stop()
+            event.prevent_default()
+            self.action_perm_one()
+        elif key == "2":
+            event.stop()
+            event.prevent_default()
+            self.action_perm_two()
+        elif key == "3":
+            event.stop()
+            event.prevent_default()
+            self.action_perm_three()
 
     # painting ────────────────────────────────────────────────────────
 
@@ -306,9 +352,37 @@ class ApprovalScreen(ModalScreen):
             )
 
     def on_mount(self) -> None:
+        # 🛡️ OWN THE KEYBOARD — the composer from the previous turn may
+        #    still hold focus; blur it so ↵/esc/s/f always reach us.
+        try:
+            self.set_focus(None)
+        except Exception:
+            pass
+
         if not self._request_id:
             # malformed request → fail closed
             self.call_after_refresh(self.action_deny)
+
+    # ⌨️ keyboard (bulletproof path — mirrors CommandPaletteScreen) ────
+
+    def on_key(self, event: events.Key) -> None:
+        key = event.key
+        if key == "escape":
+            event.stop()
+            event.prevent_default()
+            self.action_deny()
+        elif key == "enter":
+            event.stop()
+            event.prevent_default()
+            self.action_allow()
+        elif key == "s":
+            event.stop()
+            event.prevent_default()
+            self.action_session()
+        elif key == "f":
+            event.stop()
+            event.prevent_default()
+            self.action_full_access()
 
     # decisions ───────────────────────────────────────────────────────
 
