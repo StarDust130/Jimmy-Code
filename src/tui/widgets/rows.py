@@ -1,13 +1,12 @@
 """Timeline rows: Thinking, Tool status, Turn summary (+ animated base).
 
-Tool timeline UX (what makes a flood of calls readable):
+Tool timeline UX: no step counters — the tools speak for themselves.
 
-    ⠹ Step 3/25 · 0.8s                    ← ThinkingRow (budget visible)
-    ── step 3 ──────────────────────      ← StepHeader (auto, once/step)
-    ⠹ [3] 📖 Reading README.md            ← active, live
-    ✓ [3] 📖 Reading README.md · 84ms · 2.1k   ← done: latency + size
-    ✓ [3] 🧾 12 lines · ⚠ issues · 220ms  ← shell runs summarize output
-    ⚠ [3] ✏️ Editing x.ts · FileNotFoundError   ← failures keep reason
+    ⠹ ✻ thinking · 0.8s                 ← spinner + drifting sparkle
+    ⠹ 🌿 git status --porcelain          ← active (pulsing action text)
+    ✓ 🌿 git status --porcelain · 30ms · 4 lines
+    ✓ 🧪 pytest -q · 1.2s · 40 lines · ⚠ issues
+    ⚠ ✏️ Editing x.ts · FileNotFoundError
 """
 
 from __future__ import annotations
@@ -30,6 +29,11 @@ from ..kit.helpers import (
 )
 from ..kit.theme import THEME
 
+# 💓 pulse colors for the ACTIVE tool row's action text — alternate on
+#    every spinner tick: a heartbeat that says "this is happening now".
+_PULSE_A = "#d5dae8"
+_PULSE_B = "#a9b3d0"
+
 
 class AnimatedRow(Static):
     """Base class for timer-animated timeline rows (crash-hardened).
@@ -39,10 +43,8 @@ class AnimatedRow(Static):
        override can never raise AttributeError.
     2. LATE TIMER SAFETY — ``_safe_update`` stops the animation instead
        of crashing if the widget left the layout (chat cleared mid-tick).
-    3. LATE MOUNT SAFETY — ``on_mount`` can run AFTER ``finish()``/
-       ``fail()`` (mounting is asynchronous).  ``_finished`` makes the
-       guard bidirectional: a finished row can never start (or resume)
-       its animation.
+    3. LATE MOUNT SAFETY — ``_finished`` blocks a late on_mount from
+       restarting a resolved row's animation.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -52,7 +54,7 @@ class AnimatedRow(Static):
 
     def _start_anim(self, interval: float) -> None:
         if self._finished:
-            return  # row already resolved — never animate again
+            return
         if self._anim_timer is None:
             self._anim_timer = self.set_interval(interval, self._anim_tick)
 
@@ -83,12 +85,22 @@ class AnimatedRow(Static):
 
 
 class ThinkingRow(AnimatedRow):
-    """`⠹ Step 3/25 · 0.8s` — the model is thinking, budget visible."""
+    """`⠹ ✻ thinking · 0.8s` — quiet and alive, no step-count clutter.
 
-    def __init__(self, model: str, step: int, max_steps: int = 25) -> None:
+    A tiny sparkle drifts through the word while the spinner runs.
+    """
+
+    SPARK_POS: ClassVar[tuple[str, ...]] = (
+        "✻ thinking",
+        "t✻hinking",
+        "th✻inking",
+        "thi✻nking",
+    )
+
+    def __init__(self, model: str, step: int = 0, max_steps: int = 0) -> None:
+        # step/max_steps accepted for compatibility — deliberately NOT
+        # shown: counters are noise, the timeline tells the story.
         self.model_name = model
-        self.step = step
-        self.max_steps = max_steps
         self.started = time.monotonic()
         self._frame = 0
         super().__init__("", classes="thinking-row")
@@ -100,51 +112,22 @@ class ThinkingRow(AnimatedRow):
     def _redraw(self) -> None:
         self._frame = (self._frame + 1) % len(SPINNER_FRAMES)
         elapsed = format_duration(time.monotonic() - self.started)
+        word = self.SPARK_POS[(self._frame // 3) % len(self.SPARK_POS)]
         self._safe_update(
             Text.from_markup(
                 f"[{THEME['accent']}]{SPINNER_FRAMES[self._frame]}[/] "
-                f"[#8a91a8]Step {self.step}/{self.max_steps}[/]  "
-                f"[#4b5163]{elapsed}[/]"
+                f"[#8a91a8]{word}[/]  [#4b5163]{elapsed}[/]"
             )
         )
 
 
-class StepHeader(Static):
-    """`── step 3 ──────────` — one quiet divider per agent step.
-
-    Mounted by the App the FIRST time a step emits tools; groups the
-    tool calls of that step so a batch reads as one block.  Older
-    headers dim via the ``old`` class (App toggles it when a later
-    step starts).
-    """
-
-    def __init__(self, step: int) -> None:
-        self.step = step
-        super().__init__("", classes="step-header")
-
-    def on_mount(self) -> None:
-        self._paint()
-
-    def _paint(self) -> None:
-        out = Text()
-        out.append(f"── step {self.step} ", style="#3a4157")
-        out.append("─" * 18, style="#3a4157")
-        self.update(out)
-
-    def make_old(self) -> None:
-        try:
-            self.add_class("old")
-        except errors.NoWidget:
-            pass
-
-
 class LiveToolStatus(AnimatedRow):
-    """One readable tool line on the timeline.
+    """One readable tool line — the star of the timeline.
 
-    active   ⠹ [3] 📖 Reading README.md
-    done     ✓ [3] 📖 Reading README.md · 84ms · 2.1k
-    shell    ✓ [3] 🧾 12 lines · ⚠ issues · 220ms
-    failed   ⚠ [3] ✏️ Editing x.ts · ⏱️ timeout
+    active   ⠹ 🌿 git status --porcelain     (pulsing action text)
+    done     ✓ 🌿 git status --porcelain · 30ms · 4 lines
+    shell    ✓ 🧪 pytest -q · 1.2s · 40 lines · ⚠ issues
+    failed   ⚠ ✏️ Editing x.ts · ⏱️ timeout
     """
 
     def __init__(
@@ -162,7 +145,7 @@ class LiveToolStatus(AnimatedRow):
         self.icon = icon
         self.action = action
         self.detail = detail
-        self.step = step
+        self.step = step  # accepted for compatibility — not displayed
         self.started = time.monotonic()
         self._frame = 0
         super().__init__("", classes="live-tool-status")
@@ -170,10 +153,6 @@ class LiveToolStatus(AnimatedRow):
     def on_mount(self) -> None:
         self.call_after_refresh(self._redraw)
         self._start_anim(0.1)
-
-    # step tag — dim, only when we know it
-    def _tag(self) -> str:
-        return f"[#3a4157][{self.step}][/]" if self.step > 0 else ""
 
     def _label(self) -> str:
         return escape(f"{self.icon} {self.action}")
@@ -186,22 +165,22 @@ class LiveToolStatus(AnimatedRow):
     def _redraw(self) -> None:
         self._frame = (self._frame + 1) % len(SPINNER_FRAMES)
         elapsed = format_duration(time.monotonic() - self.started)
+        action_color = _PULSE_A if self._frame % 2 == 0 else _PULSE_B
         self._safe_update(
             Text.from_markup(
                 f"[{THEME['accent']}]{SPINNER_FRAMES[self._frame]}[/] "
-                f"{self._tag()} "
-                f"[#d5dae8]{self._label()}[/]{self._detail_part()}  "
+                f"[{action_color}]{self._label()}[/]{self._detail_part()}  "
                 f"[#4b5163]{elapsed}[/]"
             )
         )
 
     def finish(self, latency: float, output: str | None = None) -> None:
-        """Done: ✓ + latency + a *useful* tail derived from the result.
+        """Done: ✓ + latency + one high-signal hint from the result.
 
         ``output`` is the clipped tool result the agent already has —
-        we distill ONE quiet hint from it (line count / issue marker)
-        instead of dumping it on the timeline.  Optional: callers that
-        don't pass output simply get the latency-only row.
+        we distill ONE quiet hint (line count / issue marker) instead
+        of dumping it on the timeline.  Optional: callers that don't
+        pass output simply get the latency-only row.
         """
         self._finished = True  # also blocks a late on_mount restart
         self._stop_anim()
@@ -210,7 +189,7 @@ class LiveToolStatus(AnimatedRow):
 
         self._safe_update(
             Text.from_markup(
-                f"[#34d399]✓[/] {self._tag()} "
+                f"[#34d399]✓[/] "
                 f"[#7f8aa5]{self._label()}[/]{self._detail_part()}  "
                 f"[#34d399]{format_duration(latency)}[/]{hint}"
             )
@@ -249,7 +228,7 @@ class LiveToolStatus(AnimatedRow):
         icon = classify_error(error)[0]
         self._safe_update(
             Text.from_markup(
-                f"[#fbbf24]⚠[/] {self._tag()} "
+                f"[#fbbf24]⚠[/] "
                 f"[#fda4af]{self._label()}[/]{self._detail_part()}  "
                 f"[#fb7185]{icon} {escape(reason[:40])}[/]"
             )
@@ -262,8 +241,8 @@ class TurnSummary(AnimatedRow):
         ✦ 4.8s · 17.3k in · 263 out · 6 tools · 3 rounds  ⧉ copy
 
     The ✦ sparkles briefly on completion; clicking the row copies that
-    exchange (prompt + reply).  ``gaps`` > 0 renders an honest ⚠ note
-    about steps whose provider sent no usage.
+    exchange (prompt + tools + reply).  ``gaps`` > 0 renders an honest
+    ⚠ note about steps whose provider sent no usage.
     """
 
     SPARK_COLORS: ClassVar[tuple[str, ...]] = (
@@ -293,7 +272,7 @@ class TurnSummary(AnimatedRow):
         super().__init__("", classes="turn-summary")
 
     def on_mount(self) -> None:
-        self.tooltip = "click to copy this exchange (prompt + reply)"
+        self.tooltip = "click to copy this exchange (prompt + tools + reply)"
         self.call_after_refresh(self._redraw)
         self._start_anim(0.1)
 
@@ -302,7 +281,7 @@ class TurnSummary(AnimatedRow):
         if self._frame >= 6:
             self._stop_anim()
             self._frame = -1
-            self._finished = True  # sparkle done — never restart it
+            self._finished = True
         self._redraw()
 
     def _redraw(self) -> None:
