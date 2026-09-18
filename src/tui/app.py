@@ -40,7 +40,7 @@ from .screens.home import HomeScreen
 from .screens.models import ModelScreen  # 🤖 model picker screen
 from .screens.palette import CommandPaletteScreen
 from .widgets.chat_log import ChatLog
-from .widgets.composer import Composer
+from .widgets.composer import Composer, HelpDialogScreen
 from .widgets.messages import (
     AssistantMessage,
     ErrorCard,
@@ -362,14 +362,7 @@ class JimmyApp(App[None]):
         elif command == "/model":
             self.action_open_models()
         elif command == "/help":
-            self.chat.append(
-                SystemNote(
-                    "commands: /clear · /home · /sound · /copy · /copyall · "
-                    "/model · /theme · /quit — drag-select text to copy it · "
-                    "↑ recalls prompts"
-                )
-            )
-            self.chat.pin(force=True)
+            self.push_screen(HelpDialogScreen())
         elif command == "/quit":
             self.action_quit()
         else:
