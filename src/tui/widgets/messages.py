@@ -4,7 +4,7 @@ system notes, pair divider, empty state."""
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Callable
 
 from rich.markdown import Markdown as RichMarkdown
 from rich.markup import escape
@@ -79,7 +79,7 @@ class AssistantMessage(Vertical):
 
 
 class UserMessage(Static):
-    """`❯ your prompt` — blue marker + blue→violet gradient prompt text.
+    """`❯ your prompt` — blue marker + gradient prompt text.
 
     Text() never interprets markup, so pasted prompts are injection-safe.
     """
@@ -92,13 +92,13 @@ class UserMessage(Static):
 
 
 class ErrorCard(Vertical):
-    """A friendly, classified error card with retry + expandable details.
+    """A friendly, classified error card with retry + expandable details
+    + optional extra actions (e.g. '🤖 Change model').
 
     ╭──────────────────────────────────────────╮
-    │ ✕  🔌 Provider temporarily unavailable   │
-    │ The provider is temporarily unavailable  │
-    │ (HTTP 503) — usually back shortly.       │
-    │ ↻ retry        ⌄ details                 │
+    │ ✕  🤖 Model 'x' isn't available          │
+    │ It may be retired or need a plan change. │
+    │ 🤖 Change model   ↻ retry   ⌄ details    │
     ╰──────────────────────────────────────────╯
     """
 
@@ -108,7 +108,16 @@ class ErrorCard(Vertical):
         self._title = title
         self._message = message
         self._detail = error_detail(error)
+        self._extra_actions: list[tuple[str, Callable[[], None]]] = []
         super().__init__(classes="error-card")
+
+    def attach_action(self, label: str, callback: Callable[[], None]) -> None:
+        """➕ Register an extra clickable action row.
+
+        Must be called BEFORE the card is mounted (i.e. before it is
+        appended to the chat) — the row is built in compose().
+        """
+        self._extra_actions.append((label, callback))
 
     def compose(self) -> Any:
         yield Static(
@@ -117,16 +126,34 @@ class ErrorCard(Vertical):
         )
         yield Static(Text.from_markup(f"[#c7cde4]{escape(self._message)}[/]"), classes="err-msg")
         with Horizontal(classes="err-actions"):
+            # ➕ extra actions first (e.g. the fix for THIS error)
+            for i, (label, _cb) in enumerate(self._extra_actions):
+                yield Static(
+                    Text.from_markup(f"[#f5c451]{escape(label)}[/]"),
+                    id=f"err-action-{i}",
+                    classes="err-action-btn",
+                )
             yield Static(Text.from_markup("[#fbbf24]↻[/] [#e2e6f2] retry[/]"), id="err-retry")
             yield Static(Text.from_markup("[#565d73]⌄[/] [#8a91a8] details[/]"), id="err-details")
         yield Static(Text(self._detail), classes="err-detail")
 
     def on_mount(self) -> None:
-        self.tooltip = "↻ retry runs the last prompt · ⌄ details shows the traceback"
+        self.tooltip = (
+            "extra actions fix THIS error · ↻ retry runs the last prompt · "
+            "⌄ details shows the traceback"
+        )
 
     def on_click(self, event: events.Click) -> None:
         event.stop()
         cid = event.control.id
+
+        # ➕ extra actions (registered via attach_action)
+        if cid and cid.startswith("err-action-"):
+            idx = int(cid.rsplit("-", 1)[-1])
+            if 0 <= idx < len(self._extra_actions):
+                self._extra_actions[idx][1]()
+            return
+
         if cid == "err-retry":
             if jimmy(self).action_retry_last():
                 try:
