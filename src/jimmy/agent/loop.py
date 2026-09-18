@@ -13,6 +13,13 @@ Token efficiency:
 Multi-model:
 🤖 set_provider() hot-swaps models mid-session (history kept)
 💰 CostTracker accumulates session tokens + cost (ONE add per LLM call)
+
+Permissions:
+🛡️ EVERY tool execution passes ``PermissionManager.check()``.  A call
+   that needs a human emits an ``approval_request`` event and the loop
+   suspends on the ApprovalGate until the UI resolves it (allow / deny
+   / session grant).  A denial goes BACK to the model as a tool
+   message — never a crash, never a silent execution.
 """
 
 from __future__ import annotations
@@ -26,6 +33,13 @@ from jimmy.context import SYSTEM_PROMPT, ContextBuilder
 from jimmy.llm.cost_tracker import CostTracker
 from jimmy.llm.provider import LLMProvider
 from jimmy.llm.types import LLMResult, Message, ToolCall
+from jimmy.permissions import (
+    Decision,
+    PermissionManager,
+    PermissionMode,
+    classify_risk,
+    describe_action,
+)
 from jimmy.tools.core.factory import create_default_registry
 from jimmy.tools.core.registry import ToolRegistry
 
@@ -36,6 +50,8 @@ AgentEventType = Literal[
     "tool_start",
     "tool_done",
     "tool_error",
+    "approval_request",
+    "tool_denied",
     "max_steps",
     "error",
 ]
@@ -57,6 +73,7 @@ class Agent:
         tools: ToolRegistry | None = None,
         *,
         max_steps: int = 25,
+        permissions: PermissionManager | None = None,
     ) -> None:
         self.provider = provider
         self.context = context or ContextBuilder()
@@ -66,6 +83,11 @@ class Agent:
         self.max_steps = max_steps
 
         self.cost = CostTracker()  # 💰 session-wide tokens + cost
+
+        # 🛡️ Permissions.  Library default = FULL (no prompting) so a
+        #    bare Agent keeps its old behavior; the TUI app owns the
+        #    session default (AUTO).
+        self.permissions = permissions or PermissionManager(mode=PermissionMode.FULL)
 
     # ─────────────────────────────────────────
     # 🤖 Multi-model support (hot-swap)
@@ -160,10 +182,10 @@ class Agent:
                 self._save_turn(turn)
                 return
 
-            # 🔧 Execute tool calls
-            tool_events, tool_messages = await self._run_tool_calls(result.tool_calls, step)
-
-            for event in tool_events:
+            # 🔧 Execute tool calls — events STREAM out as they happen,
+            #    so approval prompts reach the UI before we wait on them.
+            tool_messages: list[Message] = []
+            async for event in self._run_tool_calls(result.tool_calls, step, tool_messages):
                 yield event
 
             # ✂️ tool_messages are ALREADY clipped → safe for the record
@@ -179,44 +201,39 @@ class Agent:
         )
 
     # ─────────────────────────────────────────
-    # 🔧 Tool execution (returns events + messages)
+    # 🔧 Tool execution (streams events, fills tool_messages)
     # ─────────────────────────────────────────
 
     async def _run_tool_calls(
         self,
         tool_calls: tuple[ToolCall, ...],
         step: int,
-    ) -> tuple[list[AgentEvent], list[Message]]:
-        """Resolve → validate → execute each tool call.
+        tool_messages: list[Message],
+    ) -> AsyncIterator[AgentEvent]:
+        """Resolve → validate → 🛡️ authorize → execute each tool call.
 
-        Never throws — errors go BACK to the model as tool messages
-        so it can correct itself.
+        Streams events while running (approval prompts MUST reach the
+        UI before the gate waits).  Never throws — errors and denials
+        go BACK to the model as tool messages so it can correct itself.
         """
-        events: list[AgentEvent] = []
-        tool_messages: list[Message] = []
-
         for call in tool_calls:
-            events.append(
-                AgentEvent(
-                    type="tool_start",
-                    data={
-                        "id": call.id,
-                        "name": call.name,
-                        "arguments": call.arguments,
-                        "step": step,  # 🧭 UI groups batches per step
-                    },
-                )
+            yield AgentEvent(
+                type="tool_start",
+                data={
+                    "id": call.id,
+                    "name": call.name,
+                    "arguments": call.arguments,
+                    "step": step,  # 🧭 UI groups batches per step
+                },
             )
 
             # 1️⃣ resolve the tool
             try:
                 tool = self.tools.get(call.name)
             except Exception as exc:
-                events.append(
-                    AgentEvent(
-                        type="tool_error",
-                        data={"id": call.id, "name": call.name, "error": exc},
-                    )
+                yield AgentEvent(
+                    type="tool_error",
+                    data={"id": call.id, "name": call.name, "error": exc},
                 )
                 tool_messages.append(
                     Message(
@@ -231,11 +248,9 @@ class Agent:
             try:
                 arguments = tool.args_schema.model_validate(call.arguments)
             except Exception as exc:
-                events.append(
-                    AgentEvent(
-                        type="tool_error",
-                        data={"id": call.id, "name": call.name, "error": exc},
-                    )
+                yield AgentEvent(
+                    type="tool_error",
+                    data={"id": call.id, "name": call.name, "error": exc},
                 )
                 tool_messages.append(
                     Message(
@@ -250,7 +265,43 @@ class Agent:
                 )
                 continue
 
-            # 3️⃣ execute
+            # 3️⃣ 🛡️ permission gate — EVERY execution passes the policy
+            try:
+                decision = self.permissions.check(call.name, call.arguments)
+            except Exception:
+                decision = Decision.ASK  # policy hiccup → fail closed
+
+            if decision is Decision.ASK:
+                request = self.permissions.gate.new_request(
+                    tool_name=call.name,
+                    arguments=call.arguments,
+                    risk=classify_risk(call.name, call.arguments),
+                    summary=describe_action(call.name, call.arguments),
+                )
+                yield AgentEvent(type="approval_request", data=request)
+
+                decision = await self.permissions.gate.wait(str(request["id"]))
+
+                if decision is not Decision.ALLOW:
+                    yield AgentEvent(
+                        type="tool_denied",
+                        data={"id": call.id, "name": call.name, "reason": "denied by the user"},
+                    )
+                    tool_messages.append(
+                        Message(
+                            role="tool",
+                            content=(
+                                f"Permission denied by the user for tool '{call.name}'.\n"
+                                "Do not silently retry the same call. Explain what you "
+                                "wanted to do and ask how to proceed, or propose a "
+                                "safer alternative."
+                            ),
+                            tool_call_id=call.id,
+                        )
+                    )
+                    continue
+
+            # 4️⃣ execute (approved / granted / full-access)
             tool_started = asyncio.get_running_loop().time()
 
             try:
@@ -258,16 +309,14 @@ class Agent:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                events.append(
-                    AgentEvent(
-                        type="tool_error",
-                        data={
-                            "id": call.id,
-                            "name": call.name,
-                            "error": exc,
-                            "latency": asyncio.get_running_loop().time() - tool_started,
-                        },
-                    )
+                yield AgentEvent(
+                    type="tool_error",
+                    data={
+                        "id": call.id,
+                        "name": call.name,
+                        "error": exc,
+                        "latency": asyncio.get_running_loop().time() - tool_started,
+                    },
                 )
                 tool_messages.append(
                     Message(
@@ -278,16 +327,14 @@ class Agent:
                 )
                 continue
 
-            # 4️⃣ report success
-            events.append(
-                AgentEvent(
-                    type="tool_done",
-                    data={
-                        "id": call.id,
-                        "name": call.name,
-                        "latency": asyncio.get_running_loop().time() - tool_started,
-                    },
-                )
+            # 5️⃣ report success
+            yield AgentEvent(
+                type="tool_done",
+                data={
+                    "id": call.id,
+                    "name": call.name,
+                    "latency": asyncio.get_running_loop().time() - tool_started,
+                },
             )
 
             # ✂️ clip oversized output BEFORE it enters the record
@@ -300,8 +347,6 @@ class Agent:
                     tool_call_id=call.id,
                 )
             )
-
-        return events, tool_messages
 
     # ─────────────────────────────────────────
     # 💾 History (memory across user turns)

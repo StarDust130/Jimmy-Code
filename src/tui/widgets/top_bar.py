@@ -1,9 +1,10 @@
-"""The navbar — brand · folder · model · Σ tokens+cost · state · sound.
+"""The navbar — brand · folder · model · 🛡️ mode · Σ tokens+cost · state · sound.
 
-    ✻ jimmy · 📂 Jimmy-Code · gemini-3.5-flash-lite   Σ 17.3k · $0.0042  ⠹ 📖 Editing  ♪ 🔇 mute
+    ✻ jimmy · 📂 Jimmy-Code · gemini-3.5-flash-lite   🟡 Auto   Σ 17.3k · $0.0042  ⠹ 📖 Editing  ♪ 🔇 mute
 
 Clickable:
     left side  → home
+    🛡️ mode    → permission picker
     state chip → interrupt
     ♪          → play/stop
 
@@ -77,9 +78,13 @@ class TopBar(Horizontal):
 
         # 🧩 Cached child references.
         self._left: Static | None = None
+        self._perm_chip: Static | None = None
         self._tokens_chip: Static | None = None
         self._state_chip: Static | None = None
         self._sound_chip: Static | None = None
+
+        # 🛡️ Current permission label ("🟡 Auto").
+        self._perm_label: str | None = None
 
     # ─────────────────────────────────────────────────────────────
     # layout
@@ -87,6 +92,7 @@ class TopBar(Horizontal):
 
     def compose(self) -> ComposeResult:
         yield Static("", id="top-left")
+        yield Static("", id="chip-perm")
         yield Static("", id="chip-tokens")
         yield Static("", id="chip-state")
         yield Static("", id="chip-sound")
@@ -111,6 +117,7 @@ class TopBar(Horizontal):
     def on_mount(self) -> None:
         try:
             self._left = self.query_one("#top-left", Static)
+            self._perm_chip = self.query_one("#chip-perm", Static)
             self._tokens_chip = self.query_one("#chip-tokens", Static)
             self._state_chip = self.query_one("#chip-state", Static)
             self._sound_chip = self.query_one("#chip-sound", Static)
@@ -121,6 +128,9 @@ class TopBar(Horizontal):
             self._left.update(self._brand_text())
             self._left.tooltip = f"{self.cwd_path} · click for home (ctrl+n)"
 
+        if self._perm_chip is not None:
+            self._perm_chip.tooltip = "permission mode — click to change (or /permissions)"
+
         if self._tokens_chip is not None:
             self._tokens_chip.tooltip = "session tokens & cost (input + output)"
 
@@ -129,6 +139,13 @@ class TopBar(Horizontal):
 
         if self._sound_chip is not None:
             self._sound_chip.tooltip = "sound — click or press ctrl+s"
+
+        # 🛡️ Seed the permission chip from the session's mode.
+        try:
+            self._perm_label = jimmy(self).current_permission_label()
+        except Exception:
+            pass
+        self._render_perm_chip()
 
         # 🔊 Keep sound state synchronized even when audio ends itself.
         self._sound_sync = self.set_interval(
@@ -172,6 +189,9 @@ class TopBar(Horizontal):
         elif cid == "top-left":
             app.action_home()
 
+        elif cid == "chip-perm":
+            app.action_permissions()  # 🛡️
+
         elif cid == "chip-state" and self._hud_state == "working":
             app.action_interrupt()
 
@@ -189,6 +209,28 @@ class TopBar(Horizontal):
 
         try:
             self._left.update(self._brand_text())
+        except errors.NoWidget:
+            pass
+        except Exception:
+            # Decorative UI must never break the agent.
+            pass
+
+    # ─────────────────────────────────────────────
+    # 🛡️ permission mode
+    # ─────────────────────────────────────────────
+
+    def set_permission_mode(self, label: str) -> None:
+        """🛡️ Repaint the permission chip after a mode change."""
+
+        self._perm_label = label
+        self._render_perm_chip()
+
+    def _render_perm_chip(self) -> None:
+        if self._perm_chip is None or self._perm_label is None:
+            return
+
+        try:
+            self._perm_chip.update(Text.from_markup(f"[#8a91a8]{escape(self._perm_label)}[/]"))
         except errors.NoWidget:
             pass
         except Exception:

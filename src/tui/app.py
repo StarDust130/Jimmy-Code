@@ -3,7 +3,7 @@
 Layout of the TUI package:
     kit/        helpers · theme · sound · assets · error_hints
     widgets/    rows · messages · chat_log · top_bar · composer
-    screens/    home · palette · models
+    screens/    home · palette · models · permissions
     app.py      THIS FILE — JimmyApp: bindings, agent loop, actions.
 
 Agent behavior (LiteLLM streaming, tools, context, tokens, events)
@@ -11,6 +11,9 @@ lives in ``jimmy.agent`` / ``jimmy.llm``.  Notable agent contract:
     * ``max_steps`` is NOT an error — the agent saves progress and
       emits a ``max_steps`` event; the TUI shows a ▶ Continue card.
     * ``llm_done`` carries ``usage_ok`` → TurnSummary can report gaps.
+    * ``approval_request`` → the agent is SUSPENDED on the permission
+      gate until the TUI resolves it (🛡️ ApprovalScreen); interrupt /
+      clear fail it closed (DENY) — nothing ever runs unapproved.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
 from jimmy.agent import Agent, AgentEvent
@@ -31,6 +35,12 @@ from jimmy.llm.cost_tracker import CostTracker
 from jimmy.llm.model_config import ModelStore  # 🤖 model config store
 from jimmy.llm.provider import LLMProvider
 from jimmy.llm.provider_factory import create_provider  # 🤖 provider factory
+from jimmy.permissions import (  # 🛡️ permission system
+    Decision,
+    PermissionManager,
+    PermissionMode,
+    mode_label,
+)
 
 from .kit.error_hints import friendly_error  # 🫱 human-readable errors
 from .kit.helpers import format_duration, jimmy, short_model, tool_display
@@ -39,6 +49,7 @@ from .kit.theme import THEME, THEME_ORDER, THEMES, rebuild_flow
 from .screens.home import HomeScreen
 from .screens.models import ModelScreen  # 🤖 model picker screen
 from .screens.palette import CommandPaletteScreen
+from .screens.permissions import ApprovalScreen, PermissionScreen  # 🛡️ permission UI
 from .widgets.chat_log import ChatLog
 from .widgets.composer import Composer, HelpDialogScreen
 from .widgets.messages import (
@@ -82,7 +93,8 @@ class JimmyApp(App[None]):
 
     enter send · esc interrupt · ctrl+n home (one-way) · ctrl+p palette ·
     ctrl+m models · ctrl+c copy last (with tool calls) · ctrl+a copy all ·
-    ctrl+l clear line · ctrl+s sound · ctrl+q quit · / = slash menu
+    ctrl+l clear line · ctrl+s sound · ctrl+q quit · / = slash menu ·
+    /permissions = permission mode
     """
 
     TITLE = "jimmy"
@@ -120,7 +132,19 @@ class JimmyApp(App[None]):
 
         self.provider = provider
         self.initial_prompt = initial_prompt
+        self.provider = provider
+        self.initial_prompt = initial_prompt
+
+        # 🛡️ Permissions — the APP owns the session default (AUTO).
+        #    The manager is guaranteed on the agent AFTER construction,
+        #    so any Agent implementation works (including test fakes
+        #    that predate the permissions kwarg).
         self.agent = Agent(provider)
+        _perms = getattr(self.agent, "permissions", None)
+        if isinstance(_perms, PermissionManager):
+            _perms.set_mode(PermissionMode.AUTO)
+        else:
+            self.agent.permissions = PermissionManager(mode=PermissionMode.AUTO)
 
         # 🤖 Model plumbing — saved models + 💰 session cost snapshot.
         self.model_store = ModelStore()
@@ -159,6 +183,9 @@ class JimmyApp(App[None]):
         # ⚠️ One error card per turn, ever (agent emits error AND the
         #    worker's except may fire for the same failure).
         self._error_shown = False
+
+        # 🛡️ id of the approval currently shown (None = none pending).
+        self._approval_request_id: str | None = None
 
     # accessors ──────────────────────────────────────────────────────────
 
@@ -252,6 +279,70 @@ class JimmyApp(App[None]):
         """🤖 Open the model picker (ctrl+m / 🤖 in palette)."""
         self.push_screen(ModelScreen())
 
+    # 🛡️ permissions ─────────────────────────────────────────────────────
+
+    def current_permission_mode(self) -> PermissionMode:
+        """🛡️ The session's active permission mode (never raises)."""
+        try:
+            return self.agent.permissions.mode
+        except Exception:
+            return PermissionMode.AUTO
+
+    def current_permission_label(self) -> str:
+        """🛡️ '🟡 Auto' style label — navbar / palette / picker."""
+        return mode_label(self.current_permission_mode())
+
+    def action_permissions(self) -> None:
+        """🛡️ Open the picker (ctrl+p → Permissions · /permissions · chip)."""
+        if self._palette_open():
+            self.close_palette(after=lambda: self.push_screen(PermissionScreen()))
+            return
+        self.push_screen(PermissionScreen())
+
+    def set_permission_mode(self, mode: PermissionMode) -> None:
+        """🛡️ Change the session mode — applies IMMEDIATELY.
+
+        Never silent: the navbar chip repaints and a notification fires,
+        so an escalation is always visible to the user.
+        """
+        self.agent.permissions.set_mode(mode)
+        label = mode_label(mode)
+        try:
+            self.top_bar.set_permission_mode(label)
+        except Exception:
+            pass  # chrome repaint must never block a mode change
+        self.notify(f"🛡️ permissions · {label}", timeout=2)
+
+    def resolve_approval(self, request_id: str, decision: Decision) -> None:
+        """🛡️ Forward the user's decision to the waiting agent."""
+        self._approval_request_id = None
+        if decision is Decision.DENY:
+            self.notify("🛡️ denied — Jimmy won't run this action", timeout=1.5)
+        self.agent.permissions.gate.resolve(request_id, decision)
+
+    def approve_for_session(self, request_id: str, tool_name: str) -> None:
+        """🔓 Explicit consent: this tool never prompts again this session."""
+        self.agent.permissions.grant_for_session(tool_name)
+        self.resolve_approval(request_id, Decision.ALLOW)
+        self.notify(f"🛡️ {tool_name} — allowed for this session", timeout=2)
+
+    def _dismiss_approval(self) -> None:
+        """🛡️ Fail closed: cancel pending approvals (→ DENY) + close UI.
+
+        Idempotent — safe to call from interrupt, clear, AND the
+        cancelled worker's cleanup.
+        """
+        try:
+            self.agent.permissions.gate.cancel_all()
+        except Exception:
+            pass
+        self._approval_request_id = None
+        try:
+            if isinstance(self.screen, ApprovalScreen):
+                self.pop_screen()
+        except Exception:
+            pass
+
     # ▶️ continue after step-limit ───────────────────────────────────────
 
     def continue_task(self) -> None:
@@ -289,7 +380,11 @@ class JimmyApp(App[None]):
             pass
 
     def _heal_focus(self) -> None:
-        if self._palette_open() or self.focused is not None:
+        # 🛡️ modal screens (approval / permission picker / help) own the
+        #    keyboard — the watchdog must never steal focus from them.
+        if self._palette_open() or isinstance(self.screen, ModalScreen):
+            return
+        if self.focused is not None:
             return
         self._focus_top_input()
 
@@ -361,6 +456,8 @@ class JimmyApp(App[None]):
             self.action_cycle_theme()
         elif command == "/model":
             self.action_open_models()
+        elif command == "/permissions":
+            self.action_permissions()  # 🛡️ ask / auto / full access
         elif command == "/help":
             self.push_screen(HelpDialogScreen())
         elif command == "/quit":
@@ -502,6 +599,23 @@ class JimmyApp(App[None]):
             self.chat.pin()
             return
 
+        if event.type == "approval_request":
+            # 🛡️ show the prompt; the agent is suspended on the gate
+            #    until the user answers (or the turn is cancelled → deny).
+            self._approval_request_id = str(data.get("id", ""))
+            self.top_bar.set_activity("🛡️ approval")
+            self.push_screen(ApprovalScreen(data))
+            return
+
+        if event.type == "tool_denied":
+            row = self._tool_rows.get(str(data["id"]))
+            if row is not None:
+                row.fail(PermissionError("denied by user"))
+                self._transcript.append(("tool", f"🛡️ {row.action} {row.detail} — denied by user"))
+            self.top_bar.set_activity(None)
+            self.chat.pin(force=True)
+            return
+
         if event.type == "error":
             # ⚠️ ONE card per turn — the worker's except may fire for
             #    the same failure the agent already reported.
@@ -536,6 +650,7 @@ class JimmyApp(App[None]):
             self.composer.flash_success()
 
         except asyncio.CancelledError:
+            self._dismiss_approval()  # 🛡️ pending approval → deny + close
             self._dismiss_thinking()
 
             if not self.chat.is_empty:
@@ -587,6 +702,8 @@ class JimmyApp(App[None]):
         self.composer.clear_input()
 
     def action_clear_chat(self) -> None:
+        self._dismiss_approval()  # 🛡️ pending approval → deny + close
+
         if self._busy:
             self.workers.cancel_group(self, "turn")
 
@@ -610,6 +727,7 @@ class JimmyApp(App[None]):
             self.composer.focus_input()
 
     def action_interrupt(self) -> None:
+        self._dismiss_approval()  # 🛡️ pending approval? deny it first
         if self._busy:
             self.workers.cancel_group(self, "turn")
 

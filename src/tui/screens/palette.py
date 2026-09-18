@@ -7,6 +7,9 @@ Root menu contains only:
        saved models re-read fresh on every open, search every provider,
        same-key instant switch).  There is deliberately NO inline model
        list here: it duplicated the wizard and could show stale state.
+    🛡️ Permissions    → opens the permission-mode picker (ask / auto /
+       full access).  The current mode label is recomputed on EVERY
+       rebuild, exactly like the model label — never stale.
     ✕ Close menu
 
 The CURRENT model is shown in the header and the section line, and is
@@ -36,6 +39,7 @@ from textual.widgets import Input, Static
 from ..kit.helpers import jimmy, keycap
 from ..kit.theme import THEME, THEME_ORDER, THEMES
 from .models import ModelScreen
+from .permissions import PermissionScreen  # 🛡️ permission-mode picker
 
 
 class PaletteSearch(Input):
@@ -200,6 +204,13 @@ class CommandPaletteScreen(ModalScreen):
         except Exception:
             return "model"
 
+    def _permission_label(self) -> str:
+        """🛡️ Current permission mode — recomputed on EVERY rebuild."""
+        try:
+            return jimmy(self).current_permission_label()
+        except Exception:
+            return "permissions"
+
     # ─────────────────────────────────────────────
     # 🎨 Chrome
     # ─────────────────────────────────────────────
@@ -234,10 +245,10 @@ class CommandPaletteScreen(ModalScreen):
     def _commands(
         self,
     ) -> list[tuple[str, str, Callable[[], None]]]:
-        """Root menu — only the four supported actions.
+        """Root menu — only the supported actions.
 
-        The model label is computed on EVERY rebuild, so it always
-        reflects the CURRENT model.
+        The model + permission labels are computed on EVERY rebuild, so
+        they always reflect the CURRENT state.
         """
 
         app = jimmy(self)
@@ -259,6 +270,11 @@ class CommandPaletteScreen(ModalScreen):
                 "🤖",
                 f"Change model · {model_label}",
                 self._open_model_screen,
+            ),
+            (
+                "🛡️",
+                f"Permissions · {self._permission_label()}",
+                self._open_permission_screen,
             ),
             (
                 "✕",
@@ -709,6 +725,21 @@ class CommandPaletteScreen(ModalScreen):
 
         def _open() -> None:
             app.push_screen(ModelScreen())
+
+        try:
+            app.close_palette(after=_open)
+
+        except TypeError:
+            app.close_palette()
+            app.call_later(_open)
+
+    def _open_permission_screen(self) -> None:
+        """🛡️ Permissions → close palette first, then open the picker."""
+
+        app = jimmy(self)
+
+        def _open() -> None:
+            app.push_screen(PermissionScreen())
 
         try:
             app.close_palette(after=_open)

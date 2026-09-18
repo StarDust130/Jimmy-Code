@@ -333,20 +333,20 @@ review/recovery
 7. tests ✅
 
 
-1. 🎨 Better TUI
+✅. 🎨 Better TUI
    ├─ tool/activity status
    ├─ small thinking/status text
    ├─ token usage
    ├─ model name
    └─ cleaner streaming
 
-2. 🧠 Better context 🌟
+✅. 🧠 Better context 🌟
    ├─ only relevant context
    ├─ token budget
    ├─ compact old results when needed
    └─ never dump everything to LLM   
 
-3. 🤖 Multi-model support
+✅ 🤖 Multi-model support
    ├─ Gemini = default
    ├─ user adds any LiteLLM model + API key
    ├─ select active model in TUI
@@ -354,12 +354,11 @@ review/recovery
 
 
 
- 🔐 Permissions
+ ✅🔐 Permissions
  💾 Sessions
- 📊 Better observability
+ 📊 Better observability (Langfuse + OpenTelemetry)
  🧪 Evaluation suite
  🧠 Planning capability
  🔄 Recovery / fallback
 🧩 Model switching / fallback
- 🧪 Evaluation suite
  🚀 Deploy it.

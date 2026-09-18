@@ -1021,3 +1021,214 @@ HelpDialogScreen {
     border-top: solid #1a2036;
     color: #565d73;
 }
+
+/* ═══════════════════════════════════════════════
+   🛡️ PERMISSIONS — navbar chip · picker · approval
+   ═══════════════════════════════════════════════ */
+
+#chip-perm {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    color: #aab2c7;
+}
+
+#chip-perm:hover {
+    background: #161c30;
+}
+
+PermissionScreen {
+    align: center middle;
+    background: #05060a 78%;
+}
+
+#perm-card {
+    width: 84;
+    max-width: 92%;
+    height: auto;
+    background: #0d1017;
+    border: round #2a3148;
+    padding: 0 1 1 1;
+}
+
+#perm-head {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    background: #10141f;
+    border-bottom: solid #1a2036;
+}
+
+#perm-title {
+    width: 1fr;
+    height: 1;
+    color: #e2e6f2;
+    text-style: bold;
+}
+
+#perm-esc {
+    width: auto;
+    height: 1;
+}
+
+#perm-close {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    margin-left: 1;
+    color: #aab2c7;
+}
+
+#perm-close:hover {
+    background: #2a1420;
+    color: #fda4af;
+}
+
+#perm-sub {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+    color: #8a91a8;
+}
+
+#perm-list {
+    width: 100%;
+    height: auto;
+    margin-top: 1;
+}
+
+.perm-row {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    color: #dbe0ee;
+}
+
+.perm-row:hover {
+    background: #131a30;
+}
+
+.perm-row.selected {
+    background: #1c2440;
+    text-style: bold;
+}
+
+#perm-foot {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+    border-top: solid #1a2036;
+    color: #6a7188;
+}
+
+ApprovalScreen {
+    align: center middle;
+    background: #05060a 78%;
+}
+
+#approval-card {
+    width: 78;
+    max-width: 94%;
+    height: auto;
+    background: #0d1017;
+    border: round #6b5a2a;
+    padding: 0 1 1 1;
+}
+
+#approval-head {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    background: #10141f;
+    border-bottom: solid #1a2036;
+}
+
+#approval-title {
+    width: 1fr;
+    height: 1;
+    color: #e2e6f2;
+    text-style: bold;
+}
+
+#approval-esc {
+    width: auto;
+    height: 1;
+}
+
+#approval-close {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    margin-left: 1;
+    color: #aab2c7;
+}
+
+#approval-close:hover {
+    background: #2a1420;
+    color: #fda4af;
+}
+
+.approval-row {
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+#approval-actions {
+    width: 100%;
+    height: auto;
+    margin-top: 1;
+    padding: 0 1;
+}
+
+.perm-btn {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    margin-right: 1;
+    color: #34d399;
+}
+
+.perm-btn:hover {
+    background: #12271c;
+}
+
+.perm-btn-danger {
+    color: #fb7185;
+}
+
+.perm-btn-danger:hover {
+    background: #2a1420;
+}
+
+#btn-session {
+    color: #f5c451;
+}
+
+#btn-session:hover {
+    background: #2a2412;
+}
+
+#btn-full {
+    margin-top: 1;
+}
+
+.perm-btn-full {
+    color: #fda4af;
+}
+
+.perm-btn-full:hover {
+    background: #2a1420;
+}
+
+#approval-foot {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+    border-top: solid #1a2036;
+    color: #6a7188;
+}
