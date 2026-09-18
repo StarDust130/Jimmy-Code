@@ -215,13 +215,19 @@ class JimmyApp(App[None]):
     # 🤖 multi-model ─────────────────────────────────────────────────────
 
     def current_model_short(self) -> str:
-        """🏷️ Short active-model name for the palette label (never raises)."""
+        """🏷️ Short ACTIVE-model name (never raises).
+
+        ⚠️ Reads agent.provider FIRST — it is the hot-swapped source of
+        truth.  (self.provider is only the boot-time provider and goes
+        stale after switch_model unless synced — we sync it there too,
+        but the agent is authoritative.)
+        """
         try:
-            model = getattr(self.provider, "model", None) or getattr(
-                self.agent.provider, "model", None
-            )
+            model = getattr(self.agent.provider, "model", None)
         except Exception:
             model = None
+        if not model:
+            model = getattr(self.provider, "model", None)
         return short_model(model) if model else "model"
 
     def switch_model(self, name: str) -> None:
@@ -234,6 +240,7 @@ class JimmyApp(App[None]):
         self.model_store.set_active(name)  # 💾 persisted
         provider = create_provider(self.model_store.active())  # 🔑 validates
         self.agent.set_provider(provider)  # 🔁 history kept
+        self.provider = provider  # 🔄 keep the boot-time ref in sync
         self._cost_usd = 0.0  # 💰 fresh ledger
         try:
             self.top_bar.set_model(provider.model)  # 🏷️ brand repaint
