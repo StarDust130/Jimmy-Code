@@ -2,15 +2,20 @@
 
 Tool timeline UX: no step counters — the tools speak for themselves.
 
-    ⠹ ✻ thinking · 0.8s                 ← spinner + drifting sparkle
-    ⠹ 🌿 git status --porcelain          ← active (pulsing action text)
+    ⠹ th✻inking · test-flash · 0.8s          ← sparkle drift + model + time
+    ⠹ 🌿 git status --porcelain ▁▂▄▂▁ 0.4s   ← pulsing text + ACTIVITY WAVE
     ✓ 🌿 git status --porcelain · 30ms · 4 lines
     ✓ 🧪 pytest -q · 1.2s · 40 lines · ⚠ issues
-    ⚠ ✏️ Editing x.ts · FileNotFoundError
+    ⚠ ✏️ Editing x.ts · ⏱️ FileNotFoundError
+
+ Latency chips are SPEED-CODED: green fast · blue normal · amber slow.
+ Rows carry running/ok/err classes → colored left rail in the tcss.
+ Hover any row → the raw call (tool name + arguments).
 """
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, ClassVar
 
@@ -22,10 +27,12 @@ from textual.widgets import Static
 
 from ..kit.helpers import (
     SPINNER_FRAMES,
+    WAVE_GLYPHS,
     classify_error,
     compact_count,
     format_duration,
     jimmy,
+    short_model,
 )
 from ..kit.theme import THEME
 
@@ -33,6 +40,17 @@ from ..kit.theme import THEME
 #    every spinner tick: a heartbeat that says "this is happening now".
 _PULSE_A = "#d5dae8"
 _PULSE_B = "#a9b3d0"
+
+# ⏱️ speed-coded latency chips — how fast was this tool, at a glance
+_FAST, _NORM, _SLOW = "#34d399", "#93c5fd", "#fbbf24"
+
+
+def _latency_color(seconds: float) -> str:
+    if seconds < 0.5:
+        return _FAST
+    if seconds < 2.0:
+        return _NORM
+    return _SLOW
 
 
 class AnimatedRow(Static):
@@ -85,9 +103,11 @@ class AnimatedRow(Static):
 
 
 class ThinkingRow(AnimatedRow):
-    """`⠹ ✻ thinking · 0.8s` — quiet and alive, no step-count clutter.
+    """`⠹ th✻inking · model · 0.8s` — quiet and alive.
 
-    A tiny sparkle drifts through the word while the spinner runs.
+    A tiny sparkle drifts through the word while the spinner runs; the
+    ACTIVE model and live elapsed time answer "what / how long" without
+    any step-counter clutter.
     """
 
     SPARK_POS: ClassVar[tuple[str, ...]] = (
@@ -116,7 +136,9 @@ class ThinkingRow(AnimatedRow):
         self._safe_update(
             Text.from_markup(
                 f"[{THEME['accent']}]{SPINNER_FRAMES[self._frame]}[/] "
-                f"[#8a91a8]{word}[/]  [#4b5163]{elapsed}[/]"
+                f"[#8a91a8]{word}[/]  "
+                f"[#3d4666]{escape(short_model(self.model_name))}[/]  "
+                f"[#4b5163]{elapsed}[/]"
             )
         )
 
@@ -124,10 +146,18 @@ class ThinkingRow(AnimatedRow):
 class LiveToolStatus(AnimatedRow):
     """One readable tool line — the star of the timeline.
 
-    active   ⠹ 🌿 git status --porcelain     (pulsing action text)
+    active   ⠹ 🌿 git status --porcelain ▁▂▄▂▁ 0.4s
+             ↑ spinner + pulsing text + a tiny ACTIVITY WAVE that
+               ripples while the tool runs — the row is never dead.
     done     ✓ 🌿 git status --porcelain · 30ms · 4 lines
+             ↑ latency is SPEED-CODED (green/blue/amber) + one
+               high-signal hint distilled from the real output.
     shell    ✓ 🧪 pytest -q · 1.2s · 40 lines · ⚠ issues
-    failed   ⚠ ✏️ Editing x.ts · ⏱️ timeout
+    failed   ⚠ ✏️ Editing x.ts · ⏱️ FileNotFoundError
+
+    "Git git"-style echo is suppressed at render time: when the detail
+    already starts the sentence (a git command, or the action word),
+    the verb is dropped — the icon + state glyph carry the meaning.
     """
 
     def __init__(
@@ -139,6 +169,7 @@ class LiveToolStatus(AnimatedRow):
         action: str,
         detail: str,
         step: int = 0,
+        arguments: dict[str, Any] | None = None,
     ) -> None:
         self.call_id = call_id
         self.tool_name = tool_name
@@ -146,21 +177,52 @@ class LiveToolStatus(AnimatedRow):
         self.action = action
         self.detail = detail
         self.step = step  # accepted for compatibility — not displayed
+        self._arguments = arguments or {}
         self.started = time.monotonic()
+        self._latency: float | None = None
         self._frame = 0
-        super().__init__("", classes="live-tool-status")
+        super().__init__("", classes="live-tool-status running")
 
     def on_mount(self) -> None:
+        # 🛰️ hover = the raw call — full depth on demand, zero clutter.
+        tip = f"{self.tool_name} · {self.call_id}"
+        if self._arguments:
+            try:
+                tip += f"\n{json.dumps(self._arguments, ensure_ascii=False, indent=2)}"
+            except Exception:
+                pass
+        try:
+            self.tooltip = tip
+        except Exception:
+            pass
         self.call_after_refresh(self._redraw)
         self._start_anim(0.1)
 
-    def _label(self) -> str:
-        return escape(f"{self.icon} {self.action}")
+    # ── rendering helpers ────────────────────────────────────────────
 
-    def _detail_part(self) -> str:
-        if not self.detail:
-            return ""
-        return f"  [#7b8296]{escape(self.detail)}[/]"
+    def _show_action(self) -> bool:
+        """False when the detail already tells the story ('Git git')."""
+        detail = self.detail.strip().lower()
+        action = self.action.strip().lower()
+        if not detail:
+            return True
+        if detail.startswith("git "):
+            return False
+        return not (action and detail.startswith(action))
+
+    def _body(self) -> str:
+        """The readable middle: 'icon Action detail' or 'icon detail'."""
+        if self._show_action():
+            label = f"{self.icon} {self.action}"
+            if self.detail:
+                return f"{label} {self.detail}"
+            return label
+        return f"{self.icon} {self.detail}".rstrip()
+
+    def _wave(self) -> str:
+        """▁▂▄▂▁ — a 5-glyph ripple from WAVE_GLYPHS, shifted per tick."""
+        base = len(WAVE_GLYPHS)
+        return "".join(WAVE_GLYPHS[(self._frame + i) % base] for i in range(5))
 
     def _redraw(self) -> None:
         self._frame = (self._frame + 1) % len(SPINNER_FRAMES)
@@ -169,13 +231,16 @@ class LiveToolStatus(AnimatedRow):
         self._safe_update(
             Text.from_markup(
                 f"[{THEME['accent']}]{SPINNER_FRAMES[self._frame]}[/] "
-                f"[{action_color}]{self._label()}[/]{self._detail_part()}  "
+                f"[{action_color}]{escape(self._body())}[/]  "
+                f"[#3d4666]{self._wave()}[/]  "
                 f"[#4b5163]{elapsed}[/]"
             )
         )
 
+    # ── state transitions (called by JimmyApp) ───────────────────────
+
     def finish(self, latency: float, output: str | None = None) -> None:
-        """Done: ✓ + latency + one high-signal hint from the result.
+        """Done: ✓ + SPEED-CODED latency + one hint from the result.
 
         ``output`` is the clipped tool result the agent already has —
         we distill ONE quiet hint (line count / issue marker) instead
@@ -184,14 +249,18 @@ class LiveToolStatus(AnimatedRow):
         """
         self._finished = True  # also blocks a late on_mount restart
         self._stop_anim()
+        self._latency = float(latency)
+        self.remove_class("running")
+        self.add_class("ok")
 
         hint = self._summarize_output(output)
+        color = _latency_color(self._latency)
 
         self._safe_update(
             Text.from_markup(
                 f"[#34d399]✓[/] "
-                f"[#7f8aa5]{self._label()}[/]{self._detail_part()}  "
-                f"[#34d399]{format_duration(latency)}[/]{hint}"
+                f"[#7f8aa5]{escape(self._body())}[/]  "
+                f"[{color}]{format_duration(self._latency)}[/]{hint}"
             )
         )
 
@@ -223,13 +292,17 @@ class LiveToolStatus(AnimatedRow):
     def fail(self, error: BaseException) -> None:
         self._finished = True
         self._stop_anim()
+        self._latency = time.monotonic() - self.started
+        self.remove_class("running")
+        self.add_class("err")
+
         lines = str(error).strip().splitlines()
         reason = lines[0].strip() if lines and lines[0].strip() else type(error).__name__
         icon = classify_error(error)[0]
         self._safe_update(
             Text.from_markup(
                 f"[#fbbf24]⚠[/] "
-                f"[#fda4af]{self._label()}[/]{self._detail_part()}  "
+                f"[#fda4af]{escape(self._body())}[/]  "
                 f"[#fb7185]{icon} {escape(reason[:40])}[/]"
             )
         )
@@ -240,9 +313,9 @@ class TurnSummary(AnimatedRow):
 
         ✦ 4.8s · 17.3k in · 263 out · 6 tools · 3 rounds  ⧉ copy
 
-    The ✦ sparkles briefly on completion; clicking the row copies that
-    exchange (prompt + tools + reply).  ``gaps`` > 0 renders an honest
-    ⚠ note about steps whose provider sent no usage.
+    The ✦ sparkles through 4 colors on completion; clicking the row
+    copies that exchange (prompt + tools + reply).  ``gaps`` > 0
+    renders an honest ⚠ note about steps whose provider sent no usage.
     """
 
     SPARK_COLORS: ClassVar[tuple[str, ...]] = (

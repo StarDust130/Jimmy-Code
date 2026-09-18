@@ -328,17 +328,19 @@ class Agent:
                 continue
 
             # 5️⃣ report success
+            # ✂️ clip oversized output BEFORE it enters the record
+            clipped = self.context.clip_tool_output(tool_result.output)
+
+            # 5️⃣ report success (+ output so the TUI row can distill a hint)
             yield AgentEvent(
                 type="tool_done",
                 data={
                     "id": call.id,
                     "name": call.name,
                     "latency": asyncio.get_running_loop().time() - tool_started,
+                    "output": clipped,  # 📊 one-line hint material for the row
                 },
             )
-
-            # ✂️ clip oversized output BEFORE it enters the record
-            clipped = self.context.clip_tool_output(tool_result.output)
 
             tool_messages.append(
                 Message(

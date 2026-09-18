@@ -589,7 +589,11 @@ class JimmyApp(App[None]):
         if event.type == "tool_done":
             row = self._tool_rows.get(str(data["id"]))
             if row is not None:
-                row.finish(float(data["latency"]))
+                output = data.get("output")
+                row.finish(
+                    float(data["latency"]),
+                    output if isinstance(output, str) else None,
+                )
             self.top_bar.set_activity(None)
             self.chat.pin()
             return

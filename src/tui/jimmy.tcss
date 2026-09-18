@@ -1257,3 +1257,51 @@ ApprovalScreen {
     border-top: solid #1a2036;
     color: #6a7188;
 }
+
+.thinking-row {
+    width: 100%;
+    max-width: 120;
+    height: 1;
+    padding-left: 1;
+    color: #565d73;
+}
+
+/* 🧾 tool receipts — a state rail on the left tells the story */
+.live-tool-status {
+    width: 100%;
+    max-width: 120;
+    height: 1;
+    padding-left: 1;
+    border-left: heavy transparent;
+}
+
+.live-tool-status:hover {
+    background: #0d1120;
+}
+
+.live-tool-status.running {
+    border-left: heavy #2a3148;
+}
+
+.live-tool-status.ok {
+    border-left: heavy #1d3a2d;
+}
+
+.live-tool-status.err {
+    border-left: heavy #5b2733;
+    background: #120d13;
+}
+
+.turn-summary {
+    width: 100%;
+    max-width: 120;
+    height: 1;
+    padding-left: 1;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+.turn-summary:hover {
+    background: #0d1120;
+    color: #aab2c7;
+}
