@@ -333,6 +333,7 @@ class Composer(Vertical):
     # 📋 斜杠命令 — 与 JimmyApp._run_command 同步。
     COMMANDS: ClassVar[tuple[tuple[str, str], ...]] = (
         ("/model", "open the model picker (search every model)"),
+        ("/permissions", "permission mode · ask / auto / full access"),
         ("/sound", "play / stop the startup sound"),
         ("/help", "shortcuts · commands · support"),
         ("/quit", "quit jimmy"),

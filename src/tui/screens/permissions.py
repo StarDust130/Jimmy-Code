@@ -4,6 +4,12 @@ Both screens are thin: ALL policy lives in ``jimmy.permissions``; these
 screens only display state and collect the user's decision, then call
 back into JimmyApp (which owns the agent).
 
+PermissionScreen — three color-coded mode CARDS (not a boring list):
+each shows the emoji + name, a 1·2·3 hotkey, the one-line description,
+and a capability strip telling you exactly what runs automatically (✓)
+and what asks first (✋).  Apply via ↑↓ + ↵, the hotkeys, or a click —
+the change is instant and announced (never silent).
+
 ApprovalScreen is FAIL-CLOSED: every exit path that isn't an explicit
 allow (esc · ✕ · click outside) resolves as DENY — the agent must never
 hang and nothing may ever run unapproved.
@@ -32,6 +38,30 @@ _MODE_ORDER: tuple[PermissionMode, ...] = (
     PermissionMode.FULL,
 )
 
+# 🎨 per-mode identity — color · hotkey · capability strip
+#    ✓ = runs automatically        ✋ = asks you first
+_MODE_STYLE: dict[PermissionMode, tuple[str, str, str]] = {
+    PermissionMode.ASK: (
+        "#34d399",
+        "1",
+        "[#34d399]📖 read ✓[/]  [#2a3148]·[/]  [#fbbf24]✎ edit ✋[/]  "
+        "[#2a3148]·[/]  [#fbbf24]🧪 tests ✋[/]  [#2a3148]·[/]  "
+        "[#fbbf24]💻 shell ✋[/]  [#2a3148]·[/]  [#fbbf24]🌿 git ✋[/]",
+    ),
+    PermissionMode.AUTO: (
+        "#fbbf24",
+        "2",
+        "[#34d399]📖 read ✓[/]  [#2a3148]·[/]  [#34d399]✎ edit ✓[/]  "
+        "[#2a3148]·[/]  [#34d399]🧪 tests ✓[/]  [#2a3148]·[/]  "
+        "[#fbbf24]💻 shell ✋[/]  [#2a3148]·[/]  [#fbbf24]🌿 git push ✋[/]",
+    ),
+    PermissionMode.FULL: (
+        "#fb7185",
+        "3",
+        "[#34d399]⚡ everything runs — no prompts, full speed[/]",
+    ),
+}
+
 
 class PermissionScreen(ModalScreen):
     """🛡️ Pick the permission mode — applies immediately, never silent."""
@@ -57,21 +87,28 @@ class PermissionScreen(ModalScreen):
         with Vertical(id="perm-card"):
             with Horizontal(id="perm-head"):
                 yield Static(
-                    Text.from_markup(f"[{THEME['accent']}]🛡️[/] [#e2e6f2]Permissions[/]"),
+                    Text.from_markup(
+                        f"[{THEME['accent']}]🛡️[/] [#e2e6f2]Permissions[/]"
+                        f"  [#2a3148]·[/] [#7b8296]how Jimmy acts on your project[/]"
+                    ),
                     id="perm-title",
                 )
                 yield Static(Text.from_markup(keycap("esc", "close")), id="perm-esc")
                 yield Static("✕", id="perm-close")
 
             yield Static(
-                "How should Jimmy ask before acting on this project?",
-                id="perm-sub",
+                Text.from_markup(
+                    "[#34d399]✓[/] [#8a91a8]runs automatically"
+                    f"{'   ' if True else ''}[/]"
+                    "[#fbbf24]✋[/] [#8a91a8]asks you first[/]"
+                ),
+                id="perm-legend",
             )
 
             yield Vertical(id="perm-list")
 
             yield Static(
-                "↑↓ navigate · ↵ or 1·2·3 apply · change takes effect immediately",
+                "↑↓ navigate · ↵ or 1·2·3 apply · click a card · change is instant",
                 id="perm-foot",
             )
 
@@ -84,43 +121,53 @@ class PermissionScreen(ModalScreen):
             pass
 
         lst = self.query_one("#perm-list", Vertical)
-        for _mode in _MODE_ORDER:
+        for mode in _MODE_ORDER:
             row = Static("", classes="perm-row")
+            row.tooltip = f"switch to {MODE_META[mode][1]}"
             self._rows.append(row)
             lst.mount(row)
 
         self._paint()
-        self.call_after_refresh(self._paint)
 
     # painting ────────────────────────────────────────────────────────
 
     def _paint(self) -> None:
-        accent = THEME["accent"]
         try:
             current = jimmy(self).current_permission_mode()
         except Exception:
             current = None
 
         for i, (mode, row) in enumerate(zip(_MODE_ORDER, self._rows)):
-            emoji, name, desc = MODE_META[mode]
             selected = i == self._index
-            marker = f"[{accent}]›[/]" if selected else "[#3a4157]›[/]"
-            active = "  [#34d399]● active[/]" if mode is current else ""
-            label_style = "bold #f5f6fc" if selected else "#e2e6f2"
-            desc_style = "#c3cade" if selected else "#aab2c7"
-
-            row.update(
-                Text.from_markup(
-                    f"{marker} {emoji} "
-                    f"[{label_style}]{escape(name)}[/][#565d73] — [/]"
-                    f"[{desc_style}]{escape(desc)}[/]{active}"
-                )
-            )
-
+            row.update(self._row_markup(mode, current, selected))
             if selected:
                 row.add_class("selected")
             else:
                 row.remove_class("selected")
+
+    def _row_markup(
+        self,
+        mode: PermissionMode,
+        current: PermissionMode | None,
+        selected: bool,
+    ) -> Text:
+        """One mode card — 3 lines: title+hotkey · description · caps."""
+        color, hotkey, caps = _MODE_STYLE[mode]
+        emoji, name, desc = MODE_META[mode]
+        accent = THEME["accent"]
+
+        marker = f"[{accent}]▸[/]" if selected else "[#3a4157]▸[/]"
+        badge = "  [#34d399]● active[/]" if mode is current else ""
+        name_style = "bold #f5f6fc" if selected else f"bold {color}"
+
+        line1 = (
+            f"{marker}  [{color}]{emoji}[/]  "
+            f"[{name_style}]{escape(name)}[/]{badge}   {keycap(hotkey, '')}"
+        )
+        line2 = f"    [#aab2c7]{escape(desc)}[/]"
+        line3 = f"    {caps}"
+
+        return Text.from_markup("\n".join((line1, line2, line3)))
 
     # navigation ──────────────────────────────────────────────────────
 
