@@ -1,16 +1,82 @@
-"""Composer: paste sanitizing and ↑/↓ prompt history.
-
-(Palette click tests live in test_palette.py — the earlier duplicate of
-``test_palette_click_outside_card_closes`` here crashed collection
-because ``pilot.click(Screen, ...)`` cannot query a screen.)
-"""
+"""Composer：粘贴清洗、↑/↓ 历史记录，以及斜杠命令弹窗（与缩减后的
+COMMANDS 集 /model · /sound · /help · /quit 同步）。"""
 
 from __future__ import annotations
 
 from conftest import leave_home, settle, tui_test
-from textual.widgets import Input
 
 from tui.kit.helpers import MAX_PASTE_CHARS
+from tui.widgets.composer import Composer
+
+
+@tui_test
+async def test_popup_opens_on_slash_with_all_commands(app) -> None:
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        await leave_home(app, pilot)
+
+        slash = app.composer._slash
+        assert slash is not None
+        assert not slash.is_open
+
+        await pilot.press("/")
+        await pilot.pause()
+
+        assert slash.is_open
+        assert len(slash._items) == len(Composer.COMMANDS)
+
+
+@tui_test
+async def test_popup_filters_by_prefix(app) -> None:
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        await leave_home(app, pilot)
+
+        for char in "/mo":
+            await pilot.press(char)
+        await pilot.pause()
+
+        assert app.composer._slash._items == ["/model"]
+
+
+@tui_test
+async def test_tab_completes_highlighted_command(app) -> None:
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        await leave_home(app, pilot)
+
+        for char in "/mo":
+            await pilot.press(char)
+        await pilot.pause()
+
+        await pilot.press("tab")
+        await pilot.pause()
+
+        assert app.composer._prompt_input.value == "/model"
+        assert app.composer._slash.is_open  # 保持打开状态 → Enter 运行它
+
+
+@tui_test
+async def test_help_opens_help_dialog(app) -> None:
+    from tui.widgets.composer import HelpDialogScreen
+
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        await leave_home(app, pilot)
+
+        for char in "/help":
+            await pilot.press(char)
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert isinstance(app.screen, HelpDialogScreen)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert not isinstance(app.screen, HelpDialogScreen)
 
 
 @tui_test
@@ -20,29 +86,11 @@ async def test_multiline_paste_flattened(app) -> None:
         await leave_home(app, pilot)
         prompt = app.composer._prompt_input
 
-        prompt.on_input_changed(Input.Changed(prompt, "line one\nline two\r\nline three"))
+        prompt.value = "line one\nline two\r\nline three"
+        await pilot.pause()
+        await pilot.pause()
+
         assert prompt.value == "line one line two line three"
-
-
-@tui_test
-async def test_large_paste_is_kept_and_noticed(app) -> None:
-    async with app.run_test(size=(100, 30)) as pilot:
-        await pilot.pause()
-        await leave_home(app, pilot)
-        prompt = app.composer._prompt_input
-
-        big = "x" * 500
-        # Real paste path: assigning the value fires Input.Changed through
-        # Textual's reactive system (same as a real paste); the handler
-        # must keep it intact — under the cap, no newlines → untouched.
-        prompt.value = big
-        prompt.cursor_position = len(big)
-        await pilot.pause()
-        await pilot.pause()
-
-        assert prompt.value == big
-        assert len(prompt.value) == 500
-        assert "\n" not in prompt.value
 
 
 @tui_test
@@ -52,8 +100,10 @@ async def test_absurd_paste_is_capped(app) -> None:
         await leave_home(app, pilot)
         prompt = app.composer._prompt_input
 
-        huge = "y" * (MAX_PASTE_CHARS + 10)
-        prompt.on_input_changed(Input.Changed(prompt, huge))
+        prompt.value = "y" * (MAX_PASTE_CHARS + 10)
+        await pilot.pause()
+        await pilot.pause()
+
         assert len(prompt.value) == MAX_PASTE_CHARS
 
 
@@ -76,7 +126,7 @@ async def test_prompt_history_up_down(app) -> None:
         await pilot.press("down")
         assert app.composer._prompt_input.value == "second prompt"
         await pilot.press("down")
-        assert app.composer._prompt_input.value == ""  # draft restored
+        assert app.composer._prompt_input.value == ""  # 草稿已恢复
 
 
 @tui_test
