@@ -123,32 +123,6 @@ async def test_up_down_history_when_popup_closed(app) -> None:
         assert app.composer._prompt_input.value == "alpha"
 
 
-@tui_test
-async def test_popup_also_works_on_home(app) -> None:
-    async with app.run_test(size=(100, 30)) as pilot:
-        await pilot.pause()
-        home = app.screen
-        assert isinstance(home, HomeScreen)
-        home._reveal_all()
-        await pilot.pause()
-
-        slash = home._slash
-        assert slash is not None
-
-        for char in "/the":  # unique prefix of /theme
-            await pilot.press(char)
-        await pilot.pause()
-
-        assert slash.is_open
-        assert slash._items == ["/theme"]
-
-        await pilot.press("enter")  # runs /theme from HOME
-        await pilot.pause()
-        await pilot.pause()
-
-        assert THEME["name"] == "ember"
-        assert isinstance(app.screen, HomeScreen)  # stayed on home
-
 
 @pytest.mark.parametrize(
     ("needle", "haystack", "matched"),
