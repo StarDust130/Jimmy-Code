@@ -1,4 +1,9 @@
-"""LiteLLM-backed provider."""
+"""LiteLLM-backed provider.
+
+🌐 Works with ANY LiteLLM model string:
+   gemini/gemini-3.5-flash-lite, openai/gpt-4o,
+   anthropic/claude-sonnet-4-5, or custom api_base (z.ai, ollama…)
+"""
 
 from __future__ import annotations
 
@@ -23,9 +28,11 @@ class LiteLLMProvider:
         *,
         model: str,
         api_key: str | None = None,
+        api_base: str | None = None,  # 🌐 custom provider URL (z.ai, ollama…)
     ) -> None:
         self.model = model
         self.api_key = api_key
+        self.api_base = api_base
 
     @staticmethod
     def _message(
@@ -71,6 +78,9 @@ class LiteLLMProvider:
 
         if self.api_key:
             kwargs["api_key"] = self.api_key
+
+        if self.api_base:  # 🌐 pass through for custom providers
+            kwargs["api_base"] = self.api_base
 
         return kwargs
 

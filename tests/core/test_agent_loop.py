@@ -120,3 +120,27 @@ async def test_loop_runs_and_prunes():
     # ✂️ clipping verified in stored history too
     history_tools = [m.content for m in agent.history if m.role == "tool"]
     assert all(c is not None and "truncated" in c for c in history_tools)
+
+
+@pytest.mark.asyncio
+async def test_agent_can_swap_provider_mid_session():
+    """🤖 New model continues the SAME conversation."""
+
+    class Provider2(FakeProvider):
+        model = "fake-2"
+
+    agent = Agent(provider=FakeProvider(), context=ContextBuilder())
+    agent.tools.register(FakeTool())
+    agent.history.append(Message(role="user", content="old turn"))
+
+    provider2 = Provider2()
+    agent.set_provider(provider2)
+
+    async for _ in agent.stream("new turn"):
+        pass
+
+    # ✅ new provider got the full history + new message
+    first_request = provider2.requests[0]
+    contents = [m.content for m in first_request]
+    assert "old turn" in contents  # 💾 history survived the swap
+    assert "new turn" in contents

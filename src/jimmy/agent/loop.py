@@ -7,6 +7,10 @@ Token efficiency (Option A):
 🧹 the LLM sees a PRUNED VIEW of the turn before every call
    (old tool results → stubs); the canonical record is never touched
 💾 the canonical record (clipped, unstubbed) is saved to history
+
+Multi-model:
+🤖 set_provider() hot-swaps models mid-session (history kept)
+💰 CostTracker accumulates session tokens + cost
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from jimmy.context import SYSTEM_PROMPT, ContextBuilder
+from jimmy.llm.cost_tracker import CostTracker
 from jimmy.llm.provider import LLMProvider
 from jimmy.llm.types import LLMResult, Message, ToolCall
 from jimmy.tools.core.factory import create_default_registry
@@ -56,6 +61,20 @@ class Agent:
 
         self.history: list[Message] = []
         self.max_steps = max_steps
+
+        self.cost = CostTracker()  # 💰 session-wide tokens + cost
+
+    # ─────────────────────────────────────────
+    # 🤖 Multi-model support (hot-swap)
+    # ─────────────────────────────────────────
+
+    def set_provider(self, provider: LLMProvider) -> None:
+        """🤖 Swap the active model mid-session.
+
+        History is kept — the new model continues the SAME
+        conversation (system prompt + history are model-agnostic).
+        """
+        self.provider = provider
 
     # ─────────────────────────────────────────
     # 🔁 Main entry point (only generator)
@@ -114,13 +133,19 @@ class Agent:
                 yield AgentEvent(type="error", data={"source": "llm", "error": error})
                 raise error
 
+            model_used = result.model or self.provider.model
+
+            # 💰 accumulate session tokens + cost
+            self.cost.add(result.usage, model_used)
+
             yield AgentEvent(
                 type="llm_done",
                 data={
                     "step": step,
-                    "model": (result.model or self.provider.model),
+                    "model": model_used,
                     "latency": latency,
-                    "usage": result.usage,  # 📊 watch this stay flat across steps
+                    "usage": result.usage,  # 📊 per-step usage
+                    "session_totals": self.cost.totals(),  # 📊 for TUI header
                 },
             )
 

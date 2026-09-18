@@ -585,3 +585,222 @@ HomeScreen {
 .hidden-until {
     visibility: hidden;
 }
+
+/* ═══════════════════════════════════════════════
+   🤖 MODEL PICKER — wizard (provider → model → key)
+   ═══════════════════════════════════════════════ */
+
+ModelScreen {
+    align: center middle;
+    background: #05060a 78%;
+}
+
+#model-card {
+    width: 78;
+    max-width: 92%;
+    height: auto;
+    max-height: 38;
+    background: #0d1017;
+    border: round #2a3148;
+    padding: 0 1 1 1;
+}
+
+/* header */
+
+#model-head {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    background: #10141f;
+    border-bottom: solid #1a2036;
+}
+
+#model-title {
+    width: 1fr;
+    height: 1;
+    color: #e2e6f2;
+    text-style: bold;
+}
+
+#model-esc {
+    width: auto;
+    height: 1;
+}
+
+/* 🧭 breadcrumb + stepper */
+
+#model-crumb {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+    color: #7b8296;
+}
+
+#model-steps {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    color: #565d73;
+}
+
+/* context line (hero stats / provider label) */
+
+#model-section {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+    color: #8a91a8;
+}
+
+#model-search {
+    display: none;
+    width: 100%;
+    height: 3;
+    margin-top: 1;
+    padding: 0 1;
+    background: #0f1322;
+    border: round #2a3148;
+    color: #e7eaf3;
+}
+
+#model-search:focus {
+    border: round #8b5cf6;
+    background: #12162b;
+}
+
+#model-list {
+    width: 100%;
+    height: auto;
+    max-height: 18;
+    margin-top: 1;
+}
+
+.model-row {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    color: #dbe0ee;
+}
+
+.model-row:hover {
+    background: #131a30;
+}
+
+.model-row.selected {
+    background: #1c2440;
+    text-style: bold;
+}
+
+/* 🔑 key step */
+
+#model-key {
+    display: none;
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+#model-fullname {
+    width: 100%;
+    height: auto;
+    margin-bottom: 1;
+}
+
+#model-key-hint {
+    width: 100%;
+    height: auto;
+    margin-top: 1;
+}
+
+#model-key-row {
+    width: 100%;
+    height: auto;
+}
+
+#model-in-key {
+    width: 1fr;
+    height: 3;
+    margin-top: 1;
+    background: #0f1322;
+    border: round #2a3148;
+    color: #e7eaf3;
+}
+
+#model-in-key:focus {
+    border: round #34d399;
+    background: #101a14;
+}
+
+#model-eye {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    margin-top: 2;
+    margin-left: 1;
+    color: #8a91a8;
+}
+
+#model-eye:hover {
+    background: #131a30;
+}
+
+#model-form-msg {
+    width: 100%;
+    height: auto;
+    margin-top: 1;
+    color: #565d73;
+}
+
+#model-form-actions {
+    width: 100%;
+    height: auto;
+    margin-top: 1;
+}
+
+.model-btn {
+    width: auto;
+    height: 3;
+    padding: 0 2;
+    margin-right: 1;
+    background: #1b2033;
+    border: round #2a3148;
+    color: #dbe0ee;
+}
+
+.model-btn:hover {
+    background: #232a45;
+    color: #f5f6fc;
+}
+
+#model-save {
+    border: round #2f6f4f;
+    color: #34d399;
+}
+
+#model-save:hover {
+    background: #12271c;
+}
+
+#model-refresh {
+    border: round #2a3148;
+    color: #8a91a8;
+}
+
+#model-refresh:hover {
+    background: #1b2033;
+    color: #e2e6f2;
+}
+
+/* contextual footer */
+
+#model-foot {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+    border-top: solid #1a2036;
+    color: #565d73;
+}

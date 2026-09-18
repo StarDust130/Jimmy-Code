@@ -4,6 +4,8 @@ Close paths (all funnel to app.close_palette → canonical pop + focus
 restore): esc (esc in a submenu goes BACK to commands first) · ✕ header ·
 "✕ Close menu" command · click outside the card · ctrl+p again.
 Theme view: ↑/↓ applies the theme LIVE as you move; ↵ returns to commands.
+Model view: ↵ switches live (missing key → wizard pre-filled); ➕ opens
+the dedicated ModelScreen.
 
 Rows are repainted from this class's own ``_entries`` model — widget
 internals are never read — and every row's Text carries EXPLICIT colors
@@ -24,6 +26,7 @@ from textual.widgets import Input, Static
 
 from ..kit.helpers import jimmy, keycap
 from ..kit.theme import THEME, THEME_ORDER, THEMES
+from .models import ModelScreen
 
 
 class PaletteSearch(Input):
@@ -50,7 +53,7 @@ class CommandPaletteScreen(ModalScreen):
     """Small premium floating command menu — never fullscreen, never slow.
 
     Views: ``commands`` (root) · ``shortcuts`` (keycaps) · ``themes``
-    (↑↓ applies live, each dot shows that theme's own color).
+    (↑↓ applies live) · ``models`` (↵ switches live).
     """
 
     BINDINGS: ClassVar[list] = [
@@ -63,18 +66,19 @@ class CommandPaletteScreen(ModalScreen):
         ("esc", "interrupt jimmy / go back in menus"),
         ("ctrl+n", "home — esc exits home"),
         ("ctrl+p", "command menu (toggle)"),
+        ("ctrl+m", "model picker"),
         ("ctrl+c", "copy last prompt + reply"),
         ("ctrl+a", "copy whole chat"),
         ("ctrl+l", "clear the input line"),
         ("ctrl+s", "sound play / stop"),
         ("ctrl+q", "quit"),
         ("drag", "mouse-select text to copy"),
-        ("/", "clear · home · sound · copy · copyall · quit"),
+        ("/", "clear · home · sound · model · copy · copyall · quit"),
     )
 
     def __init__(self) -> None:
         super().__init__(id="palette-screen")
-        self._mode = "commands"  # commands | shortcuts | themes
+        self._mode = "commands"  # commands | shortcuts | themes | models
         self._index = 0
         self._entries: list[dict[str, Any]] = []
         self._search: PaletteSearch | None = None
@@ -92,7 +96,8 @@ class CommandPaletteScreen(ModalScreen):
             yield Static("Suggested", id="palette-section")
             yield Vertical(id="palette-list")
             yield Static(
-                "↑↓ navigate · ↵ select · esc back/close · click outside closes", id="palette-foot"
+                "↑↓ navigate · ↵ select · esc back/close · click outside closes",
+                id="palette-foot",
             )
 
     def on_mount(self) -> None:
@@ -121,9 +126,16 @@ class CommandPaletteScreen(ModalScreen):
     def _commands(self) -> list[tuple[str, str, Callable[[], None]]]:
         """ALL commands live here (the root list)."""
         app = jimmy(self)
+
+        try:
+            model_label = app.current_model_short()
+        except Exception:
+            model_label = "model"  # 🛟 chrome must never crash the palette
+
         return [
             ("⌨", "Keyboard Shortcuts", self._show_shortcuts),
             ("🎨", f"Theme · {THEME['name']}", self._show_themes),
+            ("🤖", f"Change model · {model_label}", self._show_models),
             ("⌂", "Go home", self._go_home),
             ("⎘", "Copy last prompt + reply", app.action_copy_last),
             ("⎘", "Copy whole chat", app.action_copy_all),
@@ -161,6 +173,8 @@ class CommandPaletteScreen(ModalScreen):
             return Text.from_markup(
                 f"[#3a4157]›[/] [{dot_color}]●[/]  [#dbe0ee]{escape(name)}[/]{suffix}"
             )
+        if kind == "model":
+            return entry["markup"]
         markup = entry["markup"]
         return markup if markup is not None else Text("")
 
@@ -230,6 +244,39 @@ class CommandPaletteScreen(ModalScreen):
             self._paint_selection()
             return
 
+        if self._mode == "models":
+            if self._section is not None:
+                self._section.update("Models — ↵ switch · ➕ add new")
+            app = jimmy(self)
+            from jimmy.llm.model_config import ModelStore
+
+            for m in ModelStore().load():
+                # 🤖 inline model rows — dot marks the active one.
+                short = m.name.split("/")[-1]
+                dot = "[#34d399]●[/]" if m.is_active else "[#3a4157]○[/]"
+                long_part = f"  [#565d73]{escape(m.name)}[/]" if short != m.name else ""
+                active = "  [#34d399]active[/]" if m.is_active else ""
+                self._add_entry(
+                    kind="model",
+                    markup=Text.from_markup(
+                        f"{dot}  [#dbe0ee]{escape(short)}[/]{long_part}{active}"
+                    ),
+                    action=lambda n=m.name: self._switch_model(n),
+                )
+            self._add_entry(
+                kind="command",
+                icon="➕",
+                label="Add a model…",
+                action=self._open_model_screen,
+            )
+            self._add_entry(
+                kind="info",
+                markup=Text.from_markup(f"{keycap('esc', '')}  [#aab2c7]back to commands[/]"),
+                action=self._show_commands,
+            )
+            self._paint_selection()
+            return
+
         if self._section is not None:
             self._section.update("Suggested")
         query = query.strip().lower()
@@ -257,6 +304,7 @@ class CommandPaletteScreen(ModalScreen):
             selected = i == self._index and entry["action"] is not None
             if selected:
                 widget.add_class("selected")
+                widget.scroll_visible(animate=False)  # 🖥️ keyboard nav scrolls
             else:
                 widget.remove_class("selected")
             widget.update(self._entry_markup(entry, selected))
@@ -276,6 +324,7 @@ class CommandPaletteScreen(ModalScreen):
         current = indices.index(self._index)
         self._index = indices[(current + delta) % len(indices)]
 
+        # 🎨 theme view: apply LIVE while browsing (test relies on this)
         if self._mode == "themes":
             entry = self._entries[self._index]
             if entry["kind"] == "theme":
@@ -307,6 +356,8 @@ class CommandPaletteScreen(ModalScreen):
 
     def on_key(self, event: events.Key) -> None:
         # Backup path for when the search box ISN'T focused.
+        # NOTE: no printable-key shortcuts here — they would hijack typing
+        # in the search box (the old 'a' shortcut did exactly that).
         if event.key == "escape":
             event.stop()
             event.prevent_default()
@@ -366,6 +417,10 @@ class CommandPaletteScreen(ModalScreen):
         self._mode = "themes"
         self._rebuild("")
 
+    def _show_models(self) -> None:
+        self._mode = "models"
+        self._rebuild("")
+
     def _show_commands(self) -> None:
         self._mode = "commands"
         query = self._search.value if self._search is not None else ""
@@ -376,12 +431,30 @@ class CommandPaletteScreen(ModalScreen):
         jimmy(self).set_theme(name)
         self._show_commands()
 
-    # closing ──────────────────────────────────────────────────────────────
+    def _switch_model(self, name: str) -> None:
+        """🤖 ↵ on a model row — switch live; missing key → wizard handles it."""
+        app = jimmy(self)
+        try:
+            app.switch_model(name)
+            self.notify(f"🤖 {name.split('/')[-1]} active", timeout=2)
+            self._show_commands()
+        except Exception:
+            # 🔑 key missing → open the wizard (its list-view switch
+            #    path routes straight to the key step)
+            self._open_model_screen()
 
-    def dismiss_palette(self) -> None:
-        """The single close path — delegates to the app (canonical pop +
-        explicit focus restore).  No timers, no dismiss(), no races."""
-        jimmy(self).close_palette()
+    def _open_model_screen(self) -> None:
+        """Close the palette first, THEN open the ModelScreen (order-safe)."""
+        app = jimmy(self)
+
+        def _open() -> None:
+            app.push_screen(ModelScreen())  # ✅ no kwargs — wizard takes none
+
+        try:
+            app.close_palette(after=_open)
+        except TypeError:
+            app.close_palette()
+            app.call_later(_open)
 
     def _go_home(self) -> None:
         """Close the palette FIRST, then navigate home (order-safe)."""
@@ -395,3 +468,10 @@ class CommandPaletteScreen(ModalScreen):
         except TypeError:
             app.close_palette()  # older app.py fallback
             app.call_later(_navigate)
+
+    # closing ──────────────────────────────────────────────────────────────
+
+    def dismiss_palette(self) -> None:
+        """The single close path — delegates to the app (canonical pop +
+        explicit focus restore).  No timers, no dismiss(), no races."""
+        jimmy(self).close_palette()
