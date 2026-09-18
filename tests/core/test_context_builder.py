@@ -1,91 +1,100 @@
-"""🧪 Context builder: clipping + pruning + build."""
+"""ContextBuilder: clipping, summary stubs, pruning budget, build order.
 
-from jimmy.context import TOOL_STUB
-from jimmy.context.builder import ContextBuilder
-from jimmy.llm.types import Message, ToolCall
+(Replaces the pre-summary tests: stubs now KEEP the gist after
+TOOL_STUB, which is the anti-re-run fix.)"""
 
+from __future__ import annotations
 
-def make_tool_msgs(n: int) -> list[Message]:
-    """Build fake loop history: n (assistant-with-tool-call, tool-result) pairs."""
-    msgs: list[Message] = []
-    for i in range(n):
-        msgs.append(
-            Message(
-                role="assistant",
-                content="",
-                tool_calls=(ToolCall(id=f"c{i}", name="read", arguments={}),),
-            )
-        )
-        msgs.append(Message(role="tool", content=f"output {i}", tool_call_id=f"c{i}"))
-    return msgs
+from jimmy.context import SYSTEM_PROMPT, TOOL_STUB, ContextBuilder
+from jimmy.llm.types import Message
 
 
-# ───────────────────────────
-# ✂️ clipping
-# ───────────────────────────
+def _tool(msg_id: str, content: str) -> Message:
+    return Message(role="tool", content=content, tool_call_id=msg_id)
 
 
-def test_short_output_untouched():
+# ── clipping ───────────────────────────────────────────────────────────
+
+
+def test_clip_short_output_untouched() -> None:
     cb = ContextBuilder()
-    assert cb.clip_tool_output("small") == "small"
+    assert cb.clip_tool_output("short") == "short"
 
 
-def test_long_output_clipped_with_marker():
+def test_clip_keeps_head_and_tail() -> None:
     cb = ContextBuilder(max_tool_output=100)
-    out = cb.clip_tool_output("x" * 10_000)
-
-    assert len(out) < 300
+    out = cb.clip_tool_output("A" * 60 + "\nMIDDLE\n" + "B" * 60)
+    assert out.startswith("A")
+    assert out.endswith("B")
     assert "truncated" in out
 
 
-# ───────────────────────────
-# 🧹 pruning
-# ───────────────────────────
+# ── pruning: old tools summarized, not amnesia'd ──────────────────────
 
 
-def test_recent_tools_stay_raw():
-    cb = ContextBuilder(keep_raw_tools=2)
-    msgs = make_tool_msgs(5)
-
-    pruned = cb.prune(msgs)
-
-    raw = [m for m in pruned if m.role == "tool" and m.content != TOOL_STUB]
-    stubbed = [m for m in pruned if m.role == "tool" and m.content == TOOL_STUB]
-
-    assert len(raw) == 2                    # 🎯 only last 2 stay raw
-    assert len(stubbed) == 3                # 🪦 older ones stubbed
-    assert raw[-1].content == "output 4"    # newest survived
-
-
-def testprune_preserves_order_and_non_tool_msgs():
+def test_old_tool_stub_contains_tool_stub_and_gist() -> None:
     cb = ContextBuilder(keep_raw_tools=1)
-    msgs = [
-        Message(role="user", content="hi"),
-        *make_tool_msgs(3),
-        Message(role="user", content="next"),
+    history = [
+        Message(role="user", content="go"),
+        Message(role="assistant", content=""),
+        _tool("a", "README.md | 12 ++\napp.py | 40 +++"),
+        Message(role="assistant", content=""),
+        _tool("b", "recent result"),
     ]
+    view = cb.prune(history)
 
-    pruned = cb.prune(msgs)
-
-    assert pruned[0].content == "hi"    # 📏 order preserved
-    assert pruned[-1].content == "next"
-    assert len(pruned) == len(msgs)     # 📏 nothing dropped, only stubbed
-
-
-# ───────────────────────────
-# 🏗️ build
-# ───────────────────────────
+    stub = view[2].content
+    assert stub.startswith(TOOL_STUB)  # stable public constant
+    assert "README.md | 12 ++" in stub  # gist preserved → no re-runs
+    assert "Do not re-run" in stub
+    assert view[4].content == "recent result"  # recent stays raw
 
 
-def test_build_has_system_user_andpruned_history():
-    cb = ContextBuilder(keep_raw_tools=1)
-    history = make_tool_msgs(4)
+def test_prune_respects_budget() -> None:
+    cb = ContextBuilder(keep_raw_tools=2)
+    history = [
+        _tool("1", "one"),
+        Message(role="assistant", content=""),
+        _tool("2", "two"),
+        Message(role="assistant", content=""),
+        _tool("3", "three"),
+    ]
+    view = cb.prune(history)
 
-    built = cb.build("fix the bug", history)
+    assert view[0].content.startswith(TOOL_STUB)  # oldest → stub
+    assert view[2].content == "two"  # within budget
+    assert view[4].content == "three"  # newest raw
 
-    assert built[0].role == "system"
-    assert built[-1].role == "user"
-    assert built[-1].content == "fix the bug"
 
-    stubbed = [m for m in built if m.role == "tool" and m.content == TOOL_STUB]
-    assert len(stubbed) == 3    # 4 tool results → 3 stubbed, 1 raw
+def test_prune_keeps_order_and_non_tool_messages() -> None:
+    cb = ContextBuilder(keep_raw_tools=0)
+    history = [
+        Message(role="user", content="u1"),
+        _tool("1", "t1"),
+        Message(role="assistant", content="a1"),
+    ]
+    view = cb.prune(history)
+
+    assert [m.role for m in view] == ["user", "tool", "assistant"]
+    assert view[1].content.startswith(TOOL_STUB)
+
+
+# ── build ──────────────────────────────────────────────────────────────
+
+
+def test_build_prepends_system_and_appends_user() -> None:
+    cb = ContextBuilder()
+    messages = cb.build("do the thing")
+
+    assert messages[0].role == "system"
+    assert messages[0].content == SYSTEM_PROMPT
+    assert messages[-1].role == "user"
+    assert messages[-1].content == "do the thing"
+
+
+def test_system_prompt_has_discipline_rules() -> None:
+    low = SYSTEM_PROMPT.lower()
+    assert "exactly" in low and "nothing more" in low
+    assert "one commit per file" in low
+    assert "never repeat a tool call" in low
+    assert "batch" in low
