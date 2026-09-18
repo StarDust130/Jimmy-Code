@@ -428,7 +428,11 @@ class HomeScreen(Screen):
         self._revealed = True
         if self._prompt is not None:
             self._prompt.remove_class("hidden-until")
-            self._prompt.focus()
+            # ⏱ The prompt still has display:none / an empty region until
+            #    the next layout pass, so a synchronous focus() here is
+            #    silently dropped (widget not focusable yet) — keys then
+            #    had nowhere to go. Focus right after that refresh.
+            self.call_after_refresh(self._prompt.focus)
 
     def refresh_status(self) -> None:
         """Repaint brand + sound chip (theme switch, sound toggle)."""
