@@ -9,6 +9,10 @@ Root menu contains only:
        list here: it duplicated the wizard and could show stale state.
     ✕ Close menu
 
+The CURRENT model is shown in the header and the section line, and is
+re-computed on EVERY rebuild — so after a wizard switch it is always
+fresh (the palette never caches it).
+
 Submenus:
     shortcuts → keyboard reference
     themes    → live theme picker
@@ -84,7 +88,7 @@ class CommandPaletteScreen(ModalScreen):
         ("ctrl+n", "home"),
         ("ctrl+p", "command menu"),
         ("ctrl+m", "model picker"),
-        ("ctrl+c", "copy last prompt + reply"),
+        ("ctrl+c", "copy last prompt + reply (incl. tool calls)"),
         ("ctrl+a", "copy whole chat"),
         ("ctrl+l", "clear input line"),
         ("ctrl+s", "sound play / stop"),
@@ -182,12 +186,46 @@ class CommandPaletteScreen(ModalScreen):
         self.call_after_refresh(_open)
 
     # ─────────────────────────────────────────────
+    # 🏷️ current model (always fresh)
+    # ─────────────────────────────────────────────
+
+    def _current_model_label(self) -> str:
+        """🤖 The ACTIVE model name — computed fresh on every call.
+
+        Reads agent.provider (the hot-swapped source of truth) via the
+        app helper; never raises.
+        """
+        try:
+            return jimmy(self).current_model_short()
+        except Exception:
+            return "model"
+
+    # ─────────────────────────────────────────────
     # 🎨 Chrome
     # ─────────────────────────────────────────────
 
     def _paint_title(self) -> None:
         if self._title is not None:
-            self._title.update(Text.from_markup(f"[{THEME['accent']}]✦[/] [#e2e6f2]Commands[/]"))
+            self._title.update(
+                Text.from_markup(
+                    f"[{THEME['accent']}]✦[/] [#e2e6f2]Commands[/]"
+                    f"  [#2a3148]·[/] [{THEME['accent']}]🤖[/] "
+                    f"[#7b8296]{escape(self._current_model_label())}[/]"
+                )
+            )
+
+    def _paint_section(self, text: str) -> None:
+        """Section line — carries the CURRENT model so it is visible
+        without opening 🤖 (recomputed on every rebuild → always fresh).
+        """
+        if self._section is not None:
+            self._section.update(
+                Text.from_markup(
+                    f"{escape(text)}  [#2a3148]·[/] "
+                    f"[{THEME['accent']}]🤖[/] [#7b8296]"
+                    f"{escape(self._current_model_label())}[/]"
+                )
+            )
 
     # ─────────────────────────────────────────────
     # 📋 Root commands
@@ -198,16 +236,13 @@ class CommandPaletteScreen(ModalScreen):
     ) -> list[tuple[str, str, Callable[[], None]]]:
         """Root menu — only the four supported actions.
 
-        The model label is computed on EVERY open (palette screens are
-        re-mounted on push), so it always reflects the CURRENT model.
+        The model label is computed on EVERY rebuild, so it always
+        reflects the CURRENT model.
         """
 
         app = jimmy(self)
 
-        try:
-            model_label = app.current_model_short()
-        except Exception:
-            model_label = "model"
+        model_label = self._current_model_label()
 
         return [
             (
@@ -394,11 +429,11 @@ class CommandPaletteScreen(ModalScreen):
             return
 
         # ─────────────────────────────────────────
-        # 🎛️ root commands
+        # 🎛️ root commands — 🤖 model label recomputed here, so it is
+        #    fresh after every wizard switch.
         # ─────────────────────────────────────────
 
-        if self._section is not None:
-            self._section.update("Suggested")
+        self._paint_section("Suggested")
 
         search = query.strip().lower()
 
@@ -658,7 +693,7 @@ class CommandPaletteScreen(ModalScreen):
         self,
         name: str,
     ) -> None:
-        """Apply theme and return to root commands."""
+        """Apply theme and return to root commands (🤖 label refreshes)."""
 
         jimmy(self).set_theme(name)
         self._show_commands()
