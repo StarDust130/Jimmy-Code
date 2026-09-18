@@ -1,5 +1,4 @@
-# src/jimmy/context/__init__.py
-"""🧠 Jimmy's token-efficient context building."""
+"""Jimmy's context construction (prompt + pruning)."""
 
 from .builder import SYSTEM_PROMPT, TOOL_STUB, ContextBuilder
 
