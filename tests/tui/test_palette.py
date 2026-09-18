@@ -1,5 +1,10 @@
 """ctrl+p palette: root commands, search filter, shortcuts view,
-theme live-apply, and every close path."""
+theme live-apply, model-wizard handoff, and every close path.
+
+The palette owns exactly FOUR commands (by design):
+    Keyboard Shortcuts · Theme · Change model · Close menu
+Navigation is ctrl+n / the wizard — there is no "Go home" entry.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,7 @@ from conftest import FakeClick, leave_home, scrim_click, tui_test
 from textual import events
 
 from tui.kit.theme import THEME, THEME_ORDER
+from tui.screens.models import ModelScreen
 from tui.screens.palette import CommandPaletteScreen
 
 
@@ -22,25 +28,53 @@ async def open_palette(app, pilot) -> CommandPaletteScreen:
 
 
 @tui_test
-async def test_palette_lists_all_commands(app) -> None:
+async def test_palette_lists_exactly_the_four_commands(app) -> None:
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
         await leave_home(app, pilot)
         screen = await open_palette(app, pilot)
 
         labels = [entry["label"] for entry in screen._entries]
-        assert "Keyboard Shortcuts" in labels
+        assert labels[0] == "Keyboard Shortcuts"
         assert any(label.startswith("Theme") for label in labels)
-        assert "Go home" in labels
-        assert "Copy last prompt + reply" in labels
-        assert "Copy whole chat" in labels
-        assert "Sound play / stop" in labels
-        assert "Clear chat timeline" in labels
-        assert "Close menu" in labels
+        assert any(label.startswith("Change model") for label in labels)
+        assert labels[-1] == "Close menu"
+        assert len(labels) == 4
+
+        # "Go home" was removed by design — navigation is ctrl+n.
+        assert "Go home" not in labels
 
 
 @tui_test
-async def test_palette_search_filters_and_enter_opens_view(app) -> None:
+async def test_palette_change_model_opens_wizard(app) -> None:
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        await leave_home(app, pilot)
+        screen = await open_palette(app, pilot)
+
+        # find the Change model row and run it
+        for entry in screen._entries:
+            if entry["label"].startswith("Change model"):
+                assert entry["action"] is not None
+                entry["action"]()
+                break
+        else:
+            pytest_fail("Change model row not found")
+
+        await pilot.pause()
+        await pilot.pause()
+
+        # palette closed, wizard opened — the ONE model UI
+        assert not isinstance(app.screen, CommandPaletteScreen)
+        assert isinstance(app.screen, ModelScreen)
+
+
+def pytest_fail(message: str) -> None:
+    raise AssertionError(message)
+
+
+@tui_test
+async def test_palette_search_filters_commands(app) -> None:
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
         await leave_home(app, pilot)
@@ -49,11 +83,15 @@ async def test_palette_search_filters_and_enter_opens_view(app) -> None:
         for char in "theme":
             await pilot.press(char)
         await pilot.pause()
-        assert [entry["label"] for entry in screen._entries] == ["Theme · violet"]
 
-        await pilot.press("enter")
+        labels = [entry["label"] for entry in screen._entries]
+        assert len(labels) == 1
+        assert labels[0].startswith("Theme")
+
+        # unknown query → quiet empty state
+        screen._rebuild("zzz-no-match")
         await pilot.pause()
-        assert screen._mode == "themes"
+        assert [e["label"] for e in screen._entries] == [] or screen._entries[0]["kind"] == "info"
 
 
 @tui_test
