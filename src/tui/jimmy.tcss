@@ -933,3 +933,91 @@ ModelScreen {
     background: #1c2440;
     text-style: bold;
 }
+
+/* ❓ /help 对话框 */
+
+HelpDialogScreen {
+    align: center middle;
+    background: #05060a 78%;
+}
+
+#help-card {
+    width: 70;
+    max-width: 92%;
+    height: auto;
+    max-height: 34;
+    background: #0d1017;
+    border: round #2a3148;
+    padding: 0 1 1 1;
+    overflow-y: auto;
+}
+
+#help-head {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    background: #10141f;
+    border-bottom: solid #1a2036;
+}
+
+#help-title {
+    width: 1fr;
+    height: 1;
+    color: #e2e6f2;
+    text-style: bold;
+}
+
+#help-esc {
+    width: auto;
+    height: 1;
+}
+
+#help-close {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    margin-left: 1;
+    color: #aab2c7;
+}
+
+#help-close:hover {
+    background: #2a1420;
+    color: #fda4af;
+}
+
+.help-section {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+    color: #8a91a8;
+    text-style: bold;
+}
+
+.help-block {
+    width: 100%;
+    height: auto;
+}
+
+.help-row {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    color: #dbe0ee;
+}
+
+#help-contact {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+#help-foot {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+    border-top: solid #1a2036;
+    color: #565d73;
+}
