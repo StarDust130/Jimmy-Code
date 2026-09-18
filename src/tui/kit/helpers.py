@@ -97,14 +97,61 @@ def keycap(key: str, label: str) -> str:
 
     return f"[#A8B8FF on #1A2242] {escape(shown)} [/][#667089] {escape(label)}[/]"
 
+
 # ── domain mapping ─────────────────────────────────────────────────────
 
 
+def _shell_icon(command: str) -> tuple[str, str]:
+    """🗺️ command-aware icon for shell rows — git looks like git."""
+    low = " ".join(command.lower().split())
+    parts = low.split()
+    first = parts[0] if parts else ""
+
+    if first == "git":
+        sub = parts[1] if len(parts) > 1 else ""
+        if sub.startswith("commit"):
+            return "📦", "Committing"
+        if sub in ("push", "pull", "fetch"):
+            return "📡", "Syncing"
+        if sub in ("add", "restore", "checkout", "rm", "mv", "stash"):
+            return "🗃️", "Staging"
+        if sub in ("diff", "show"):
+            return "🧾", "Checking diff"
+        if sub in ("status", "log", "branch", "tag", "remote"):
+            return "🌿", "Checking git"
+        return "🌿", "Git"
+    if low.startswith("pytest") or "pytest" in parts[:3]:
+        return "🧪", "Testing"
+    if first in ("python", "python3", "node", "deno", "tsx"):
+        return "🐍", "Executing"
+    if low.startswith("npm run") or first in ("npx", "bunx"):
+        return "⚙️", "Executing"
+    if first in ("pip", "pip3", "uv", "uvx", "poetry") or low.startswith("cargo build"):
+        return "📦", "Installing"
+    if first in ("npm", "pnpm", "yarn", "bun") and ("install" in parts or "add" in parts):
+        return "📦", "Installing"
+    if first in ("curl", "wget", "http", "https"):
+        return "🌐", "Fetching"
+    if first in ("ls", "dir", "cat", "head", "tail", "find", "tree", "pwd", "du"):
+        return "📂", "Inspecting"
+    if first in ("mkdir", "cp", "mv", "rm", "touch", "rmdir"):
+        return "🗂️", "File ops"
+    if first in ("docker", "podman", "docker-compose"):
+        return "🐳", "Docker"
+    if first in ("grep", "rg", "awk", "sed"):
+        return "🔍", "Filtering"
+    return "▶️", "Running"
+
+
 def tool_display(tool_name: str, arguments: dict[str, Any]) -> tuple[str, str, str]:
-    """Map a tool call to (emoji, action, detail) for readable rows.
+    """Map a tool call to (icon, action, detail) for readable rows.
+
+    Shell rows are COMMAND-AWARE: `git status` -> 🌿, `pytest` -> 🧪,
+    `pip install` -> 📦, so a wall of shell calls still reads at a glance.
 
     e.g.  search_files {"query": "jwt"}  -> ("🔍", "Searching", '"jwt"')
           read_files   {"paths": [..]}   -> ("📖", "Reading", "a.md, b.py")
+          shell {"command": "git status"} -> ("🌿", "Checking git", "git status")
     """
     mapping = {
         "read_file": ("📖", "Reading"),
@@ -118,12 +165,18 @@ def tool_display(tool_name: str, arguments: dict[str, Any]) -> tuple[str, str, s
         "grep": ("🔍", "Searching"),
         "list_files": ("📂", "Listing"),
         "glob": ("📂", "Listing"),
-        "shell": ("▶️", "Running"),
-        "run_shell": ("▶️", "Running"),
-        "git_status": ("🌿", "Checking git"),
-        "git_diff": ("🧾", "Checking diff"),
-        "git_commit": ("📦", "Committing"),
     }
+
+    # 💻 shell → command-aware icon (git/pytest/pip/... each get their own)
+    if tool_name in ("shell", "run_shell"):
+        command = ""
+        for key in ("command", "cmd"):
+            value = arguments.get(key)
+            if value:
+                command = str(value)
+                break
+        icon, action = _shell_icon(command)
+        return icon, action, clip(command)
 
     icon, action = mapping.get(tool_name, ("🛠️", "Using"))
 
@@ -142,8 +195,6 @@ def tool_display(tool_name: str, arguments: dict[str, Any]) -> tuple[str, str, s
         "directory",
         "dir",
         "folder",
-        "command",
-        "cmd",
         "query",
         "pattern",
         "glob",
