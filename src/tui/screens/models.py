@@ -1,20 +1,36 @@
-"""🤖 Model picker — live catalog, zero hard-coded model lists.
+"""🤖 Model picker — live catalog, search-first UX.
 
 Flow:
-    Provider → Model → API key → Save & switch
+    list → (search anywhere, or ➕ browse) → model → key (only if missing)
 
-Views:
-    list     → saved models + ➕ add + 🔄 refresh
-    provider → ⭐ popular models + providers + cross-search
-    model    → ⭐ popular for provider + all models + custom
-    key      → API key input
+    🔑 SAME-API RULE: if the provider's key is already set (or not
+    needed), picking a model switches INSTANTLY — no key form.
 
-Discovery is delegated to jimmy.llm.catalog.
-New providers/models appear without changing this UI.
+🔍 SEARCH IS ALWAYS ON:
+    The search box is visible and focused in every view.  Typing from
+    ANY view (saved list, provider list, a provider's models) shows
+    unified SMART results: ▸ providers (with "showing its N models
+    below ↴" when they do) · ⭐ popular · 🔎 fuzzy model matches ·
+    ✍️ custom.
+
+    The fuzzy scorer lives IN THIS FILE on purpose: the picker must
+    never fail to import because of which search helper catalog.py
+    currently exports.  "glm flash" finds "glm-4.6-flash"; "gpt4o"
+    finds "openai/gpt-4o"; "csonnet" finds "claude-sonnet-4-5".
+
+Search performance: results are collected first and capped at
+``_MAX_RESULTS`` rendered rows with an "…and N more" hint — typing
+stays instant even against a 3,500-model registry.  Model names always
+render via short_model(), so nested ids like
+``groq/meta-llama/llama-prompt-guard-2-22m`` display correctly.
+
+Discovery is delegated to jimmy.llm.catalog (live provider APIs verify
+the catalog; stale models filtered; 404'd models surfaced with ⚠).
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any, Callable, ClassVar, cast
 
@@ -30,19 +46,137 @@ from textual.widgets import Input, Static
 from jimmy.llm.catalog import (
     Catalog,
     get_catalog,
+    is_marked_unavailable,
     save_key_to_env,
-)
-from jimmy.llm.catalog import (
-    search as catalog_search,
 )
 from jimmy.llm.model_config import ModelConfig, ModelStore
 
 from ..kit.helpers import jimmy, keycap, short_model
 from ..kit.theme import THEME
 
+# ⌨️ footer hints per view.
+_FOOT: dict[str, str] = {
+    "list": "🔍 search any model · ↑↓ navigate · ↵ switch · ➕ add · esc close",
+    "provider": "🔍 search · ↑↓ navigate · ↵ select · esc back",
+    "model": "🔍 search · ↑↓ select · ↵ pick (same key = instant) · esc back",
+    "search": "↑↓ navigate · ↵ pick · esc clears search",
+    "key": "paste key · ↵ save · 👁 show/hide · esc back",
+}
+
+# 🖥️ render cap — beyond this we show "…and N more" instead of lagging.
+_MAX_RESULTS = 60
+
+_STAGES = ("provider", "model", "key")
+
+# ─────────────────────────────────────
+# 🔍 fuzzy scoring (self-contained — no catalog dependency)
+# ─────────────────────────────────────
+
+
+def _fuzzy_score(needle: str, haystack: str) -> int:
+    """Subsequence match score.  0 = no match, higher = better.
+
+    * exact substring → 100+ (earlier occurrence ranks higher)
+    * otherwise every needle char must appear IN ORDER in the haystack
+      (separators like - . _ / are skipped, so "glm flash" matches
+      "glm-4.6-flash" and "gpt4o" matches "openai/gpt-4o")
+    * consecutive matches and word-boundary matches score higher
+    """
+    if not needle:
+        return 1
+
+    if needle in haystack:
+        return 100 + max(0, 40 - haystack.index(needle))
+
+    score = 0
+    hi = 0
+    prev = -2
+    first = True
+
+    for ch in needle:
+        found = haystack.find(ch, hi)
+        if found == -1:
+            return 0  # not a subsequence — no match at all
+        if first:
+            score += 1 + (1 if found == 0 else 0)
+            first = False
+        else:
+            score += 2 if found == prev + 1 else 1  # consecutive chunk
+            if found > 0 and haystack[found - 1] in "-._/ ":
+                score += 3  # word boundary
+        prev = found
+        hi = found + 1
+
+    return score
+
+
+def _search_catalog(
+    catalog: Catalog,
+    query: str,
+) -> tuple[list[str], list[str]]:
+    """🔍 Fuzzy search across providers AND models — ranked best-first.
+
+    Providers rank above models (a provider row groups its models).
+    Models are scored on the FULL litellm string AND the bare model
+    name, with spaces in the query ignored ("gpt 4o" works).
+    """
+    q = " ".join(query.lower().split())
+    if not q:
+        return list(catalog.providers), []
+
+    compact = q.replace(" ", "")
+
+    provider_hits: list[tuple[int, str]] = []
+    model_hits: list[tuple[int, str]] = []
+
+    for provider, models in catalog.providers.items():
+        p_score = max(
+            _fuzzy_score(q, provider),
+            _fuzzy_score(compact, provider),
+        )
+        if p_score > 0:
+            provider_hits.append((p_score + 5, provider))  # providers rank up
+
+        for full in models:
+            full_l = full.lower()
+            short_l = full_l.split("/")[-1] if "/" in full_l else full_l
+            s = max(
+                _fuzzy_score(q, full_l),
+                _fuzzy_score(q, short_l),
+                _fuzzy_score(compact, full_l),
+                _fuzzy_score(compact, short_l),
+            )
+            if s > 0:
+                model_hits.append((s, full))
+
+    provider_hits.sort(key=lambda t: t[0], reverse=True)
+    model_hits.sort(key=lambda t: t[0], reverse=True)
+
+    return (
+        [p for _, p in provider_hits],
+        [m for _, m in model_hits],
+    )
+
+
+def _crumb(parts: list[str]) -> Text:
+    """Breadcrumb: Models › openai › key — the last segment is bright."""
+    out = Text()
+    for i, part in enumerate(parts):
+        if i:
+            out.append("  ›  ", style="#2a3148")
+        if i == len(parts) - 1:
+            out.append(part, style="bold #e2e6f2")
+        else:
+            out.append(part, style="#7b8296")
+    return out
+
 
 class ModelSearch(Input):
-    """🔍 Search input that owns navigation keys while focused."""
+    """🔍 Search input that owns navigation keys while focused.
+
+    esc → screen.action_close() which CLEARS the search first and only
+    then navigates back — the search box is the primary surface.
+    """
 
     def on_key(self, event: events.Key) -> None:
         screen = cast(ModelScreen, self.screen)
@@ -69,7 +203,7 @@ class ModelSearch(Input):
 
 
 class ModelScreen(ModalScreen):
-    """🤖 Pick or add a model — live catalog, provider → model → key."""
+    """🤖 Pick or add a model — live catalog, search-first wizard."""
 
     BINDINGS: ClassVar[list[Binding]] = [
         Binding(
@@ -83,7 +217,8 @@ class ModelScreen(ModalScreen):
     def __init__(self) -> None:
         super().__init__(id="model-screen")
 
-        self._mode = "list"  # list | provider | model | key
+        # 🎛️ mode values kept stable: list | provider | model | key
+        self._mode = "list"
         self._index = 0
 
         self._rows: list[dict[str, Any]] = []
@@ -96,9 +231,16 @@ class ModelScreen(ModalScreen):
         # 🏷️ Full LiteLLM model string, e.g. "openai/gpt-5"
         self._model_name = ""
 
+        # ↩️ where to return after the key form (mode + provider + query)
+        self._return_mode = "list"
+        self._return_provider = ""
+        self._prev_query = ""
+
         # 🧩 Widgets are bound in on_mount.
         self._list: Vertical | None = None
         self._section: Static | None = None
+        self._crumb: Static | None = None
+        self._steps: Static | None = None
         self._search: ModelSearch | None = None
         self._key_box: Vertical | None = None
         self._in_key: Input | None = None
@@ -122,13 +264,15 @@ class ModelScreen(ModalScreen):
                     id="model-esc",
                 )
 
-            yield Static(
-                "Saved models",
-                id="model-section",
-            )
+            # 🧭 breadcrumb + wizard stepper
+            yield Static("", id="model-crumb")
+            yield Static("", id="model-steps")
+
+            # context line: hero stats / provider label / search matches
+            yield Static("", id="model-section")
 
             yield ModelSearch(
-                placeholder="🔍  Search providers & models…",
+                placeholder="🔍  Search any provider or model…",
                 id="model-search",
             )
 
@@ -136,15 +280,8 @@ class ModelScreen(ModalScreen):
 
             # 🔑 Key step
             with Vertical(id="model-key"):
-                yield Static(
-                    "",
-                    id="model-fullname",
-                )
-
-                yield Static(
-                    "",
-                    id="model-key-hint",
-                )
+                yield Static("", id="model-fullname")
+                yield Static("", id="model-key-hint")
 
                 with Horizontal(id="model-key-row"):
                     yield Input(
@@ -176,10 +313,7 @@ class ModelScreen(ModalScreen):
                         classes="model-btn",
                     )
 
-            yield Static(
-                "",
-                id="model-foot",
-            )
+            yield Static("", id="model-foot")
 
     # ─────────────────────────────────────────────
     # lifecycle
@@ -188,45 +322,17 @@ class ModelScreen(ModalScreen):
     def on_mount(self) -> None:
         """Bind real widgets after Textual has mounted the DOM."""
 
-        self._list = self.query_one(
-            "#model-list",
-            Vertical,
-        )
+        self._list = self.query_one("#model-list", Vertical)
+        self._section = self.query_one("#model-section", Static)
+        self._crumb = self.query_one("#model-crumb", Static)
+        self._steps = self.query_one("#model-steps", Static)
+        self._search = self.query_one("#model-search", ModelSearch)
+        self._key_box = self.query_one("#model-key", Vertical)
+        self._in_key = self.query_one("#model-in-key", Input)
+        self._key_hint = self.query_one("#model-key-hint", Static)
+        self._foot = self.query_one("#model-foot", Static)
 
-        self._section = self.query_one(
-            "#model-section",
-            Static,
-        )
-
-        self._search = self.query_one(
-            "#model-search",
-            ModelSearch,
-        )
-
-        self._key_box = self.query_one(
-            "#model-key",
-            Vertical,
-        )
-
-        self._in_key = self.query_one(
-            "#model-in-key",
-            Input,
-        )
-
-        self._key_hint = self.query_one(
-            "#model-key-hint",
-            Static,
-        )
-
-        self._foot = self.query_one(
-            "#model-foot",
-            Static,
-        )
-
-        eye = self.query_one(
-            "#model-eye",
-            Static,
-        )
+        eye = self.query_one("#model-eye", Static)
         eye.tooltip = "show / hide API key"
 
         self._show_list()
@@ -249,34 +355,32 @@ class ModelScreen(ModalScreen):
     ) -> None:
         assert self._list is not None
 
-        row = Static(
-            markup,
-            classes="model-row",
-        )
-
+        row = Static(markup, classes="model-row")
         self._list.mount(row)
-
-        self._rows.append(
-            {
-                "widget": row,
-                "action": action,
-                "markup": markup,
-            }
-        )
+        self._rows.append({"widget": row, "action": action, "markup": markup})
 
     def _paint_selection(self) -> None:
+        """Selection = themed › marker + highlight; deselected rows are
+        restored from their stored markup (no widget internals read)."""
+        accent = THEME["accent"]
+
         for i, row in enumerate(self._rows):
             widget: Static = row["widget"]
+            selected = i == self._index and row["action"] is not None
+            markup: Text = row["markup"]
 
-            if i == self._index and row["action"] is not None:
+            if selected:
                 widget.add_class("selected")
-
+                if not markup.plain.startswith("› "):
+                    widget.update(Text("› ", style=accent) + markup)
                 try:
                     widget.scroll_visible(animate=False)
                 except Exception:
                     pass
             else:
                 widget.remove_class("selected")
+                if markup.plain.startswith("› "):
+                    widget.update(markup)
 
     def _move(self, delta: int) -> None:
         selectable = [i for i, row in enumerate(self._rows) if row["action"] is not None]
@@ -288,43 +392,89 @@ class ModelScreen(ModalScreen):
             self._index = selectable[0]
         else:
             current = selectable.index(self._index)
-
             self._index = selectable[(current + delta) % len(selectable)]
 
         self._paint_selection()
 
-    # ─────────────────────────────────────────────
-    # 🧭 mode
-    # ─────────────────────────────────────────────
-
-    def _set_mode(
+    def _render_capped(
         self,
-        mode: str,
-        section: str,
-        *,
-        search: bool,
+        entries: list[tuple[Text, Callable[[], None] | None]],
     ) -> None:
-        self._mode = mode
+        """Render collected matches with a hard cap — search never lags.
 
-        if self._section is not None:
-            self._section.update(section)
+        Beyond ``_MAX_RESULTS`` a quiet "…and N more" info row appears
+        instead of hundreds of widgets; the ✍️ custom row always stays
+        reachable at the bottom.
+        """
+        for markup, action in entries[:_MAX_RESULTS]:
+            self._mount_row(markup, action)
+
+        hidden = len(entries) - _MAX_RESULTS
+        if hidden > 0:
+            self._mount_row(
+                Text.from_markup(
+                    f"[#3a4157]…and {hidden} more[/]  [#565d73]keep typing to narrow down[/]"
+                )
+            )
+
+    # ─────────────────────────────────────────────
+    # 🧭 chrome helpers
+    # ─────────────────────────────────────────────
+
+    def _stepper_for(self) -> Text:
+        """Wizard progress dots for the current state (blank on list)."""
+        if self._mode == "key":
+            pos = 2
+        elif self._mode == "model":
+            pos = 1
+        elif self._mode == "provider":
+            pos = 0
+        else:
+            return Text("")
+
+        out = Text()
+        for i, _stage in enumerate(_STAGES):
+            if i:
+                out.append(" ─ ", style="#2a3148")
+            if i < pos:
+                out.append("●", style="#34d399")  # completed
+            elif i == pos:
+                out.append("●", style=THEME["accent"])  # current
+            else:
+                out.append("○", style="#3a4157")  # upcoming
+        return out
+
+    def _set_chrome(
+        self,
+        crumb_parts: list[str],
+        *,
+        foot_key: str,
+        search_visible: bool = True,
+        steps: Text | None = None,
+        section: Text | None = None,
+    ) -> None:
+        """Update breadcrumb / stepper / search visibility / footer.
+
+        NOTE: the search VALUE is never touched here — it persists
+        across views so the user's query is never lost.
+        """
+        if self._crumb is not None:
+            self._crumb.update(_crumb(["Models", *crumb_parts]))
+
+        if self._steps is not None:
+            self._steps.update(steps if steps is not None else Text(""))
 
         if self._search is not None:
-            self._search.display = search
-            self._search.value = ""
+            self._search.display = search_visible
 
         if self._key_box is not None:
-            self._key_box.display = mode == "key"
+            self._key_box.display = False
 
         if self._foot is not None:
-            hints = {
-                "list": "↑↓ navigate · ↵ switch · ➕ add · esc close",
-                "provider": "🔍 search · ↑↓ navigate · ↵ select · esc back",
-                "model": "🔍 search · ↑↓ navigate · ↵ select · esc back",
-                "key": "paste key · ↵ save · 👁 show/hide · esc back",
-            }
+            self._foot.update(Text.from_markup(f"[#565d73]{_FOOT.get(foot_key, '')}[/]"))
 
-            self._foot.update(Text.from_markup(f"[#565d73]{hints.get(mode, '')}[/]"))
+        if section is not None and self._section is not None:
+            self._section.update(section)
 
     def _ensure_catalog(
         self,
@@ -336,73 +486,198 @@ class ModelScreen(ModalScreen):
 
         return self._catalog
 
+    def _hero_line(self, catalog: Catalog) -> Text:
+        """Live catalog stats shown above the saved-model list."""
+        providers = len(catalog.providers)
+        models = sum(len(v) for v in catalog.providers.values())
+        popular = len(catalog.popular)
+        verified = len(getattr(catalog, "verified", frozenset()))
+        line = (
+            f"[{THEME['accent']}]◈[/] [#8a91a8]live catalog[/]  "
+            f"[#2a3148]·[/]  [#dbe0ee]{providers}[/][#565d73] providers[/]  "
+            f"[#2a3148]·[/]  [#dbe0ee]{models}[/][#565d73] models[/]  "
+            f"[#2a3148]·[/]  [#f5c451]{popular}[/][#565d73] popular[/]"
+        )
+        if verified:
+            line += f"  [#2a3148]·[/]  [#34d399]✓ {verified} live[/]"
+        return Text.from_markup(line)
+
     # ─────────────────────────────────────────────
-    # 📋 saved models
+    # 🔀 unified view refresh (search overlays everything)
+    # ─────────────────────────────────────────────
+
+    def _refresh_view(self) -> None:
+        """Render the right list: search results when a query is present,
+        otherwise the current mode's native view.  Also restores the
+        per-mode chrome (breadcrumb / stepper / footer / context line).
+        """
+        if self._mode == "key":
+            return  # key form owns the screen until esc
+
+        query = self._search.value.strip() if self._search is not None else ""
+
+        if query:
+            self._render_search(query)
+        elif self._mode == "list":
+            self._chrome_list()
+            self._render_saved()
+        elif self._mode == "provider":
+            self._chrome_providers()
+            self._rebuild_providers("")
+        else:
+            self._chrome_models()
+            self._rebuild_models("")
+
+    # ── per-mode chrome ──────────────────────────────────────────
+
+    def _chrome_list(self) -> None:
+        catalog = self._ensure_catalog()
+        self._set_chrome(
+            [],  # _set_chrome prepends "Models" — don't duplicate it
+            foot_key="list",
+            search_visible=True,
+            steps=Text(""),
+            section=self._hero_line(catalog),
+        )
+
+    def _chrome_providers(self) -> None:
+        catalog = self._ensure_catalog()
+        count = len(catalog.providers)
+        self._set_chrome(
+            ["add a model"],
+            foot_key="provider",
+            search_visible=True,
+            steps=self._stepper_for(),
+            section=Text.from_markup(
+                f"[#8a91a8]choose a provider[/]  [#2a3148]·[/]  "
+                f"[#dbe0ee]{count}[/][#565d73] available[/]  "
+                f"[#2a3148]—[/] [#565d73]or search a model directly[/]"
+            ),
+        )
+
+    def _chrome_models(self) -> None:
+        catalog = self._ensure_catalog()
+        verified: frozenset[str] = getattr(catalog, "verified", frozenset())
+
+        if self._provider in verified:
+            section = Text.from_markup(
+                f"[#34d399]✓ live[/] [#8a91a8]every model your key can "
+                f"use on[/] [#dbe0ee]{escape(self._provider)}[/]"
+            )
+        else:
+            section = Text.from_markup(
+                f"[#8a91a8]models for[/] [#dbe0ee]{escape(self._provider)}[/]"
+            )
+
+        self._set_chrome(
+            [self._provider],
+            foot_key="model",
+            search_visible=True,
+            steps=self._stepper_for(),
+            section=section,
+        )
+
+    # ─────────────────────────────────────────────
+    # 📋 view: saved models
     # ─────────────────────────────────────────────
 
     def _show_list(self) -> None:
-        self._set_mode(
-            "list",
-            "Saved models — ↵ switch · ➕ add · 🔄 refresh",
-            search=False,
-        )
+        self._mode = "list"
+        self._provider = ""
 
         assert self._list is not None
-
         self._list.display = True
 
         if self._key_box is not None:
             self._key_box.display = False
 
+        self._refresh_view()
+
+        if self._search is not None:
+            self._search.focus()  # 🔍 search-first, always ready
+
+    def _render_saved(self) -> None:
+        """The saved-model list body (chrome handled by _chrome_list)."""
         self._clear_rows()
 
         store = ModelStore()
 
         for model in store.load():
-            if model.is_active:
+            dead = is_marked_unavailable(model.name)
+
+            if dead and model.is_active:
+                dot = "[#fbbf24]⚠[/]"
+                suffix = "  [#fbbf24]unavailable — pick another[/]"
+            elif dead:
+                dot = "[#fbbf24]⚠[/]"
+                suffix = "  [#565d73]unavailable[/]"
+            elif model.is_active:
                 dot = "[#34d399]●[/]"
                 suffix = "  [#34d399]active[/]"
             else:
                 dot = "[#3a4157]○[/]"
                 suffix = ""
 
+            # ⚰️ dead models can't be switched to — they route to the
+            #    provider picker with an explanation instead.
+            action = self._dead_model_notice(model.name) if dead else self._make_switch(model.name)
+
             self._mount_row(
                 Text.from_markup(
                     f"{dot}  "
-                    f"[#dbe0ee]"
-                    f"{escape(short_model(model.name))}"
-                    f"[/]  "
-                    f"[#565d73]"
-                    f"{escape(model.name)}"
-                    f"[/]"
+                    f"[#dbe0ee]{escape(short_model(model.name))}[/]  "
+                    f"[#565d73]{escape(model.name)}[/]"
                     f"{suffix}"
                 ),
-                self._make_switch(model.name),
+                action,
             )
 
         self._mount_row(
-            Text.from_markup(f"[{THEME['accent']}]➕[/] [#dbe0ee]Add a model…[/]"),
+            Text.from_markup(
+                f"[{THEME['accent']}]➕[/] [#dbe0ee]Add a model…[/]  "
+                f"[#565d73]or just search above[/]"
+            ),
             self._show_providers,
         )
 
         self._mount_row(
-            Text.from_markup(f"[{THEME['accent']}]🔄[/] [#dbe0ee]Refresh model catalog[/]"),
+            Text.from_markup(
+                "[#8a91a8]🔄[/] [#dbe0ee]Refresh catalog[/]  "
+                "[#565d73]verify against provider APIs[/]"
+            ),
             self._refresh,
         )
 
         self._paint_selection()
+
+    def _dead_model_notice(self, name: str) -> Callable[[], None]:
+        def _do() -> None:
+            jimmy(self).notify(
+                f"⚠ {short_model(name)} is no longer available — choose another",
+                timeout=2.5,
+            )
+            self._show_providers()
+
+        return _do
 
     def _make_switch(
         self,
         name: str,
     ) -> Callable[[], None]:
         def _do() -> None:
+            app = jimmy(self)
+
+            if is_marked_unavailable(name):
+                app.notify("⚠ model unavailable — choose another", timeout=2.5)
+                self._show_providers()
+                return
+
             try:
-                jimmy(self).switch_model(name)
+                app.switch_model(name)
                 self.app.pop_screen()
 
             except Exception:
-                # 🔑 Probably missing API key.
+                # 🔑 Probably missing API key → key form, esc returns here.
                 store = ModelStore()
 
                 cfg = next(
@@ -410,10 +685,13 @@ class ModelScreen(ModalScreen):
                     None,
                 )
 
+                self._return_mode = "list"
+                self._return_provider = ""
+                self._prev_query = ""
+
                 if cfg is not None:
                     self._model_name = name
                     self._provider = name.split("/", 1)[0]
-
                     self._show_key(prefill_env=cfg.api_key_env)
                 else:
                     self._show_providers()
@@ -421,42 +699,53 @@ class ModelScreen(ModalScreen):
         return _do
 
     # ─────────────────────────────────────────────
-    # 🏢 provider picker
+    # 🏢 view: provider picker
     # ─────────────────────────────────────────────
 
     def _show_providers(self) -> None:
-        self._set_mode(
-            "provider",
-            "⭐ popular · providers · 🔍 search",
-            search=True,
-        )
+        self._mode = "provider"
+        self._provider = ""
 
         assert self._list is not None
-
         self._list.display = True
 
         if self._key_box is not None:
             self._key_box.display = False
 
-        self._rebuild_providers("")
+        self._refresh_view()
 
         if self._search is not None:
             self._search.focus()
 
     def _rebuild_providers(
         self,
-        query: str,
+        query: str = "",
     ) -> None:
+        """Provider view body: legend + ⭐ popular + 🏢 providers.
+        (With a query the unified search overlays this view instead.)"""
         catalog = self._ensure_catalog()
 
         self._clear_rows()
 
         q = query.strip().lower()
 
-        providers, models = catalog_search(
+        providers, models = _search_catalog(
             catalog,
             q,
         )
+
+        verified: frozenset[str] = getattr(catalog, "verified", frozenset())
+
+        # 🏷️ legend chip line above the results (only when unfiltered).
+        if not q:
+            self._mount_row(
+                Text.from_markup(
+                    f"[#f5c451]⭐[/] [#8a91a8]popular[/]  [#2a3148]│[/]  "
+                    f"[{THEME['accent']}]▸[/] [#8a91a8]providers[/]  "
+                    f"[#2a3148]│[/]  [#8a91a8]🔎 matches[/]  "
+                    f"[#2a3148]—[/] [#565d73]or search any model above[/]"
+                ),
+            )
 
         # ⭐ Popular models first.
         for full in catalog.popular:
@@ -467,21 +756,13 @@ class ModelScreen(ModalScreen):
 
             self._mount_row(
                 Text.from_markup(
-                    f"[#f5c451]⭐[/] "
-                    f"[#dbe0ee]"
-                    f"{escape(short_model(full))}"
-                    f"[/]  "
-                    f"[#565d73]"
-                    f"{escape(full)}"
-                    f"[/]"
+                    f"[#f5c451]⭐[/] [#dbe0ee]{escape(short_model(full))}[/]  "
+                    f"[#565d73]{escape(full)}[/]"
                 ),
-                lambda f=full, p=provider: self._model_chosen(
-                    f,
-                    p,
-                ),
+                lambda f=full, p=provider: self._model_chosen(f, p),
             )
 
-        # 🏢 Providers.
+        # 🏢 Providers — model count, key env, ✓ live badge.
         for provider in providers:
             count = len(
                 catalog.providers.get(
@@ -490,15 +771,19 @@ class ModelScreen(ModalScreen):
                 )
             )
 
+            env = catalog.provider_env_var(provider)
+
+            meta: list[str] = [f"{count} models"]
+            if env:
+                meta.append(f"🔑 {env}")
+            if provider in verified:
+                meta.append("[#34d399]✓ live[/]")
+
             self._mount_row(
                 Text.from_markup(
                     f"[{THEME['accent']}]▸[/] "
-                    f"[#dbe0ee]"
-                    f"{escape(provider)}"
-                    f"[/]  "
-                    f"[#565d73]"
-                    f"{count} models"
-                    f"[/]"
+                    f"[#dbe0ee]{escape(provider)}[/]  "
+                    f"[#565d73]{' · '.join(meta)}[/]"
                 ),
                 lambda p=provider: self._show_models(p),
             )
@@ -514,10 +799,7 @@ class ModelScreen(ModalScreen):
                 Text.from_markup(
                     f"[#dbe0ee]{escape(short_model(full))}[/]  [#565d73]{escape(full)}[/]"
                 ),
-                lambda f=full, p=provider: self._model_chosen(
-                    f,
-                    p,
-                ),
+                lambda f=full, p=provider: self._model_chosen(f, p),
             )
 
         if not self._rows:
@@ -526,37 +808,33 @@ class ModelScreen(ModalScreen):
         self._paint_selection()
 
     # ─────────────────────────────────────────────
-    # 🧠 model picker
+    # 🧠 view: one provider's models
     # ─────────────────────────────────────────────
 
     def _show_models(
         self,
         provider: str,
     ) -> None:
+        self._mode = "model"
         self._provider = provider
 
-        self._set_mode(
-            "model",
-            f"{provider} — pick a model 🔍",
-            search=True,
-        )
-
         assert self._list is not None
-
         self._list.display = True
 
         if self._key_box is not None:
             self._key_box.display = False
 
-        self._rebuild_models("")
+        self._refresh_view()
 
         if self._search is not None:
             self._search.focus()
 
     def _rebuild_models(
         self,
-        query: str,
+        query: str = "",
     ) -> None:
+        """One provider's models: ⭐ popular + 📋 all + ✍️ custom + 🔑 rekey.
+        (With a query the unified search overlays this view instead.)"""
         catalog = self._ensure_catalog()
 
         self._clear_rows()
@@ -579,17 +857,13 @@ class ModelScreen(ModalScreen):
             if q and q not in full.lower():
                 continue
 
-            model_name = full.split(
-                "/",
-                1,
-            )[-1]
+            model_name = full.split("/", 1)[-1]
 
             self._mount_row(
-                Text.from_markup(f"[#f5c451]⭐[/] [#dbe0ee]{escape(model_name)}[/]"),
-                lambda f=full: self._model_chosen(
-                    f,
-                    self._provider,
+                Text.from_markup(
+                    f"[#f5c451]⭐[/] [#dbe0ee]{escape(model_name)}[/]  [#565d73]{escape(full)}[/]"
                 ),
+                lambda f=full: self._model_chosen(f, self._provider),
             )
 
         # 📋 All remaining models.
@@ -600,27 +874,40 @@ class ModelScreen(ModalScreen):
             if q and q not in full.lower():
                 continue
 
-            model_name = full.split(
-                "/",
-                1,
-            )[-1]
+            model_name = full.split("/", 1)[-1]
 
             self._mount_row(
-                Text.from_markup(f"[#dbe0ee]{escape(model_name)}[/]"),
-                lambda f=full: self._model_chosen(
-                    f,
-                    self._provider,
-                ),
+                Text.from_markup(f"[#dbe0ee]{escape(model_name)}[/]  [#565d73]{escape(full)}[/]"),
+                lambda f=full: self._model_chosen(f, self._provider),
             )
 
-        # ✍️ Custom model.
+        # ✍️ Custom model — with a live preview of the built string.
+        typed = q
+        if self._provider and typed:
+            preview = f"{self._provider}/{typed}"
+        elif typed:
+            preview = typed
+        else:
+            preview = "type a name above, then pick this"
+
         self._mount_row(
-            Text.from_markup("[#8a91a8]✍️ use the typed name as a custom model…[/]"),
+            Text.from_markup(
+                f"[#8a91a8]✍️[/] [#aab2c7]use custom[/]  [#565d73]{escape(preview)}[/]"
+            ),
             self._use_custom,
         )
 
-        if not self._rows:
-            self._mount_row(Text.from_markup("[#8a91a8]no match — use custom[/]"))
+        # 🔑 Explicit "re-enter key" row when a key already exists —
+        #    the only way to overwrite it on purpose.
+        env_var = catalog.provider_env_var(self._provider)
+        if env_var and os.environ.get(env_var):
+            self._mount_row(
+                Text.from_markup(
+                    f"[#f5c451]🔑[/] [#aab2c7]re-enter API key for[/] "
+                    f"[#dbe0ee]{escape(self._provider)}[/]"
+                ),
+                self._show_key,
+            )
 
         self._paint_selection()
 
@@ -639,27 +926,207 @@ class ModelScreen(ModalScreen):
         # don't duplicate the provider prefix.
         if "/" in typed:
             full = typed
-            provider = typed.split(
-                "/",
-                1,
-            )[0]
+            provider = typed.split("/", 1)[0]
         else:
             provider = self._provider
             full = f"{provider}/{typed}" if provider else typed
 
-        self._model_chosen(
-            full,
-            provider,
+        self._model_chosen(full, provider)
+
+    # ─────────────────────────────────────────────
+    # 🔍 view: unified smart search overlay (any mode)
+    # ─────────────────────────────────────────────
+
+    def _render_search(self, query: str) -> None:
+        """Unified SMART results for the current query, from ANY view:
+
+        ▸ providers (with "showing its N models below ↴" when their
+        models follow) · ⭐ popular · 🔎 fuzzy model matches · ✍️ custom.
+
+        Fuzzy: "glm flash" finds "glm-4.6-flash".  Model names always
+        render via short_model() so nested ids stay readable.  Picking
+        a model jumps straight to switch/key — no navigation."""
+        catalog = self._ensure_catalog()
+
+        q = query.strip().lower()
+
+        providers, models = _search_catalog(
+            catalog,
+            query,
         )
+
+        verified: frozenset[str] = getattr(catalog, "verified", frozenset())
+
+        if self._crumb is not None:
+            self._crumb.update(_crumb(["Models", f'🔍 "{query.strip()}"']))
+
+        if self._steps is not None:
+            self._steps.update(self._stepper_for())
+
+        if self._foot is not None:
+            self._foot.update(Text.from_markup(f"[#565d73]{_FOOT.get('search', '')}[/]"))
+
+        if self._section is not None:
+            total = len(providers) + len(models)
+            self._section.update(
+                Text.from_markup(
+                    f"[{THEME['accent']}]🔍[/] [#dbe0ee]{escape(query.strip())}[/]  "
+                    f"[#2a3148]·[/]  [#8a91a8]{total} matches[/]  "
+                    f"[#2a3148]·[/]  [#565d73]fuzzy — spaces & dashes don't matter[/]"
+                )
+            )
+
+        self._clear_rows()
+
+        # 🧺 collect first, render capped — never mount thousands of rows.
+        entries: list[tuple[Text, Callable[[], None] | None]] = []
+
+        # 📊 how many of each provider's models actually matched — used
+        #    for the honest "showing its N models below" hint.
+        matched_per_provider: dict[str, int] = {}
+        for full in models:
+            p = full.split("/", 1)[0] if "/" in full else ""
+            matched_per_provider[p] = matched_per_provider.get(p, 0) + 1
+
+        # ▸ Providers FIRST — with an honest hint about what's below.
+        for provider in providers:
+            count = len(catalog.providers.get(provider, []))
+            env = catalog.provider_env_var(provider)
+
+            meta: list[str] = [f"{count} models"]
+            if env:
+                meta.append(f"🔑 {env}")
+            if provider in verified:
+                meta.append("[#34d399]✓ live[/]")
+
+            followed = matched_per_provider.get(provider, 0)
+            if followed:
+                hint = (
+                    f"  [#2a3148]—[/] [#565d73]showing its "
+                    f"{min(followed, _MAX_RESULTS)} models below ↴[/]"
+                )
+            else:
+                hint = f"  [#2a3148]—[/] [#565d73]↵ browse all {count} models[/]"
+
+            entries.append(
+                (
+                    Text.from_markup(
+                        f"[{THEME['accent']}]▸[/] "
+                        f"[#dbe0ee]{escape(provider)}[/]  "
+                        f"[#565d73]{' · '.join(meta)}[/]{hint}"
+                    ),
+                    lambda p=provider: self._show_models(p),
+                )
+            )
+
+        # ⭐ Popular matches (fuzzy-aware).
+        for full in catalog.popular:
+            if _fuzzy_score(q, full.lower()) > 0:
+                provider = full.split("/", 1)[0] if "/" in full else ""
+
+                entries.append(
+                    (
+                        Text.from_markup(
+                            f"[#f5c451]⭐[/] [#dbe0ee]{escape(short_model(full))}[/]  "
+                            f"[#565d73]{escape(full)}[/]"
+                        ),
+                        lambda f=full, p=provider: self._model_chosen(f, p),
+                    )
+                )
+
+        # 🔎 Fuzzy model matches — correct readable names, deduped.
+        seen: set[str] = set()
+        for full in models:
+            if full in seen or full in catalog.popular:
+                continue
+            seen.add(full)
+
+            provider = full.split("/", 1)[0] if "/" in full else ""
+
+            entries.append(
+                (
+                    Text.from_markup(
+                        f"[#dbe0ee]{escape(short_model(full))}[/]  [#565d73]{escape(full)}[/]"
+                    ),
+                    lambda f=full, p=provider: self._model_chosen(f, p),
+                )
+            )
+
+        # ✍️ Custom row.
+        typed = query.strip()
+        if "/" in typed:
+            entries.append(
+                (
+                    Text.from_markup(
+                        f"[#8a91a8]✍️[/] [#aab2c7]use custom[/]  [#565d73]{escape(typed)}[/]"
+                    ),
+                    self._use_custom,
+                )
+            )
+        elif self._provider:
+            entries.append(
+                (
+                    Text.from_markup(
+                        f"[#8a91a8]✍️[/] [#aab2c7]use custom[/]  "
+                        f"[#565d73]{escape(self._provider + '/' + typed)}[/]"
+                    ),
+                    self._use_custom,
+                )
+            )
+        else:
+            entries.append(
+                (
+                    Text.from_markup(
+                        "[#8a91a8]✍️[/] [#565d73]type provider/model "
+                        "(e.g. openai/gpt-4o) for a custom entry[/]"
+                    ),
+                    None,
+                )
+            )
+
+        if not entries:
+            entries.append(
+                (
+                    Text.from_markup("[#8a91a8]no match — try another name[/]"),
+                    None,
+                )
+            )
+
+        self._render_capped(entries)
+        self._paint_selection()
+
+    # ─────────────────────────────────────────────
+    # 🎯 model chosen — the SAME-API fast path
+    # ─────────────────────────────────────────────
 
     def _model_chosen(
         self,
         full: str,
         provider: str,
     ) -> None:
+        """A model was picked.
+
+        🔑 Key already set (or provider needs none) → save & switch
+        INSTANTLY, no key screen.  Missing key → paste-key form, and
+        esc from the form restores the exact search/view you came from.
+        """
+        # ↩️ remember where we are so the key form can return here.
+        self._return_mode = self._mode
+        self._return_provider = self._provider
+        self._prev_query = self._search.value if self._search is not None else ""
+
         self._model_name = full
         self._provider = provider
-        self._show_key()
+
+        catalog = self._ensure_catalog()
+        env_var = catalog.provider_env_var(provider)
+
+        if env_var and not os.environ.get(env_var):
+            self._show_key()
+            return
+
+        # ✅ key present / not needed → instant switch
+        self._save()
 
     # ─────────────────────────────────────────────
     # 🔑 API key
@@ -669,18 +1136,26 @@ class ModelScreen(ModalScreen):
         self,
         prefill_env: str = "",
     ) -> None:
-        self._set_mode(
-            "key",
-            "API key — paste · 💾 save",
-            search=False,
-        )
+        self._mode = "key"
 
         assert self._list is not None
-
         self._list.display = False
 
         if self._key_box is not None:
             self._key_box.display = True
+
+        # Search box hides but KEEPS its value — esc restores it.
+        if self._search is not None:
+            self._search.display = False
+
+        if self._crumb is not None:
+            self._crumb.update(_crumb(["Models", self._provider or "model", "key"]))
+
+        if self._steps is not None:
+            self._steps.update(self._stepper_for())
+
+        if self._foot is not None:
+            self._foot.update(Text.from_markup(f"[#565d73]{_FOOT.get('key', '')}[/]"))
 
         catalog = self._ensure_catalog()
 
@@ -688,19 +1163,13 @@ class ModelScreen(ModalScreen):
 
         api_base = catalog.provider_api_base(self._provider)
 
-        fullname = self.query_one(
-            "#model-fullname",
-            Static,
-        )
+        fullname = self.query_one("#model-fullname", Static)
 
         fullname.update(
             Text.from_markup(
-                f"[#e2e6f2]"
-                f"{escape(short_model(self._model_name))}"
-                f"[/]  "
-                f"[#565d73]"
-                f"{escape(self._model_name)}"
-                f"[/]"
+                f"[{THEME['accent']}]◈[/] "
+                f"[#e2e6f2]{escape(short_model(self._model_name))}[/]  "
+                f"[#565d73]{escape(self._model_name)}[/]"
             )
         )
 
@@ -717,17 +1186,12 @@ class ModelScreen(ModalScreen):
                         "[#aab2c7]Key saved to[/] "
                         "[#565d73]~/.jimmy/.env[/] "
                         "[#aab2c7]as[/] "
-                        f"[#f5c451]"
-                        f"{escape(env_var)}"
-                        f"[/] "
+                        f"[#f5c451]{escape(env_var)}[/] "
                         f"{already}"
                     )
                 )
 
-        msg = self.query_one(
-            "#model-form-msg",
-            Static,
-        )
+        msg = self.query_one("#model-form-msg", Static)
 
         if api_base:
             msg.update(Text.from_markup(f"[#565d73]🌐 endpoint: {escape(api_base)}[/]"))
@@ -738,12 +1202,40 @@ class ModelScreen(ModalScreen):
             self._in_key.value = ""
             self._in_key.focus()
 
+    def _leave_key(self) -> None:
+        """↩️ Return from the key form to the exact view/search the user
+        came from (search text restored, results re-rendered)."""
+        self._mode = self._return_mode
+        self._provider = self._return_provider
+
+        if self._key_box is not None:
+            self._key_box.display = False
+
+        if self._search is not None:
+            self._search.value = self._prev_query
+            self._search.display = True
+
+        self._prev_query = ""
+
+        assert self._list is not None
+        self._list.display = True
+
+        self._refresh_view()
+
+        if self._search is not None:
+            self._search.focus()
+
     # ─────────────────────────────────────────────
     # 💾 save
     # ─────────────────────────────────────────────
 
     def _save(self) -> None:
-        """💾 Validate → save/update config → activate → hot-swap."""
+        """💾 Validate → save/update config → activate → hot-swap.
+
+        Called BOTH from the key form (↵ / 💾) and from the instant
+        same-API fast path — so failures surface via notify too (the
+        form may be hidden when auto-switching).
+        """
 
         app = jimmy(self)
 
@@ -751,10 +1243,7 @@ class ModelScreen(ModalScreen):
         # This must happen before using provider.
         name = self._model_name.strip()
 
-        msg = self.query_one(
-            "#model-form-msg",
-            Static,
-        )
+        msg = self.query_one("#model-form-msg", Static)
 
         if not name:
             msg.update(Text.from_markup("[#fb7185]✕ no model selected[/]"))
@@ -778,18 +1267,13 @@ class ModelScreen(ModalScreen):
 
         # 🔑 Save pasted key.
         if env_var and key:
-            save_key_to_env(
-                env_var,
-                key,
-            )
+            save_key_to_env(env_var, key)
 
         # 🔐 Provider needs a key, but we don't have one.
         elif env_var and not os.environ.get(env_var):
-            msg.update(
-                Text.from_markup(
-                    f"[#fb7185]✕ paste the key (or set {escape(env_var)} in ~/.jimmy/.env)[/]"
-                )
-            )
+            message = f"✕ paste the key (or set {env_var} in ~/.jimmy/.env)"
+            msg.update(Text.from_markup(f"[#fb7185]{escape(message)}[/]"))
+            self.notify(f"⚠ {message}", severity="warning", timeout=2.5)
             return
 
         try:
@@ -814,7 +1298,6 @@ class ModelScreen(ModalScreen):
             else:
                 # ✏️ Update existing model configuration.
                 updated = [config if model.name == name else model for model in models]
-
                 store.save(updated)
 
             # 🔄 Make it active and hot-swap the agent.
@@ -822,37 +1305,52 @@ class ModelScreen(ModalScreen):
             app.switch_model(name)
 
         except Exception as exc:
-            msg.update(Text.from_markup(f"[#fb7185]✕ {escape(str(exc))}[/]"))
+            text = str(exc)[:160]
+            msg.update(Text.from_markup(f"[#fb7185]✕ {escape(text)}[/]"))
+            self.notify(f"⚠ {text}", severity="error", timeout=2.5)
             return
 
         self.app.pop_screen()
 
     # ─────────────────────────────────────────────
-    # 🔄 catalog refresh
+    # 🔄 catalog refresh (network OFF the render loop)
     # ─────────────────────────────────────────────
 
     def _refresh(self) -> None:
-        """🔄 Force fresh provider/model discovery."""
+        """🔄 Force fresh discovery — live provider APIs in a thread."""
 
-        self._catalog = get_catalog(force=True)
+        self.notify("🌐 refreshing catalog…", timeout=1.5)
 
-        if self._mode == "model":
-            query = self._search.value if self._search is not None else ""
+        async def _work() -> None:
+            try:
+                catalog = await asyncio.to_thread(
+                    get_catalog,
+                    force=True,
+                    live=True,
+                )
+            except Exception as exc:
+                self.notify(
+                    f"🌐 refresh failed: {escape(str(exc))}",
+                    severity="error",
+                    timeout=2.5,
+                )
+                return
 
-            self._rebuild_models(query)
+            self._catalog = catalog
 
-        elif self._mode == "provider":
-            query = self._search.value if self._search is not None else ""
+            try:
+                self._refresh_view()
+            except Exception:
+                pass  # screen may have closed mid-refresh
 
-            self._rebuild_providers(query)
+            self.notify("🌐 catalog refreshed", timeout=1.5)
 
-        else:
-            # From list, stay on list.
-            self._show_list()
-
-        self.notify(
-            "🌐 catalog refreshed",
-            timeout=1.5,
+        self.run_worker(
+            _work(),
+            name="catalog-refresh",
+            group="catalog-refresh",
+            exclusive=True,
+            exit_on_error=False,
         )
 
     # ─────────────────────────────────────────────
@@ -866,11 +1364,9 @@ class ModelScreen(ModalScreen):
         if event.input.id != "model-search":
             return
 
-        if self._mode == "provider":
-            self._rebuild_providers(event.value)
-
-        elif self._mode == "model":
-            self._rebuild_models(event.value)
+        # 🔍 every keystroke re-renders the unified view — search works
+        #    from the saved list, the provider list, anywhere.
+        self._refresh_view()
 
     def on_input_submitted(
         self,
@@ -940,10 +1436,7 @@ class ModelScreen(ModalScreen):
         if self._in_key is None:
             return
 
-        eye = self.query_one(
-            "#model-eye",
-            Static,
-        )
+        eye = self.query_one("#model-eye", Static)
 
         self._in_key.password = not self._in_key.password
 
@@ -1019,19 +1512,26 @@ class ModelScreen(ModalScreen):
     # ─────────────────────────────────────────────
 
     def action_close(self) -> None:
-        """esc: key → model → provider → list → close."""
+        """esc, in order: key → back · search text → clear it ·
+        provider models → providers · providers → list · list → close."""
 
         if self._mode == "key":
-            if self._provider:
-                self._show_models(self._provider)
-            else:
-                self._show_providers()
+            self._leave_key()
+            return
 
-        elif self._mode == "model":
-            self._show_providers()
+        if self._search is not None and self._search.value.strip():
+            self._search.value = ""
+            self._refresh_view()
+            if self._search is not None:
+                self._search.focus()
+            return
 
-        elif self._mode == "provider":
+        if self._mode == "provider":
             self._show_list()
+            return
 
-        else:
-            self.app.pop_screen()
+        if self._mode == "model":
+            self._show_providers()
+            return
+
+        self.app.pop_screen()
