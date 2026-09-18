@@ -1,4 +1,14 @@
-"""Timeline rows: Thinking, Tool status, Turn summary (+ animated base)."""
+"""Timeline rows: Thinking, Tool status, Turn summary (+ animated base).
+
+Tool timeline UX (what makes a flood of calls readable):
+
+    ⠹ Step 3/25 · 0.8s                    ← ThinkingRow (budget visible)
+    ── step 3 ──────────────────────      ← StepHeader (auto, once/step)
+    ⠹ [3] 📖 Reading README.md            ← active, live
+    ✓ [3] 📖 Reading README.md · 84ms · 2.1k   ← done: latency + size
+    ✓ [3] 🧾 12 lines · ⚠ issues · 220ms  ← shell runs summarize output
+    ⚠ [3] ✏️ Editing x.ts · FileNotFoundError   ← failures keep reason
+"""
 
 from __future__ import annotations
 
@@ -32,8 +42,7 @@ class AnimatedRow(Static):
     3. LATE MOUNT SAFETY — ``on_mount`` can run AFTER ``finish()``/
        ``fail()`` (mounting is asynchronous).  ``_finished`` makes the
        guard bidirectional: a finished row can never start (or resume)
-       its animation — previously a finished tool row could keep
-       spinning forever if its on_mount landed late.
+       its animation.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -74,11 +83,12 @@ class AnimatedRow(Static):
 
 
 class ThinkingRow(AnimatedRow):
-    """`⠹ Thinking · 1.2s` — live line for the *current* model round."""
+    """`⠹ Step 3/25 · 0.8s` — the model is thinking, budget visible."""
 
-    def __init__(self, model: str, step: int) -> None:
+    def __init__(self, model: str, step: int, max_steps: int = 25) -> None:
         self.model_name = model
         self.step = step
+        self.max_steps = max_steps
         self.started = time.monotonic()
         self._frame = 0
         super().__init__("", classes="thinking-row")
@@ -90,31 +100,69 @@ class ThinkingRow(AnimatedRow):
     def _redraw(self) -> None:
         self._frame = (self._frame + 1) % len(SPINNER_FRAMES)
         elapsed = format_duration(time.monotonic() - self.started)
-        suffix = "" if self.step <= 1 else f"  [#3a4157]round {self.step}[/]"
         self._safe_update(
             Text.from_markup(
                 f"[{THEME['accent']}]{SPINNER_FRAMES[self._frame]}[/] "
-                f"[#8a91a8]Thinking[/]  [#4b5163]{elapsed}[/]{suffix}"
+                f"[#8a91a8]Step {self.step}/{self.max_steps}[/]  "
+                f"[#4b5163]{elapsed}[/]"
             )
         )
 
 
-class LiveToolStatus(AnimatedRow):
-    """One emoji-tagged tool line on the timeline.
+class StepHeader(Static):
+    """`── step 3 ──────────` — one quiet divider per agent step.
 
-    active   ⠹ 📖 Reading README.md · 0.4s
-    done     ✓ 📖 Reading README.md · 84ms
-    failed   ✕ ✏️ Editing auth.ts · ⏱️ timeout
+    Mounted by the App the FIRST time a step emits tools; groups the
+    tool calls of that step so a batch reads as one block.  Older
+    headers dim via the ``old`` class (App toggles it when a later
+    step starts).
+    """
+
+    def __init__(self, step: int) -> None:
+        self.step = step
+        super().__init__("", classes="step-header")
+
+    def on_mount(self) -> None:
+        self._paint()
+
+    def _paint(self) -> None:
+        out = Text()
+        out.append(f"── step {self.step} ", style="#3a4157")
+        out.append("─" * 18, style="#3a4157")
+        self.update(out)
+
+    def make_old(self) -> None:
+        try:
+            self.add_class("old")
+        except errors.NoWidget:
+            pass
+
+
+class LiveToolStatus(AnimatedRow):
+    """One readable tool line on the timeline.
+
+    active   ⠹ [3] 📖 Reading README.md
+    done     ✓ [3] 📖 Reading README.md · 84ms · 2.1k
+    shell    ✓ [3] 🧾 12 lines · ⚠ issues · 220ms
+    failed   ⚠ [3] ✏️ Editing x.ts · ⏱️ timeout
     """
 
     def __init__(
-        self, *, call_id: str, tool_name: str, icon: str, action: str, detail: str
+        self,
+        *,
+        call_id: str,
+        tool_name: str,
+        icon: str,
+        action: str,
+        detail: str,
+        step: int = 0,
     ) -> None:
         self.call_id = call_id
         self.tool_name = tool_name
         self.icon = icon
         self.action = action
         self.detail = detail
+        self.step = step
         self.started = time.monotonic()
         self._frame = 0
         super().__init__("", classes="live-tool-status")
@@ -122,6 +170,10 @@ class LiveToolStatus(AnimatedRow):
     def on_mount(self) -> None:
         self.call_after_refresh(self._redraw)
         self._start_anim(0.1)
+
+    # step tag — dim, only when we know it
+    def _tag(self) -> str:
+        return f"[#3a4157][{self.step}][/]" if self.step > 0 else ""
 
     def _label(self) -> str:
         return escape(f"{self.icon} {self.action}")
@@ -137,20 +189,57 @@ class LiveToolStatus(AnimatedRow):
         self._safe_update(
             Text.from_markup(
                 f"[{THEME['accent']}]{SPINNER_FRAMES[self._frame]}[/] "
+                f"{self._tag()} "
                 f"[#d5dae8]{self._label()}[/]{self._detail_part()}  "
                 f"[#4b5163]{elapsed}[/]"
             )
         )
 
-    def finish(self, latency: float) -> None:
-        self._finished = True  # before stopping — also blocks late on_mount
+    def finish(self, latency: float, output: str | None = None) -> None:
+        """Done: ✓ + latency + a *useful* tail derived from the result.
+
+        ``output`` is the clipped tool result the agent already has —
+        we distill ONE quiet hint from it (line count / issue marker)
+        instead of dumping it on the timeline.  Optional: callers that
+        don't pass output simply get the latency-only row.
+        """
+        self._finished = True  # also blocks a late on_mount restart
         self._stop_anim()
+
+        hint = self._summarize_output(output)
+
         self._safe_update(
             Text.from_markup(
-                f"[#34d399]✓[/] [#7f8aa5]{self._label()}[/]{self._detail_part()}  "
-                f"[#34d399]{format_duration(latency)}[/]"
+                f"[#34d399]✓[/] {self._tag()} "
+                f"[#7f8aa5]{self._label()}[/]{self._detail_part()}  "
+                f"[#34d399]{format_duration(latency)}[/]{hint}"
             )
         )
+
+    def _summarize_output(self, output: str | None) -> str:
+        """One quiet, high-signal hint about WHAT the tool produced."""
+        if not output:
+            return ""
+
+        try:
+            lines = output.splitlines()
+            n_lines = len(lines)
+
+            if self.tool_name in ("read_files", "read_file", "search_files"):
+                return (
+                    f"  [#3a4157]·[/] [#565d73]{n_lines} lines · "
+                    f"{compact_count(len(output))} chars[/]"
+                )
+
+            if self.tool_name in ("shell", "run_shell"):
+                bits: list[str] = [f"{n_lines} lines"]
+                if "--- stderr ---" in output or "Exit code:" in output:
+                    bits.append("[#fbbf24]⚠ issues[/]")
+                return "  [#3a4157]·[/] " + " ".join(bits)
+
+            return ""
+        except Exception:
+            return ""  # cosmetic hint — never fail the row
 
     def fail(self, error: BaseException) -> None:
         self._finished = True
@@ -160,7 +249,8 @@ class LiveToolStatus(AnimatedRow):
         icon = classify_error(error)[0]
         self._safe_update(
             Text.from_markup(
-                f"[#fb7185]✕[/] [#fda4af]{self._label()}[/]{self._detail_part()}  "
+                f"[#fbbf24]⚠[/] {self._tag()} "
+                f"[#fda4af]{self._label()}[/]{self._detail_part()}  "
                 f"[#fb7185]{icon} {escape(reason[:40])}[/]"
             )
         )
@@ -169,9 +259,11 @@ class LiveToolStatus(AnimatedRow):
 class TurnSummary(AnimatedRow):
     """The ONE per-turn digest — the only place token totals appear.
 
-        ✦ 1.3s · 667 in · 12 out · 2 tools · 3 rounds  ⧉ copy
+        ✦ 4.8s · 17.3k in · 263 out · 6 tools · 3 rounds  ⧉ copy
 
-    Clicking the row copies exactly that exchange (prompt + reply).
+    The ✦ sparkles briefly on completion; clicking the row copies that
+    exchange (prompt + reply).  ``gaps`` > 0 renders an honest ⚠ note
+    about steps whose provider sent no usage.
     """
 
     SPARK_COLORS: ClassVar[tuple[str, ...]] = (
@@ -182,13 +274,21 @@ class TurnSummary(AnimatedRow):
     )
 
     def __init__(
-        self, *, duration: float, input_tokens: int, output_tokens: int, tools: int, steps: int
+        self,
+        *,
+        duration: float,
+        input_tokens: int,
+        output_tokens: int,
+        tools: int,
+        steps: int,
+        gaps: int = 0,
     ) -> None:
         self._duration = duration
         self._input = input_tokens
         self._output = output_tokens
         self._tools = tools
         self._steps = steps
+        self._gaps = gaps
         self._frame = 0
         super().__init__("", classes="turn-summary")
 
@@ -222,6 +322,8 @@ class TurnSummary(AnimatedRow):
             parts.append(f"[#fbbf24]{self._tools}[/][#565d73] tool{plural}[/]")
         if self._steps > 1:
             parts.append(f"[#565d73]{self._steps}[/][#3a4157] rounds[/]")
+        if self._gaps > 0:
+            parts.append(f"[#fbbf24]⚠ {self._gaps}[/][#3a4157] no-usage[/]")
 
         divider = "  [#2a3148]·[/]  "
         self._safe_update(Text.from_markup(f"{spark}{divider.join(parts)}  [#3a4157]⧉ copy[/]"))
@@ -229,3 +331,10 @@ class TurnSummary(AnimatedRow):
     def on_click(self, event: events.Click) -> None:
         event.stop()
         jimmy(self).action_copy_last()
+
+
+class PairDivider(Static):
+    """A thin hairline after each completed prompt+reply pair."""
+
+    def __init__(self) -> None:
+        super().__init__("", classes="pair-divider")
