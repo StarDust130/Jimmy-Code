@@ -295,6 +295,8 @@ class JimmyApp(App[None]):
             self.action_copy_last()
         elif command == "/copyall":
             self.action_copy_all()
+        elif command == "/theme":
+            self.action_cycle_theme()
         elif command == "/model":
             self.action_open_models()
         elif command == "/help":

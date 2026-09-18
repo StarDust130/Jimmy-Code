@@ -866,3 +866,70 @@ ModelScreen {
     background: #1b2033;
     color: #f5f6fc;
 }
+
+/* ⌨️ slash-command autocomplete popup (sits above the prompt) */
+
+#ac-popup {
+    display: none;                   /* opened by the composer */
+    width: 100%;
+    height: auto;
+    max-height: 12;
+    overflow-y: auto;
+    background: #0d1017;
+    border: round #2a3148;
+    margin-bottom: 0;
+}
+
+#ac-popup.open {
+    display: block;
+}
+
+.ac-row {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    color: #dbe0ee;
+}
+
+.ac-row:hover {
+    background: #131a30;
+}
+
+.ac-row.selected {
+    background: #1c2440;
+    text-style: bold;
+}
+
+/* ⌨️ slash-command autocomplete popup (home + workspace) */
+
+#ac-popup,
+#home-ac-popup {
+    display: none;                   /* toggled via the .open class */
+    width: 100%;
+    height: auto;
+    max-height: 12;
+    overflow-y: auto;
+    background: #0d1017;
+    border: round #2a3148;
+}
+
+#ac-popup.open,
+#home-ac-popup.open {
+    display: block;
+}
+
+.ac-row {
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    color: #dbe0ee;
+}
+
+.ac-row:hover {
+    background: #131a30;
+}
+
+.ac-row.selected {
+    background: #1c2440;
+    text-style: bold;
+}

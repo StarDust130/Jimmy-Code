@@ -31,8 +31,10 @@ class Usage:
 
     @property
     def available(self) -> bool:
-        return self.total_tokens > 0
-
+        # 🔑 True when ANY real token counts exist — providers that omit
+        #    total_tokens previously reported available=False here, which
+        #    made the streaming loop DROP good usage data.
+        return self.total_tokens > 0 or (self.input_tokens + self.output_tokens) > 0
 
 @dataclass(frozen=True, slots=True)
 class LLMResult:

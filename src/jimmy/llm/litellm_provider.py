@@ -3,6 +3,23 @@
 🌐 Works with ANY LiteLLM model string:
    gemini/gemini-3.5-flash-lite, openai/gpt-4o,
    anthropic/claude-sonnet-4-5, or custom api_base (z.ai, ollama…)
+
+🔑 Token ground truth (the 900-vs-108 fix):
+   * ONLY ``usage.prompt_tokens`` (input) and
+     ``usage.completion_tokens`` (output) are trusted.
+   * ``total_tokens`` is NEVER used as input — it is the SUM; reading
+     it as input is the classic double-count.
+   * If a provider omits ``total_tokens``, it is COMPUTED as
+     input + output — so usage is never silently dropped (the old
+     ``available`` check required total_tokens > 0 and threw away
+     perfectly good usage from providers that omit it).
+   * Aliases accepted: input_tokens / output_tokens (some
+     OpenAI-compatible servers use those names).
+
+🌊 Streaming: ``stream_options={"include_usage": True}`` asks the
+   provider for a final usage chunk; the LAST usage-bearing chunk wins
+   (OpenAI-compatible semantics: it is cumulative).  Providers that
+   reject ``stream_options`` are retried once without it.
 """
 
 from __future__ import annotations
@@ -86,24 +103,36 @@ class LiteLLMProvider:
 
     @staticmethod
     def _usage(raw: Any) -> Usage:
+        """🔑 Canonical usage reader — the ONLY place tokens are read.
+
+        * trusts prompt_tokens / completion_tokens (and their aliases)
+        * computes total_tokens when the provider omits it
+        * never derives tokens from text, never trusts total as input
+        """
         if raw is None:
             return Usage()
 
-        def read(name: str) -> int:
-            value = getattr(raw, name, None)
+        def read(*names: str) -> int:
+            for name in names:
+                value = getattr(raw, name, None)
+                if value is None and isinstance(raw, dict):
+                    value = raw.get(name)
+                if value is None:
+                    continue
+                try:
+                    return max(0, int(value))
+                except (TypeError, ValueError):
+                    continue
+            return 0
 
-            if value is None and isinstance(raw, dict):
-                value = raw.get(name)
-
-            try:
-                return int(value or 0)
-            except (TypeError, ValueError):
-                return 0
+        input_tokens = read("prompt_tokens", "input_tokens")
+        output_tokens = read("completion_tokens", "output_tokens")
+        total = read("total_tokens") or (input_tokens + output_tokens)
 
         return Usage(
-            input_tokens=read("prompt_tokens"),
-            output_tokens=read("completion_tokens"),
-            total_tokens=read("total_tokens"),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total,
         )
 
     async def complete(
@@ -167,10 +196,24 @@ class LiteLLMProvider:
             "include_usage": True,
         }
 
-        response = cast(
-            AsyncIterator[Any],
-            await acompletion(**kwargs),
-        )
+        response: AsyncIterator[Any]
+        try:
+            response = cast(
+                AsyncIterator[Any],
+                await acompletion(**kwargs),
+            )
+        except Exception as exc:
+            # 🛟 Some OpenAI-compatible servers reject stream_options.
+            #    Retry once WITHOUT it — tokens may be missing for those,
+            #    but the turn still works (better than crashing).
+            if "stream_options" in kwargs and "stream_options" in str(exc).lower():
+                kwargs.pop("stream_options", None)
+                response = cast(
+                    AsyncIterator[Any],
+                    await acompletion(**kwargs),
+                )
+            else:
+                raise
 
         text_parts: list[str] = []
 
@@ -194,7 +237,9 @@ class LiteLLMProvider:
 
             chunk_usage = self._usage(getattr(chunk, "usage", None))
 
-            if chunk_usage.available:
+            if chunk_usage.total_tokens > 0:
+                # LAST usage-bearing chunk wins (OpenAI-compatible:
+                # the final one is the call's cumulative total).
                 usage = chunk_usage
 
             choices = getattr(

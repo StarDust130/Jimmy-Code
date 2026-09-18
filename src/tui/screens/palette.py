@@ -3,17 +3,18 @@
 Root menu contains only:
     ⌨ Keyboard Shortcuts
     🎨 Theme
-    🤖 Change model   → opens the ModelScreen wizard (the ONE model UI:
-       saved models, search every provider, add, same-key instant switch)
+    🤖 Change model   → opens the ModelScreen wizard (the ONE model UI —
+       saved models re-read fresh on every open, search every provider,
+       same-key instant switch).  There is deliberately NO inline model
+       list here: it duplicated the wizard and could show stale state.
     ✕ Close menu
 
 Submenus:
     shortcuts → keyboard reference
     themes    → live theme picker
 
-The palette owns only palette-related behavior.  There is deliberately
-NO inline model list here — that duplicated the wizard's saved-models
-screen; "Change model" navigates straight to the wizard instead.
+esc hierarchy: submenu → back to commands · active search → clear it ·
+root → close.  The palette owns only palette-related behavior.
 """
 
 from __future__ import annotations
@@ -77,7 +78,8 @@ class CommandPaletteScreen(ModalScreen):
 
     SHORTCUT_ROWS: ClassVar[tuple[tuple[str, str], ...]] = (
         ("↵", "send · begin"),
-        ("↑ ↓", "prompt history"),
+        ("/", "slash menu (autocomplete in the prompt)"),
+        ("↑ ↓", "prompt history / menu navigation"),
         ("esc", "interrupt jimmy / go back in menus"),
         ("ctrl+n", "home"),
         ("ctrl+p", "command menu"),
@@ -88,7 +90,6 @@ class CommandPaletteScreen(ModalScreen):
         ("ctrl+s", "sound play / stop"),
         ("ctrl+q", "quit"),
         ("drag", "mouse-select text to copy"),
-        ("/", "commands"),
     )
 
     def __init__(self) -> None:
@@ -195,7 +196,11 @@ class CommandPaletteScreen(ModalScreen):
     def _commands(
         self,
     ) -> list[tuple[str, str, Callable[[], None]]]:
-        """Root menu — only the four supported actions."""
+        """Root menu — only the four supported actions.
+
+        The model label is computed on EVERY open (palette screens are
+        re-mounted on push), so it always reflects the CURRENT model.
+        """
 
         app = jimmy(self)
 
@@ -659,11 +664,10 @@ class CommandPaletteScreen(ModalScreen):
         self._show_commands()
 
     def _open_model_screen(self) -> None:
-        """🤖 Change model → the ModelScreen wizard (the single model UI).
+        """🤖 Change model → close palette first, then open ModelScreen.
 
-        Closes the palette first (order-safe), so the user lands
-        directly on the wizard: saved models, search every provider,
-        add — all in one place.
+        The wizard re-reads saved models and the active model on every
+        mount, so it can never show stale state.
         """
 
         app = jimmy(self)

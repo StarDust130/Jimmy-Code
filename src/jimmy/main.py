@@ -5,9 +5,12 @@ from __future__ import annotations
 import typer
 
 from jimmy.config import get_settings
+from jimmy.llm.catalog import load_env_file
 from jimmy.llm.model_config import ModelStore
 from jimmy.llm.provider_factory import MissingAPIKeyError, create_provider
 from tui.app import JimmyApp
+
+load_env_file()  # 🔑 ~/.jimmy/.env → os.environ BEFORE create_provider()
 
 # 🚀 Create the Jimmy CLI
 app = typer.Typer(

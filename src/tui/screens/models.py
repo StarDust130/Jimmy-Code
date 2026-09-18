@@ -6,23 +6,28 @@ Flow:
     🔑 SAME-API RULE: if the provider's key is already set (or not
     needed), picking a model switches INSTANTLY — no key form.
 
-🔍 SEARCH IS ALWAYS ON:
-    The search box is visible and focused in every view.  Typing from
-    ANY view (saved list, provider list, a provider's models) shows
-    unified SMART results: ▸ providers (with "showing its N models
-    below ↴" when they do) · ⭐ popular · 🔎 fuzzy model matches ·
-    ✍️ custom.
+🔍 SEARCH IS ALWAYS ON — and it is MODE-AWARE:
+    * saved-list view  → query shows global results: providers first
+      (with "showing its N models below ↴"), then ⭐ popular, then
+      fuzzy model matches, then ✍️ custom.
+    * provider view    → query fuzzy-filters THAT provider's models —
+      clicking "▸ chatgpt — showing its 14 models below" opens exactly
+      those 14, ranked best-first (never the global search again).
+    * model view       → same scoped filtering while you refine.
+    * provider-browse  → query filters providers + cross-search.
 
-    The fuzzy scorer lives IN THIS FILE on purpose: the picker must
-    never fail to import because of which search helper catalog.py
-    currently exports.  "glm flash" finds "glm-4.6-flash"; "gpt4o"
-    finds "openai/gpt-4o"; "csonnet" finds "claude-sonnet-4-5".
+    Esc always de-grades one step: scoped filter → full provider list →
+    provider browse → saved list → close.  The search never eats your
+    place.
 
 Search performance: results are collected first and capped at
 ``_MAX_RESULTS`` rendered rows with an "…and N more" hint — typing
 stays instant even against a 3,500-model registry.  Model names always
 render via short_model(), so nested ids like
 ``groq/meta-llama/llama-prompt-guard-2-22m`` display correctly.
+
+The fuzzy scorer lives IN THIS FILE on purpose: the picker must never
+fail to import because of which search helper catalog.py exports.
 
 Discovery is delegated to jimmy.llm.catalog (live provider APIs verify
 the catalog; stale models filtered; 404'd models surfaced with ⚠).
@@ -57,9 +62,9 @@ from ..kit.theme import THEME
 # ⌨️ footer hints per view.
 _FOOT: dict[str, str] = {
     "list": "🔍 search any model · ↑↓ navigate · ↵ switch · ➕ add · esc close",
-    "provider": "🔍 search · ↑↓ navigate · ↵ select · esc back",
-    "model": "🔍 search · ↑↓ select · ↵ pick (same key = instant) · esc back",
-    "search": "↑↓ navigate · ↵ pick · esc clears search",
+    "provider": "🔍 filter providers · ↑↓ navigate · ↵ select · esc back",
+    "model": "🔍 filter these models · ↑↓ select · ↵ pick · esc back",
+    "search": "↑↓ navigate · ↵ open provider / pick model · esc clears search",
     "key": "paste key · ↵ save · 👁 show/hide · esc back",
 }
 
@@ -503,30 +508,40 @@ class ModelScreen(ModalScreen):
         return Text.from_markup(line)
 
     # ─────────────────────────────────────────────
-    # 🔀 unified view refresh (search overlays everything)
+    # 🔀 unified view refresh (MODE-AWARE search)
     # ─────────────────────────────────────────────
 
     def _refresh_view(self) -> None:
-        """Render the right list: search results when a query is present,
-        otherwise the current mode's native view.  Also restores the
-        per-mode chrome (breadcrumb / stepper / footer / context line).
+        """Render the right list for (mode, query):
+
+        * list    + query → GLOBAL search overlay
+        * provider+ query → fuzzy-filtered provider browse
+        * model   + query → fuzzy-filtered THIS provider's models
+        * any     + no query → that mode's native full view
+
+        This is what makes the provider row's promise honest: clicking
+        "▸ chatgpt — showing its 14 models below" opens chatgpt's view
+        showing exactly those matched models — not the global search.
         """
         if self._mode == "key":
             return  # key form owns the screen until esc
 
         query = self._search.value.strip() if self._search is not None else ""
 
-        if query:
-            self._render_search(query)
-        elif self._mode == "list":
-            self._chrome_list()
-            self._render_saved()
+        if self._mode == "list":
+            if query:
+                self._render_search(query)
+            else:
+                self._chrome_list()
+                self._render_saved()
+
         elif self._mode == "provider":
             self._chrome_providers()
-            self._rebuild_providers("")
-        else:
+            self._rebuild_providers(query)
+
+        else:  # model
             self._chrome_models()
-            self._rebuild_models("")
+            self._rebuild_models(query)
 
     # ── per-mode chrome ──────────────────────────────────────────
 
@@ -559,14 +574,22 @@ class ModelScreen(ModalScreen):
         catalog = self._ensure_catalog()
         verified: frozenset[str] = getattr(catalog, "verified", frozenset())
 
+        query = self._search.value.strip() if self._search is not None else ""
+        total = len(catalog.providers.get(self._provider, []))
+
         if self._provider in verified:
-            section = Text.from_markup(
+            head = (
                 f"[#34d399]✓ live[/] [#8a91a8]every model your key can "
                 f"use on[/] [#dbe0ee]{escape(self._provider)}[/]"
             )
         else:
-            section = Text.from_markup(
-                f"[#8a91a8]models for[/] [#dbe0ee]{escape(self._provider)}[/]"
+            head = f"[#8a91a8]models for[/] [#dbe0ee]{escape(self._provider)}[/]"
+
+        if query:
+            head += (
+                f"  [#2a3148]·[/]  [{THEME['accent']}]🔍[/] "
+                f"[#dbe0ee]{escape(query)}[/]  [#2a3148]·[/]  "
+                f"[#565d73]esc to see all {total}[/]"
             )
 
         self._set_chrome(
@@ -574,7 +597,7 @@ class ModelScreen(ModalScreen):
             foot_key="model",
             search_visible=True,
             steps=self._stepper_for(),
-            section=section,
+            section=Text.from_markup(head),
         )
 
     # ─────────────────────────────────────────────
@@ -721,8 +744,8 @@ class ModelScreen(ModalScreen):
         self,
         query: str = "",
     ) -> None:
-        """Provider view body: legend + ⭐ popular + 🏢 providers.
-        (With a query the unified search overlays this view instead.)"""
+        """Provider browse view: legend + ⭐ popular + 🏢 providers.
+        With a query, fuzzy-filters providers + cross-searches models."""
         catalog = self._ensure_catalog()
 
         self._clear_rows()
@@ -808,13 +831,17 @@ class ModelScreen(ModalScreen):
         self._paint_selection()
 
     # ─────────────────────────────────────────────
-    # 🧠 view: one provider's models
+    # 🧠 view: one provider's models (query-scoped)
     # ─────────────────────────────────────────────
 
     def _show_models(
         self,
         provider: str,
     ) -> None:
+        """Enter a provider's view.  If a search query is active it is
+        KEPT — the view shows that provider's models filtered by it
+        (this is what makes the search row's "showing its N models
+        below ↴" promise true).  Esc clears the filter to see all."""
         self._mode = "model"
         self._provider = provider
 
@@ -833,15 +860,20 @@ class ModelScreen(ModalScreen):
         self,
         query: str = "",
     ) -> None:
-        """One provider's models: ⭐ popular + 📋 all + ✍️ custom + 🔑 rekey.
-        (With a query the unified search overlays this view instead.)"""
+        """One provider's models.
+
+        No query  → ⭐ popular + 📋 all + ✍️ custom + 🔑 rekey.
+        With query → FUZZY-FILTERED, ranked best-first (scoped to this
+        provider — the click-through from a search result shows exactly
+        the models the search promised), plus ✍️ custom + 🔑 rekey.
+        """
         catalog = self._ensure_catalog()
 
         self._clear_rows()
 
-        q = query.strip().lower()
+        q = " ".join(query.strip().lower().split())
 
-        models = catalog.providers.get(
+        all_models = catalog.providers.get(
             self._provider,
             [],
         )
@@ -852,33 +884,82 @@ class ModelScreen(ModalScreen):
             if ("/" in model and model.split("/", 1)[0] == self._provider)
         ]
 
-        # ⭐ Popular models for this provider.
+        # 🔍 scoped fuzzy ranking of THIS provider's models.
+        if q:
+            compact = q.replace(" ", "")
+            ranked: list[tuple[int, str]] = []
+            for full in all_models:
+                full_l = full.lower()
+                short_l = full_l.split("/")[-1] if "/" in full_l else full_l
+                s = max(
+                    _fuzzy_score(q, full_l),
+                    _fuzzy_score(q, short_l),
+                    _fuzzy_score(compact, full_l),
+                    _fuzzy_score(compact, short_l),
+                )
+                if s > 0:
+                    ranked.append((s, full))
+            ranked.sort(key=lambda t: t[0], reverse=True)
+            matched = [full for _, full in ranked]
+
+            if self._section is not None:
+                self._section.update(
+                    Text.from_markup(
+                        f"[{THEME['accent']}]🔍[/] "
+                        f"[#dbe0ee]{escape(q)}[/]  [#2a3148]·[/]  "
+                        f"[#8a91a8]{len(matched)} of {len(all_models)}[/]"
+                        f"[#565d73] models in [/]"
+                        f"[#dbe0ee]{escape(self._provider)}[/]  "
+                        f"[#2a3148]·[/]  [#565d73]esc shows all[/]"
+                    )
+                )
+        else:
+            matched = all_models
+
+        entries: list[tuple[Text, Callable[[], None] | None]] = []
+
+        # ⭐ Popular models for this provider (rank matches first).
         for full in popular_here:
-            if q and q not in full.lower():
+            if q and full not in matched:
                 continue
 
             model_name = full.split("/", 1)[-1]
 
-            self._mount_row(
-                Text.from_markup(
-                    f"[#f5c451]⭐[/] [#dbe0ee]{escape(model_name)}[/]  [#565d73]{escape(full)}[/]"
-                ),
-                lambda f=full: self._model_chosen(f, self._provider),
+            entries.append(
+                (
+                    Text.from_markup(
+                        f"[#f5c451]⭐[/] [#dbe0ee]{escape(model_name)}[/]  "
+                        f"[#565d73]{escape(full)}[/]"
+                    ),
+                    lambda f=full: self._model_chosen(f, self._provider),
+                )
             )
 
-        # 📋 All remaining models.
-        for full in models:
+        # 📋 Models — ranked when filtered, alphabetical otherwise.
+        for full in matched:
             if full in popular_here:
                 continue
 
-            if q and q not in full.lower():
-                continue
-
             model_name = full.split("/", 1)[-1]
 
-            self._mount_row(
-                Text.from_markup(f"[#dbe0ee]{escape(model_name)}[/]  [#565d73]{escape(full)}[/]"),
-                lambda f=full: self._model_chosen(f, self._provider),
+            entries.append(
+                (
+                    Text.from_markup(
+                        f"[#dbe0ee]{escape(model_name)}[/]  [#565d73]{escape(full)}[/]"
+                    ),
+                    lambda f=full: self._model_chosen(f, self._provider),
+                )
+            )
+
+        if q and not matched:
+            entries.append(
+                (
+                    Text.from_markup(
+                        f"[#8a91a8]no match in {escape(self._provider)} — "
+                        f"esc to see all its models[/]"
+                    ),
+                    None,
+                )
             )
 
         # ✍️ Custom model — with a live preview of the built string.
@@ -890,25 +971,30 @@ class ModelScreen(ModalScreen):
         else:
             preview = "type a name above, then pick this"
 
-        self._mount_row(
-            Text.from_markup(
-                f"[#8a91a8]✍️[/] [#aab2c7]use custom[/]  [#565d73]{escape(preview)}[/]"
-            ),
-            self._use_custom,
+        entries.append(
+            (
+                Text.from_markup(
+                    f"[#8a91a8]✍️[/] [#aab2c7]use custom[/]  [#565d73]{escape(preview)}[/]"
+                ),
+                self._use_custom,
+            )
         )
 
         # 🔑 Explicit "re-enter key" row when a key already exists —
         #    the only way to overwrite it on purpose.
         env_var = catalog.provider_env_var(self._provider)
         if env_var and os.environ.get(env_var):
-            self._mount_row(
-                Text.from_markup(
-                    f"[#f5c451]🔑[/] [#aab2c7]re-enter API key for[/] "
-                    f"[#dbe0ee]{escape(self._provider)}[/]"
-                ),
-                self._show_key,
+            entries.append(
+                (
+                    Text.from_markup(
+                        f"[#f5c451]🔑[/] [#aab2c7]re-enter API key for[/] "
+                        f"[#dbe0ee]{escape(self._provider)}[/]"
+                    ),
+                    self._show_key,
+                )
             )
 
+        self._render_capped(entries)
         self._paint_selection()
 
     def _use_custom(self) -> None:
@@ -934,18 +1020,18 @@ class ModelScreen(ModalScreen):
         self._model_chosen(full, provider)
 
     # ─────────────────────────────────────────────
-    # 🔍 view: unified smart search overlay (any mode)
+    # 🔍 view: global search overlay (saved-list mode)
     # ─────────────────────────────────────────────
 
     def _render_search(self, query: str) -> None:
-        """Unified SMART results for the current query, from ANY view:
+        """GLOBAL smart results (shown from the saved-list view):
 
-        ▸ providers (with "showing its N models below ↴" when their
-        models follow) · ⭐ popular · 🔎 fuzzy model matches · ✍️ custom.
+        ▸ providers (with "showing its N models below ↴" — clicking
+        opens that provider SCOPED to the query) · ⭐ popular · 🔎
+        fuzzy model matches · ✍️ custom.
 
         Fuzzy: "glm flash" finds "glm-4.6-flash".  Model names always
-        render via short_model() so nested ids stay readable.  Picking
-        a model jumps straight to switch/key — no navigation."""
+        render via short_model() so nested ids stay readable."""
         catalog = self._ensure_catalog()
 
         q = query.strip().lower()
@@ -988,7 +1074,8 @@ class ModelScreen(ModalScreen):
             p = full.split("/", 1)[0] if "/" in full else ""
             matched_per_provider[p] = matched_per_provider.get(p, 0) + 1
 
-        # ▸ Providers FIRST — with an honest hint about what's below.
+        # ▸ Providers FIRST — clicking opens the provider SCOPED to the
+        #   query, so the hint is a promise, not a tease.
         for provider in providers:
             count = len(catalog.providers.get(provider, []))
             env = catalog.provider_env_var(provider)
@@ -1002,8 +1089,8 @@ class ModelScreen(ModalScreen):
             followed = matched_per_provider.get(provider, 0)
             if followed:
                 hint = (
-                    f"  [#2a3148]—[/] [#565d73]showing its "
-                    f"{min(followed, _MAX_RESULTS)} models below ↴[/]"
+                    f"  [#2a3148]—[/] [#565d73]↵ shows its "
+                    f"{min(followed, _MAX_RESULTS)} matched models[/]"
                 )
             else:
                 hint = f"  [#2a3148]—[/] [#565d73]↵ browse all {count} models[/]"
@@ -1364,8 +1451,8 @@ class ModelScreen(ModalScreen):
         if event.input.id != "model-search":
             return
 
-        # 🔍 every keystroke re-renders the unified view — search works
-        #    from the saved list, the provider list, anywhere.
+        # 🔍 every keystroke re-renders the MODE-AWARE view — global
+        #    search on the saved list, scoped filtering inside a provider.
         self._refresh_view()
 
     def on_input_submitted(
@@ -1512,8 +1599,9 @@ class ModelScreen(ModalScreen):
     # ─────────────────────────────────────────────
 
     def action_close(self) -> None:
-        """esc, in order: key → back · search text → clear it ·
-        provider models → providers · providers → list · list → close."""
+        """esc, in order: key → back · active filter → clear it (shows
+        the full level you're on) · provider models → providers ·
+        providers → list · list → close."""
 
         if self._mode == "key":
             self._leave_key()

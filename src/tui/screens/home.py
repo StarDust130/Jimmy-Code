@@ -27,7 +27,7 @@ from ..kit.assets import (
 from ..kit.helpers import blend_hex, jimmy, keycap
 from ..kit.sound import sound_chip_text
 from ..kit.theme import THEME
-from ..widgets.composer import PromptInput
+from ..widgets.composer import Composer, PromptInput, SlashController
 
 _BRAND_SPIN: tuple[str, ...] = ("✻", "✽", "✳", "✢")
 _PLACEHOLDERS: tuple[str, ...] = (
@@ -96,6 +96,7 @@ class HomeScreen(Screen):
         self._pwd: Static | None = None
         self._ver: Static | None = None
         self._bottom_wave: Static | None = None
+        self._slash: SlashController | None = None
 
     # layout -------------------------------------------------------------
 
@@ -154,6 +155,22 @@ class HomeScreen(Screen):
         self._started = time.monotonic() - (0.0 if self.animated else 99.0)
         self._anim_ticker = self.set_interval(1 / 20, self._home_frame)
         self._home_frame()
+
+        # ⌨️ slash-command popup — same UX as the workspace composer.
+        #    Mounted just above the home prompt, inside the hero.
+        try:
+            hero = self.query_one("#hero", Vertical)
+            popup = Vertical(id="home-ac-popup")
+            hero.mount(popup, before=self._prompt)
+            self._slash = SlashController(
+                input_widget=self._prompt,
+                popup=popup,
+                commands=Composer.COMMANDS,
+                on_run=lambda cmd: jimmy(self)._run_command(cmd),
+            )
+            self._prompt._ac_host = self._slash
+        except Exception:
+            self._slash = None  # popup is cosmetic — never block home
 
     def on_unmount(self) -> None:
         if self._anim_ticker is not None:
@@ -418,3 +435,12 @@ class HomeScreen(Screen):
         self._paint_brand()
         self._update_sound_chip()
         self._paint_status()
+
+    def on_input_submitted(self, event: events.Input.Submitted) -> None:
+        # ⌨️ slash popup open on home → run the highlighted command
+        #    instead of submitting.
+        if event.input.id == "home-prompt" and self._slash is not None and self._slash.is_open:
+            event.stop()
+            cmd = self._slash.consume_submit()
+            if cmd:
+                jimmy(self)._run_command(cmd)

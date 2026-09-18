@@ -554,3 +554,38 @@ def save_key_to_env(env_var: str, key: str) -> None:
     ENV_FILE.write_text("\n".join(lines) + "\n")
 
     os.environ[env_var] = key  # ✅ live immediately, no restart
+
+
+def load_env_file(path: Path | None = None) -> int:
+    """🔑 Load KEY=VALUE pairs from ~/.jimmy/.env into os.environ.
+
+    Real environment variables always WIN (never overridden).
+    Returns how many variables were injected.
+
+    WHY: save_key_to_env() writes keys here + sets os.environ live —
+    but a FRESH process (❯ jimmy) never reads the file automatically.
+    factory.create_provider() calls this before raising MissingAPIKeyError,
+    so TUI-added keys survive restarts.
+    """
+    env_path = path or ENV_FILE
+    if not env_path.exists():
+        return 0
+
+    loaded = 0
+    try:
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if not key:
+                continue
+            if key not in os.environ:  # 🛡️ real env wins
+                os.environ[key] = value
+                loaded += 1
+    except Exception:
+        pass  # 🔑 env loading must never crash the boot
+
+    return loaded
