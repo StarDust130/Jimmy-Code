@@ -2,15 +2,17 @@
 
 🔁 One user turn = one loop of LLM calls + tool executions.
 
-Token efficiency (Option A):
+Token efficiency:
 ✂️ oversized tool outputs clipped when they arrive
-🧹 the LLM sees a PRUNED VIEW of the turn before every call
-   (old tool results → stubs); the canonical record is never touched
-💾 the canonical record (clipped, unstubbed) is saved to history
+🧹 the LLM sees a PRUNED VIEW before every call (old tool results →
+   summary stubs that keep the gist); the canonical record is untouched
+🛑 max_steps is NOT a crash: progress is saved and a ``max_steps``
+   event is emitted — the TUI shows ▶ Continue and the next turn
+   resumes the same conversation.
 
 Multi-model:
 🤖 set_provider() hot-swaps models mid-session (history kept)
-💰 CostTracker accumulates session tokens + cost
+💰 CostTracker accumulates session tokens + cost (ONE add per LLM call)
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ AgentEventType = Literal[
     "tool_start",
     "tool_done",
     "tool_error",
+    "max_steps",
     "error",
 ]
 
@@ -69,11 +72,7 @@ class Agent:
     # ─────────────────────────────────────────
 
     def set_provider(self, provider: LLMProvider) -> None:
-        """🤖 Swap the active model mid-session.
-
-        History is kept — the new model continues the SAME
-        conversation (system prompt + history are model-agnostic).
-        """
+        """🤖 Swap the active model mid-session.  History is kept."""
         self.provider = provider
 
     # ─────────────────────────────────────────
@@ -84,9 +83,7 @@ class Agent:
         self,
         user_text: str,
     ) -> AsyncIterator[AgentEvent]:
-        # 💾 CANONICAL RECORD — the source of truth for this turn.
-        #    Only ever APPENDED to. Never pruned. Never mutated.
-        #    Structure: [system] + prior history + [user message]
+        # 💾 CANONICAL RECORD — appended only, never pruned/mutated.
         turn: list[Message] = [
             Message(role="system", content=SYSTEM_PROMPT),
             *self.history,  # ✂️ already clipped when saved last turn
@@ -94,9 +91,8 @@ class Agent:
         ]
 
         for step in range(1, self.max_steps + 1):
-            # 👁️ LLM VIEW — fresh pruned copy of the canonical record.
-            #    Old tool results (beyond keep_raw_tools) appear as
-            #    stubs HERE ONLY; `turn` keeps the clipped originals.
+            # 👁️ LLM VIEW — pruned copy; old tool results become
+            #    summary stubs.  `turn` keeps the clipped originals.
             messages = [turn[0], *self.context.prune(turn[1:])]
 
             yield AgentEvent(
@@ -135,7 +131,7 @@ class Agent:
 
             model_used = result.model or self.provider.model
 
-            # 💰 accumulate session tokens + cost
+            # 💰 accumulate session tokens + cost (single tracking point)
             self.cost.add(result.usage, model_used)
 
             yield AgentEvent(
@@ -144,8 +140,9 @@ class Agent:
                     "step": step,
                     "model": model_used,
                     "latency": latency,
-                    "usage": result.usage,  # 📊 per-step usage
-                    "session_totals": self.cost.totals(),  # 📊 for TUI header
+                    "usage": result.usage,
+                    "usage_ok": result.usage.available,  # 📊 gaps visible
+                    "session_totals": self.cost.totals(),
                 },
             )
 
@@ -158,20 +155,13 @@ class Agent:
                 )
             )
 
-            # ─────────────────────────────────
             # ✅ Final answer → close the turn
-            # ─────────────────────────────────
-
             if not result.tool_calls:
                 self._save_turn(turn)
                 return
 
-            # ─────────────────────────────────
             # 🔧 Execute tool calls
-            # (helper returns events, we yield them here)
-            # ─────────────────────────────────
-
-            tool_events, tool_messages = await self._run_tool_calls(result.tool_calls)
+            tool_events, tool_messages = await self._run_tool_calls(result.tool_calls, step)
 
             for event in tool_events:
                 yield event
@@ -179,10 +169,14 @@ class Agent:
             # ✂️ tool_messages are ALREADY clipped → safe for the record
             turn.extend(tool_messages)
 
-        # 🛑 step budget exhausted
-        error = RuntimeError("Jimmy stopped because the maximum number of agent steps was reached.")
-        yield AgentEvent(type="error", data={"source": "agent", "error": error})
-        raise error
+        # 🛑 Step budget exhausted — NOT an error.  The record is
+        #    consistent here (assistant → tool results), so saving it
+        #    preserves all progress; the TUI shows ▶ Continue.
+        self._save_turn(turn)
+        yield AgentEvent(
+            type="max_steps",
+            data={"steps": self.max_steps, "model": self.provider.model},
+        )
 
     # ─────────────────────────────────────────
     # 🔧 Tool execution (returns events + messages)
@@ -191,6 +185,7 @@ class Agent:
     async def _run_tool_calls(
         self,
         tool_calls: tuple[ToolCall, ...],
+        step: int,
     ) -> tuple[list[AgentEvent], list[Message]]:
         """Resolve → validate → execute each tool call.
 
@@ -201,8 +196,6 @@ class Agent:
         tool_messages: list[Message] = []
 
         for call in tool_calls:
-            # UI row starts BEFORE validation so an error
-            # can update the same row.
             events.append(
                 AgentEvent(
                     type="tool_start",
@@ -210,6 +203,7 @@ class Agent:
                         "id": call.id,
                         "name": call.name,
                         "arguments": call.arguments,
+                        "step": step,  # 🧭 UI groups batches per step
                     },
                 )
             )
@@ -314,11 +308,5 @@ class Agent:
     # ─────────────────────────────────────────
 
     def _save_turn(self, turn: list[Message]) -> None:
-        """Save the canonical record (minus system prompt) to history.
-
-        The record contains CLIPPED (never stubbed) tool results,
-        so the NEXT user turn remembers the real content of what
-        Jimmy read/edited. Stubs are a VIEW-only concern, applied
-        fresh by ContextBuilder.prune() before each LLM call.
-        """
+        """Save the canonical record (minus system prompt) to history."""
         self.history.extend(turn[1:])  # 🚫 skip system prompt
