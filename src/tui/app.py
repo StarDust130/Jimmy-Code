@@ -6,8 +6,12 @@ Layout of the TUI package:
     screens/    home · palette · models
     app.py      THIS FILE — JimmyApp: bindings, agent loop, actions.
 
-All agent behavior (LiteLLM streaming, tools, context, tokens, events)
-is untouched and lives in ``jimmy.agent`` / ``jimmy.llm``.
+Agent behavior (LiteLLM streaming, tools, context, tokens, events)
+lives in ``jimmy.agent`` / ``jimmy.llm``.  Notable agent contract:
+    * ``max_steps`` is NOT an error — the agent saves progress and
+      emits a ``max_steps`` event; the TUI shows a ▶ Continue card.
+    * tool events carry ``step`` → the timeline groups batches.
+    * ``llm_done`` carries ``usage_ok`` → TurnSummary can report gaps.
 """
 
 from __future__ import annotations
@@ -16,9 +20,11 @@ import asyncio
 import time
 from typing import Callable, ClassVar
 
+from rich.text import Text
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import Input
+from textual.widgets import Input, Static
 
 from jimmy.agent import Agent, AgentEvent
 from jimmy.llm.catalog import is_model_not_found, mark_unavailable
@@ -28,7 +34,7 @@ from jimmy.llm.provider import LLMProvider
 from jimmy.llm.provider_factory import create_provider  # 🤖 provider factory
 
 from .kit.error_hints import friendly_error  # 🫱 human-readable errors
-from .kit.helpers import format_duration, short_model, tool_display
+from .kit.helpers import format_duration, jimmy, short_model, tool_display
 from .kit.sound import SoundPlayer
 from .kit.theme import THEME, THEME_ORDER, THEMES, rebuild_flow
 from .screens.home import HomeScreen
@@ -43,8 +49,38 @@ from .widgets.messages import (
     SystemNote,
     UserMessage,
 )
-from .widgets.rows import LiveToolStatus, ThinkingRow, TurnSummary
+from .widgets.rows import (
+    LiveToolStatus,
+    StepHeader,
+    ThinkingRow,
+    TurnSummary,
+)
 from .widgets.top_bar import TopBar
+
+
+class ContinueCard(Static):
+    """⏸ Step limit reached — progress saved, one-click continue."""
+
+    def __init__(self, steps: int) -> None:
+        self._steps = steps
+        super().__init__("", classes="continue-card")
+
+    def on_mount(self) -> None:
+        self.tooltip = "click ▶ continue to resume the task"
+        self._paint()
+
+    def _paint(self) -> None:
+        self.update(
+            Text.from_markup(
+                f"[#fbbf24]⏸[/] [#fda4af]step limit reached "
+                f"({self._steps} steps)[/][#565d73] — progress saved ·  [/]"
+                f"[#34d399]▶ continue[/]"
+            )
+        )
+
+    def on_click(self, event: events.Click) -> None:
+        event.stop()
+        jimmy(self).continue_task()
 
 
 class JimmyApp(App[None]):
@@ -52,7 +88,7 @@ class JimmyApp(App[None]):
 
     enter send · esc interrupt · ctrl+n home (one-way) · ctrl+p palette ·
     ctrl+m models · ctrl+c copy last · ctrl+a copy all · ctrl+l clear line ·
-    ctrl+s sound · ctrl+q quit
+    ctrl+s sound · ctrl+q quit · / in the prompt = slash menu
     """
 
     TITLE = "jimmy"
@@ -75,7 +111,8 @@ class JimmyApp(App[None]):
         ("escape", "interrupt", "Interrupt"),
         # Command palette
         Binding("ctrl+p", "command_palette", "Commands", priority=True),
-        # 🤖 Model picker — direct shortcut.
+        # 🤖 Model picker — fires when no input is focused; while typing
+        #    use /model (ctrl+m is Enter's byte on standard terminals).
         ("ctrl+m", "open_models", "Models"),
     ]
 
@@ -107,12 +144,18 @@ class JimmyApp(App[None]):
         self._thinking: ThinkingRow | None = None
         self._tool_rows: dict[str, LiveToolStatus] = {}
 
+        # 🧭 tool-timeline grouping: one StepHeader per step.
+        self._step_header: StepHeader | None = None
+        self._last_step_header: StepHeader | None = None
+        self._max_steps = 25
+
         # Per-turn aggregates + session totals for the navbar Σ chip.
         self._turn_start = 0.0
         self._turn_in = 0
         self._turn_out = 0
         self._turn_tools = 0
         self._turn_steps = 0
+        self._turn_gaps = 0  # ⚠ steps whose provider sent no usage
         self._total_in = 0
         self._total_out = 0
 
@@ -121,6 +164,10 @@ class JimmyApp(App[None]):
 
         # Retry support.
         self._last_prompt: str | None = None
+
+        # ⚠️ One error card per turn, ever (agent emits error AND the
+        #    worker's except may fire for the same failure).
+        self._error_shown = False
 
     # accessors ──────────────────────────────────────────────────────────
 
@@ -144,6 +191,11 @@ class JimmyApp(App[None]):
         yield Composer()
 
     def on_mount(self) -> None:
+        try:
+            self._max_steps = int(getattr(self.agent, "max_steps", 25))
+        except Exception:
+            self._max_steps = 25
+
         self.composer.focus_input()
         if self.initial_prompt:
             prompt = self.initial_prompt
@@ -160,7 +212,7 @@ class JimmyApp(App[None]):
     # 🫱 friendly errors ─────────────────────────────────────────────────
 
     def _friendly_error_card(self, error: Exception) -> ErrorCard:
-        """🫱 Human error card — plain words, and a one-click
+        """🫱 Human error card — plain words, plus a one-click
         '🤖 Change model' escape hatch when the model is the problem."""
         fe = friendly_error(error)
         card = ErrorCard(RuntimeError(f"{fe.title}\n{fe.hint}"))
@@ -204,8 +256,25 @@ class JimmyApp(App[None]):
         self.notify(f"🤖 {short_model(provider.model)} active", timeout=2)
 
     def action_open_models(self) -> None:
-        """🤖 Open the model picker (ctrl+m)."""
+        """🤖 Open the model picker (ctrl+m / 🤖 in palette)."""
         self.push_screen(ModelScreen())
+
+    # ▶️ continue after step-limit ───────────────────────────────────────
+
+    def continue_task(self) -> None:
+        """▶ Continue a step-limited task — history was saved by the
+        agent, so the next turn resumes without redoing work."""
+        if self._busy:
+            self.notify(
+                "jimmy is still working — esc first",
+                severity="warning",
+                timeout=1.5,
+            )
+            return
+        self.submit(
+            "Continue the previous task from where it stopped. "
+            "Do not redo work that is already done."
+        )
 
     # palette + focus ────────────────────────────────────────────────────
 
@@ -303,7 +372,8 @@ class JimmyApp(App[None]):
             self.chat.append(
                 SystemNote(
                     "commands: /clear · /home · /sound · /copy · /copyall · "
-                    "/model · /quit — drag-select text to copy it · ↑ recalls prompts"
+                    "/model · /theme · /quit — drag-select text to copy it · "
+                    "↑ recalls prompts"
                 )
             )
             self.chat.pin(force=True)
@@ -326,10 +396,16 @@ class JimmyApp(App[None]):
         self._current_reply = None
         self._thinking = None
         self._tool_rows.clear()
+        self._error_shown = False
         self._last_prompt = text
+
+        # 🧭 new turn → fresh step grouping.
+        self._step_header = None
+        self._last_step_header = None
 
         self._turn_start = time.monotonic()
         self._turn_in = self._turn_out = self._turn_tools = self._turn_steps = 0
+        self._turn_gaps = 0
 
         self.chat.append(UserMessage(text))
         self._transcript.append(("user", text))
@@ -351,12 +427,33 @@ class JimmyApp(App[None]):
         if row is not None:
             row.remove()
 
+    # 🧭 step headers: one per step, older ones dim out
+    def _mount_step_header(self, step: int) -> None:
+        if self._step_header is not None and self._step_header.step == step:
+            return  # same step — reuse the header
+        if self._last_step_header is not None:
+            self._last_step_header.make_old()
+        header = StepHeader(step)
+        self._step_header = header
+        self._last_step_header = header
+        self.chat.append(header)
+
     async def _handle_event(self, event: AgentEvent) -> None:
         data = event.data
 
+        # ── Step budget exhausted → ▶ Continue (NOT an error) ────────
+        if event.type == "max_steps":
+            self.chat.append(ContinueCard(int(data.get("steps", 0))))
+            self.chat.pin(force=True)
+            return
+
         if event.type == "llm_start":
             self._dismiss_thinking()
-            row = ThinkingRow(model=str(data["model"]), step=int(data["step"]))
+            row = ThinkingRow(
+                model=str(data["model"]),
+                step=int(data["step"]),
+                max_steps=self._max_steps,
+            )
             self._thinking = row
             self.chat.append(row)
             self._turn_steps += 1
@@ -388,8 +485,10 @@ class JimmyApp(App[None]):
             self._turn_out += int(usage.output_tokens)
             self._total_in += int(usage.input_tokens)
             self._total_out += int(usage.output_tokens)
-            # 💰 snapshot cost for the Σ chip (guarded — test fakes may
-            #    not carry a CostTracker)
+            if not data.get("usage_ok", True):
+                self._turn_gaps += 1  # ⚠ provider sent no usage this step
+            # 💰 Σ/$ read agent.cost — Agent.stream already added this
+            #    step (single tracking point; TUI never double-adds).
             self._cost_usd = getattr(getattr(self.agent, "cost", None), "cost_usd", 0.0)
             self.top_bar.refresh_tokens()
             self.chat.pin(force=True)
@@ -401,14 +500,20 @@ class JimmyApp(App[None]):
             arguments = data.get("arguments", {})
             if not isinstance(arguments, dict):
                 arguments = {}
+            step = int(data.get("step", 0))
             self._dismiss_thinking()
             icon, action, detail = tool_display(tool_name, arguments)
+
+            # 🧭 one quiet header per step → batches read as groups.
+            self._mount_step_header(step)
+
             row = LiveToolStatus(
                 call_id=call_id,
                 tool_name=tool_name,
                 icon=icon,
                 action=action,
                 detail=detail,
+                step=step,
             )
             self._tool_rows[call_id] = row
             self.chat.append(row)
@@ -434,9 +539,14 @@ class JimmyApp(App[None]):
             return
 
         if event.type == "error":
+            # ⚠️ ONE card per turn — the worker's except may fire for
+            #    the same failure the agent already reported.
             error = data.get("error", RuntimeError("Unknown error."))
-            self.chat.append(self._friendly_error_card(error))  # 🫱
-            self.chat.pin(force=True)
+            if not self._error_shown:
+                self._error_shown = True
+                self.chat.append(self._friendly_error_card(error))
+                self.chat.pin(force=True)
+            return
 
     async def _run_turn(self, text: str) -> None:
         try:
@@ -450,6 +560,7 @@ class JimmyApp(App[None]):
                     output_tokens=self._turn_out,
                     tools=self._turn_tools,
                     steps=self._turn_steps,
+                    gaps=self._turn_gaps,
                 )
             )
 
@@ -480,20 +591,19 @@ class JimmyApp(App[None]):
             # ⚰️ Model no longer available / deprecated.
             if is_model_not_found(exc):
                 model = self.agent.provider.model
-
-                mark_unavailable(
-                    model,
-                    str(exc),
-                )
-
+                mark_unavailable(model, str(exc))
                 self.notify(
-                    f"🤖 {short_model(model)} is no longer available — press ctrl+m to pick another",
+                    f"🤖 {short_model(model)} is no longer available — "
+                    "press ctrl+m to pick another",
                     timeout=4,
                     severity="warning",
                 )
 
-            self.chat.append(self._friendly_error_card(exc))
-            self.chat.pin(force=True)
+            if not self._error_shown:
+                self._error_shown = True
+                self.chat.append(self._friendly_error_card(exc))
+                self.chat.pin(force=True)
+
             self.top_bar.set_error()
 
         finally:
