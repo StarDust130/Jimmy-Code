@@ -1,16 +1,17 @@
 """Timeline rows: Thinking, Tool status, Turn summary (+ animated base).
 
-Tool timeline UX: no step counters — the tools speak for themselves.
+Tool timeline UX — the row tells the STORY, not the raw command:
 
-    ⠹ th✻inking · test-flash · 0.8s          ← sparkle drift + model + time
-    ⠹ 🌿 git status --porcelain ▁▂▄▂▁ 0.4s   ← pulsing text + ACTIVITY WAVE
-    ✓ 🌿 git status --porcelain · 30ms · 4 lines
-    ✓ 🧪 pytest -q · 1.2s · 40 lines · ⚠ issues
-    ⚠ ✏️ Editing x.ts · ⏱️ FileNotFoundError
+    ⠹ committing “looping through updates”···  0.4s   ← bright: happening NOW
+    ✓  committing “looping through updates”   90ms   ← dim: done, recedes
+    ✓  staging 4 files                        19ms
+    ✓  reading jimmy.tcss · 128 lines         11ms
+    ⚠  editing x.ts  ⏱ FileNotFoundError             ← loud: needs you
 
- Latency chips are SPEED-CODED: green fast · blue normal · amber slow.
- Rows carry running/ok/err classes → colored left rail in the tcss.
- Hover any row → the raw call (tool name + arguments).
+Only the ACTIVE row is bright; finished rows dim so a 9-tool turn reads
+as a quiet trail, not a wall of sameness.  Latency is speed-coded
+(green fast · blue normal · amber slow) but kept dim on done rows.
+Hover any row → the raw call (tool name + pretty arguments).
 """
 
 from __future__ import annotations
@@ -27,8 +28,8 @@ from textual.widgets import Static
 
 from ..kit.helpers import (
     SPINNER_FRAMES,
-    WAVE_GLYPHS,
     classify_error,
+    clip,
     compact_count,
     format_duration,
     jimmy,
@@ -36,12 +37,7 @@ from ..kit.helpers import (
 )
 from ..kit.theme import THEME
 
-# 💓 pulse colors for the ACTIVE tool row's action text — alternate on
-#    every spinner tick: a heartbeat that says "this is happening now".
-_PULSE_A = "#d5dae8"
-_PULSE_B = "#a9b3d0"
-
-# ⏱️ speed-coded latency chips — how fast was this tool, at a glance
+# ⏱️ speed-coded latency colors (used on done rows, kept dim)
 _FAST, _NORM, _SLOW = "#34d399", "#93c5fd", "#fbbf24"
 
 
@@ -51,6 +47,10 @@ def _latency_color(seconds: float) -> str:
     if seconds < 2.0:
         return _NORM
     return _SLOW
+
+
+def _basename(path: str) -> str:
+    return str(path).strip().rstrip("/").split("/")[-1]
 
 
 class AnimatedRow(Static):
@@ -144,20 +144,23 @@ class ThinkingRow(AnimatedRow):
 
 
 class LiveToolStatus(AnimatedRow):
-    """One readable tool line — the star of the timeline.
+    """One tool call — a sentence, not a log line.
 
-    active   ⠹ 🌿 git status --porcelain ▁▂▄▂▁ 0.4s
-             ↑ spinner + pulsing text + a tiny ACTIVITY WAVE that
-               ripples while the tool runs — the row is never dead.
-    done     ✓ 🌿 git status --porcelain · 30ms · 4 lines
-             ↑ latency is SPEED-CODED (green/blue/amber) + one
-               high-signal hint distilled from the real output.
-    shell    ✓ 🧪 pytest -q · 1.2s · 40 lines · ⚠ issues
-    failed   ⚠ ✏️ Editing x.ts · ⏱️ FileNotFoundError
+    The STORY is derived from the tool + its arguments:
 
-    "Git git"-style echo is suppressed at render time: when the detail
-    already starts the sentence (a git command, or the action word),
-    the verb is dropped — the icon + state glyph carry the meaning.
+        git add  + paths        →  staging 4 files
+        git commit -m "…"       →  committing “fun emoji message”
+        git push origin main    →  pushing origin main
+        git status              →  checking git status
+        pytest                  →  running tests
+        read_files  [a, b, c]   →  reading a.py, b.py
+        search_files "jwt"      →  searching “jwt”
+        write_file  path        →  writing composer.py
+        edit_files  path        →  editing composer.py
+        apply_patch path        →  patching composer.py
+
+    Without arguments the row falls back to the (icon, action, detail)
+    it was given — deduped, so "Git git" echo never renders.
     """
 
     def __init__(
@@ -177,7 +180,7 @@ class LiveToolStatus(AnimatedRow):
         self.action = action
         self.detail = detail
         self.step = step  # accepted for compatibility — not displayed
-        self._arguments = arguments or {}
+        self._arguments = arguments if isinstance(arguments, dict) else {}
         self.started = time.monotonic()
         self._latency: float | None = None
         self._frame = 0
@@ -198,41 +201,155 @@ class LiveToolStatus(AnimatedRow):
         self.call_after_refresh(self._redraw)
         self._start_anim(0.1)
 
-    # ── rendering helpers ────────────────────────────────────────────
+    # ── the story engine ─────────────────────────────────────────────
 
-    def _show_action(self) -> bool:
-        """False when the detail already tells the story ('Git git')."""
-        detail = self.detail.strip().lower()
-        action = self.action.strip().lower()
-        if not detail:
-            return True
-        if detail.startswith("git "):
-            return False
-        return not (action and detail.startswith(action))
+    def _first(self, *keys: str) -> str:
+        for key in keys:
+            value = self._arguments.get(key)
+            if value:
+                return str(value)
+        return ""
+
+    def _story(self) -> str:
+        """A human sentence for what this tool is doing — varied per
+        action so a 9-tool turn never reads as nine identical rows."""
+        args = self._arguments
+        name = (self.tool_name or "").strip().lower()
+
+        def q(text: str) -> str:
+            text = clip(str(text).strip(), 44)
+            return f"“{text}”" if text else ""
+
+        # ── shell + git: parse the command into an English verb ─────
+        if name in ("shell", "run_shell", "git", "git_tool"):
+            raw = self._first("command", "cmd", "subcommand", "operation")
+            parts = raw.split()
+            if parts and parts[0].lower() == "git":
+                parts = parts[1:]
+            extra = args.get("args")
+            if not parts and isinstance(extra, (list, tuple)) and extra:
+                parts = [str(x) for x in extra]
+            sub = parts[0].lower() if parts else ""
+            rest = parts[1:]
+
+            # commit message: explicit key OR the -m flag
+            message = self._first("message")
+            if not message:
+                for i, part in enumerate(rest):
+                    if part == "-m" and i + 1 < len(rest):
+                        message = rest[i + 1]
+                        break
+
+            if name in ("git", "git_tool") and not raw and not parts:
+                sub = ""  # bare git tool call
+
+            if sub == "status":
+                return "checking git status"
+            if sub == "log":
+                return "reading git log"
+            if sub in ("diff", "show"):
+                return "reviewing the diff"
+            if sub in ("add", "stage"):
+                paths = args.get("paths") or args.get("files") or args.get("path")
+                if isinstance(paths, (list, tuple)) and paths:
+                    return f"staging {len(paths)} file{'s' if len(paths) != 1 else ''}"
+                if paths:
+                    return f"staging {_basename(str(paths))}"
+                return "staging changes"
+            if sub in ("restore", "rm", "mv", "stash", "checkout"):
+                return "reworking the working tree"
+            if sub == "commit":
+                return f"committing {q(message)}" if message else "committing"
+            if sub == "push":
+                return "pushing " + " ".join(rest[:2]) if rest else "pushing to the remote"
+            if sub in ("pull", "fetch"):
+                return "syncing with the remote"
+            if sub in ("branch", "tag", "remote"):
+                return "managing refs"
+            if sub == "init":
+                return "initializing the repo"
+            if sub:
+                return f"git {sub}"
+            # non-git shell
+            if raw:
+                low = raw.lower()
+                if "pytest" in low.split()[:3] or low.startswith("pytest"):
+                    target = self._first("test_path", "path", "pattern")
+                    return f"running tests {clip(target, 28)}".rstrip()
+                if low.startswith(("python", "python3", "node", "tsx")):
+                    return f"executing {q(_basename(raw.split()[0]))}"
+                if low.startswith(("pip", "pip3", "uv ", "uvx", "poetry")) or " install" in low:
+                    return "installing dependencies"
+                return f"running {clip(raw, 40)}"
+            return ""
+
+        # ── dedicated tools ──────────────────────────────────────────
+        if name in ("read_files", "read_file"):
+            paths = args.get("paths") or args.get("path") or args.get("file_paths")
+            if isinstance(paths, (list, tuple)) and paths:
+                names = [_basename(str(p)) for p in paths]
+                shown = ", ".join(names[:2]) + (f" +{len(names) - 2}" if len(names) > 2 else "")
+                return f"reading {shown}"
+            if paths:
+                return f"reading {_basename(str(paths))}"
+            return ""
+
+        if name in ("search_files", "search_file", "grep"):
+            query = self._first("query", "pattern")
+            return f"searching {q(query)}" if query else "searching the workspace"
+
+        if name in ("list_files", "glob"):
+            directory = self._first("directory", "dir", "path", "folder", "pattern")
+            return f"scanning {directory}" if directory else "scanning the project"
+
+        if name in ("write_file", "write_files"):
+            target = self._first("path", "file_path", "filepath", "filename", "paths")
+            return f"writing {_basename(target)}" if target else "writing a file"
+
+        if name in ("edit_file", "edit_files"):
+            target = self._first("path", "file_path", "filepath", "filename", "paths")
+            return f"editing {_basename(target)}" if target else "editing a file"
+
+        if name in ("apply_patch", "apply_patch_tool"):
+            target = self._first("path", "file_path", "filepath", "target")
+            hunks = args.get("hunks") or args.get("edits")
+            base = _basename(target) if target else "patch"
+            if isinstance(hunks, (list, tuple)) and hunks:
+                return f"patching {base} · {len(hunks)} hunk{'s' if len(hunks) != 1 else ''}"
+            return f"patching {base}" if target else "applying a patch"
+
+        if name in ("run_tests", "run_tests_tool", "test_runner"):
+            target = self._first("test_path", "path", "pattern", "node_id", "target")
+            return f"running tests {clip(target, 28)}".rstrip() if target else "running tests"
+
+        return ""  # unknown → caller falls back to action/detail
+
+    def _fallback_body(self) -> str:
+        """Old behavior, deduped: 'icon Action detail' minus echo."""
+        action = (self.action or "").strip()
+        detail = (self.detail or "").strip()
+        if detail and (
+            detail.lower().startswith("git ")
+            or (action and detail.lower().startswith(action.lower()))
+        ):
+            return f"{self.icon} {detail}".rstrip()
+        if detail:
+            return f"{self.icon} {action} {detail}".rstrip()
+        return f"{self.icon} {action}".rstrip()
 
     def _body(self) -> str:
-        """The readable middle: 'icon Action detail' or 'icon detail'."""
-        if self._show_action():
-            label = f"{self.icon} {self.action}"
-            if self.detail:
-                return f"{label} {self.detail}"
-            return label
-        return f"{self.icon} {self.detail}".rstrip()
+        return self._story() or self._fallback_body()
 
-    def _wave(self) -> str:
-        """▁▂▄▂▁ — a 5-glyph ripple from WAVE_GLYPHS, shifted per tick."""
-        base = len(WAVE_GLYPHS)
-        return "".join(WAVE_GLYPHS[(self._frame + i) % base] for i in range(5))
+    # ── rendering ────────────────────────────────────────────────────
 
     def _redraw(self) -> None:
         self._frame = (self._frame + 1) % len(SPINNER_FRAMES)
         elapsed = format_duration(time.monotonic() - self.started)
-        action_color = _PULSE_A if self._frame % 2 == 0 else _PULSE_B
+        dots = "·" * (1 + self._frame % 3)  # breathing tail on the live row
         self._safe_update(
             Text.from_markup(
                 f"[{THEME['accent']}]{SPINNER_FRAMES[self._frame]}[/] "
-                f"[{action_color}]{escape(self._body())}[/]  "
-                f"[#3d4666]{self._wave()}[/]  "
+                f"[bold #e2e6f2]{escape(self._body())}[/][#3a4157]{dots}[/]  "
                 f"[#4b5163]{elapsed}[/]"
             )
         )
@@ -240,13 +357,9 @@ class LiveToolStatus(AnimatedRow):
     # ── state transitions (called by JimmyApp) ───────────────────────
 
     def finish(self, latency: float, output: str | None = None) -> None:
-        """Done: ✓ + SPEED-CODED latency + one hint from the result.
-
-        ``output`` is the clipped tool result the agent already has —
-        we distill ONE quiet hint (line count / issue marker) instead
-        of dumping it on the timeline.  Optional: callers that don't
-        pass output simply get the latency-only row.
-        """
+        """Done: ✓ + the same story, DIMMED so finished rows recede and
+        only the active step is bright.  Latency is speed-coded but kept
+        quiet; one high-signal hint may be distilled from the output."""
         self._finished = True  # also blocks a late on_mount restart
         self._stop_anim()
         self._latency = float(latency)
@@ -259,8 +372,9 @@ class LiveToolStatus(AnimatedRow):
         self._safe_update(
             Text.from_markup(
                 f"[#34d399]✓[/] "
-                f"[#7f8aa5]{escape(self._body())}[/]  "
-                f"[{color}]{format_duration(self._latency)}[/]{hint}"
+                f"[#565d73]{escape(self._body())}[/]  "
+                f"[#3d4666]{format_duration(self._latency)}[/]"
+                f"{hint}"
             )
         )
 
@@ -275,7 +389,7 @@ class LiveToolStatus(AnimatedRow):
 
             if self.tool_name in ("read_files", "read_file", "search_files"):
                 return (
-                    f"  [#3a4157]·[/] [#565d73]{n_lines} lines · "
+                    f"  [#3a4157]·[/] [#4b5163]{n_lines} lines · "
                     f"{compact_count(len(output))} chars[/]"
                 )
 
