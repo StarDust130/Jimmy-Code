@@ -577,6 +577,7 @@ class JimmyApp(App[None]):
                 icon=icon,
                 action=action,
                 detail=detail,
+                arguments=arguments,  # 🛰️ feeds the story + hover tooltip
             )
             self._tool_rows[call_id] = row
             self.chat.append(row)
