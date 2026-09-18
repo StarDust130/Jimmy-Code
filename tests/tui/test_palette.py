@@ -1,8 +1,9 @@
 """ctrl+p palette: root commands, search filter, shortcuts view,
-theme live-apply, model-wizard handoff, and every close path.
+theme live-apply, model-wizard handoff, permission-picker handoff,
+and every close path.
 
-The palette owns exactly FOUR commands (by design):
-    Keyboard Shortcuts · Theme · Change model · Close menu
+The palette owns exactly FIVE commands (by design):
+    Keyboard Shortcuts · Theme · Change model · Permissions · Close menu
 Navigation is ctrl+n / the wizard — there is no "Go home" entry.
 """
 
@@ -28,7 +29,7 @@ async def open_palette(app, pilot) -> CommandPaletteScreen:
 
 
 @tui_test
-async def test_palette_lists_exactly_the_four_commands(app) -> None:
+async def test_palette_lists_exactly_the_five_commands(app) -> None:
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
         await leave_home(app, pilot)
@@ -38,8 +39,9 @@ async def test_palette_lists_exactly_the_four_commands(app) -> None:
         assert labels[0] == "Keyboard Shortcuts"
         assert any(label.startswith("Theme") for label in labels)
         assert any(label.startswith("Change model") for label in labels)
+        assert any(label.startswith("Permissions") for label in labels)
         assert labels[-1] == "Close menu"
-        assert len(labels) == 4
+        assert len(labels) == 5
 
         # "Go home" was removed by design — navigation is ctrl+n.
         assert "Go home" not in labels
