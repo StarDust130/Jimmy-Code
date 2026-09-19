@@ -4,7 +4,7 @@
 
 ### A terminal-native AI coding agent that can **think, act, test, and ship.**
 
-<img src="/public/jimmy.gif" alt="Jimmy Code" width="220"/>
+<img src="/public/jimmy.gif" alt="Jimmy Code"/>
 
 **Jimmy Jimmy Ajaa 🎶**
 
