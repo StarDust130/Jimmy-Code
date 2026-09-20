@@ -968,13 +968,13 @@ function Hero() {
           className="mt-10 flex flex-wrap items-center justify-center gap-x-7 gap-y-2 font-mono text-[12px] text-zinc-600"
         >
           <span>
-            <span className="text-zinc-300">9</span> tools
+            <span className="text-zinc-300">10</span> tools
           </span>
           <span>
             <span className="text-zinc-300">3</span> permission modes
           </span>
           <span>
-            <span className="text-zinc-300">290+</span> passing tests
+            <span className="text-zinc-300">300+</span> passing tests
           </span>
           <span>
             <span className="text-zinc-300">0</span> browser tabs
