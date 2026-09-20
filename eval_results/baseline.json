@@ -1,0 +1,146 @@
+{
+  "timestamp": "2026-09-19T19:46:58+00:00",
+  "mode": "offline",
+  "overall": 100.0,
+  "records": [
+    {
+      "suite": "small",
+      "case": "tool_choice_read",
+      "score": 100.0,
+      "passed": true,
+      "failed": [],
+      "metrics": {
+        "steps": 2,
+        "tools": [
+          "search_files"
+        ]
+      },
+      "wall_s": 0.0,
+      "error": null
+    },
+    {
+      "suite": "small",
+      "case": "error_recovery",
+      "score": 100.0,
+      "passed": true,
+      "failed": [],
+      "metrics": {
+        "steps": 3,
+        "recoveries": 1
+      },
+      "wall_s": 0.0,
+      "error": null
+    },
+    {
+      "suite": "small",
+      "case": "permission_gate",
+      "score": 100.0,
+      "passed": true,
+      "failed": [],
+      "metrics": {
+        "prompts": 1
+      },
+      "wall_s": 0.0,
+      "error": null
+    },
+    {
+      "suite": "small",
+      "case": "max_steps_graceful",
+      "score": 100.0,
+      "passed": true,
+      "failed": [],
+      "metrics": {
+        "steps": 5
+      },
+      "wall_s": 0.0,
+      "error": null
+    },
+    {
+      "suite": "big",
+      "case": "landing_page_build",
+      "score": 100.0,
+      "passed": true,
+      "failed": [],
+      "metrics": {
+        "steps": 5,
+        "tools": [
+          "write_file",
+          "write_file",
+          "write_file",
+          "shell"
+        ],
+        "dups": 0
+      },
+      "wall_s": 0.0,
+      "error": null
+    },
+    {
+      "suite": "big",
+      "case": "dumb_loop_endurance",
+      "score": 100.0,
+      "passed": true,
+      "failed": [],
+      "metrics": {
+        "steps": 25,
+        "dups": 24,
+        "duplicate_ratio": 0.96
+      },
+      "wall_s": 0.0,
+      "error": null
+    },
+    {
+      "suite": "big",
+      "case": "context_integrity",
+      "score": 100.0,
+      "passed": true,
+      "failed": [],
+      "metrics": {
+        "steps": 51,
+        "canonical": 341548,
+        "view": 45164,
+        "clipped": 6830
+      },
+      "wall_s": 0.05,
+      "error": null
+    },
+    {
+      "suite": "big",
+      "case": "event_flood_agent",
+      "score": 100.0,
+      "passed": true,
+      "failed": [],
+      "metrics": {
+        "events": 302,
+        "eps": 129102,
+        "wall_s": 0.0
+      },
+      "wall_s": 0.0,
+      "error": null
+    },
+    {
+      "suite": "big",
+      "case": "tui_flood_responsive",
+      "score": 100.0,
+      "passed": true,
+      "failed": [],
+      "metrics": {
+        "wall_s": 0.3
+      },
+      "wall_s": 0.46,
+      "error": null
+    },
+    {
+      "suite": "big",
+      "case": "resume_midtask",
+      "score": 100.0,
+      "passed": true,
+      "failed": [],
+      "metrics": {
+        "rebuilt": 18,
+        "tool_msgs": 3
+      },
+      "wall_s": 0.0,
+      "error": null
+    }
+  ]
+}

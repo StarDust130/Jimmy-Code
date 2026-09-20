@@ -40,4 +40,5 @@ select = ["E", "F", "I", "RUF"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+
+pythonpath = ["."]
