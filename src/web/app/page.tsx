@@ -49,6 +49,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { FaGithub } from "react-icons/fa";
+
 /* ================================================================== */
 /*  Data — everything real, straight from the project                  */
 /* ================================================================== */
@@ -762,7 +764,7 @@ function Nav() {
             aria-label="GitHub"
             className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/25 hover:text-white"
           >
-           
+            <FaGithub className="h-4 w-4" />
           </a>
           <a
             href="#install"
@@ -955,7 +957,7 @@ function Hero() {
             rel="noreferrer"
             className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-6 py-3 text-sm font-medium text-zinc-200 backdrop-blur transition hover:bg-white/10"
           >
-            View on GitHub
+            <FaGithub className="h-4 w-4" /> View on GitHub
           </a>
         </motion.div>
 
@@ -1908,7 +1910,7 @@ function Footer() {
               aria-label="GitHub"
               className="mt-5 flex h-9 w-9 items-center justify-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-400/40 hover:text-white"
             >
-             
+              <FaGithub className="h-4 w-4" />
             </a>
           </div>
           {FOOTER_COLS.map((c) => (
